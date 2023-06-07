@@ -1,0 +1,3 @@
+.vscode/
+__build__/
+toolchain.cmake
