@@ -1,4 +1,4 @@
-find_package(PkgConfig)
+find_package(PkgConfig REQUIRED)
 pkg_check_modules(PC_liburing REQUIRED liburing)
 
 find_path(liburing_INCLUDE_DIR
@@ -10,7 +10,7 @@ find_library(liburing_LIBRARY
   PATHS ${PC_liburing_LIBRARY_DIRS}
 )
 
-set(liburing_VERSION 2.4)
+set(liburing_VERSION ${PC_liburing_VERSION})
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(liburing
