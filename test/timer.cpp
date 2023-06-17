@@ -1,164 +1,146 @@
+#include <fiona/io_context.hpp>
+#include <fiona/sleep.hpp>
+
 #include <boost/core/lightweight_test.hpp>
 
-#include <boost/smart_ptr/local_shared_ptr.hpp>
-#include <boost/smart_ptr/make_local_shared.hpp>
-#include <boost/unordered/unordered_flat_map.hpp>
-
-#include <chrono>
-#include <coroutine>
-#include <cstddef>
 #include <iostream>
 
-#include <liburing.h>
+static int num_runs = 0;
 
-struct promise;
+template <class Rep, class Period> struct duration_guard {
+  std::chrono::duration<Rep, Period> expected;
+  std::chrono::system_clock::time_point prev;
 
-struct task : std::coroutine_handle<promise> {
-  using promise_type = ::promise;
-};
+  duration_guard(std::chrono::duration<Rep, Period> expected_)
+      : expected(expected_), prev(std::chrono::system_clock::now()) {}
 
-struct promise {
-  task get_return_object() {
-    return {std::coroutine_handle<promise>::from_promise(*this)};
-  }
+  ~duration_guard() {
+    auto now = std::chrono::system_clock::now();
 
-  std::suspend_always initial_suspend() { return {}; }
-  std::suspend_always final_suspend() noexcept { return {}; }
-  void return_void() {}
-  void unhandled_exception() {}
-};
-
-namespace fiona {
-
-namespace detail {
-
-struct io_context_frame {
-  boost::unordered_flat_map<std::uint64_t, task> tasks_;
-  io_uring io_ring_;
-
-  io_context_frame() {
-    unsigned const entries = 32;
-    unsigned const flags = 0;
-    io_uring_queue_init(entries, &io_ring_, flags);
-  }
-
-  ~io_context_frame() { io_uring_queue_exit(&io_ring_); }
-};
-
-} // namespace detail
-
-struct executor {
-private:
-  boost::local_shared_ptr<detail::io_context_frame> framep_;
-
-public:
-  executor(boost::local_shared_ptr<detail::io_context_frame> framep) noexcept
-      : framep_(std::move(framep)) {}
-
-  io_uring* ring() const noexcept { return &framep_->io_ring_; }
-
-  void post(task t) {
-    framep_->tasks_.insert({reinterpret_cast<std::uintptr_t>(t.address()), t});
-
-    auto sqe = io_uring_get_sqe(ring());
-    io_uring_prep_nop(sqe);
-    sqe->user_data = reinterpret_cast<std::uintptr_t>(t.address());
-    io_uring_submit(ring());
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(now -
+                                                                       prev);
+    BOOST_TEST_GE(elapsed, expected);
+    BOOST_TEST_LT(elapsed, expected * 1.05);
   }
 };
 
-struct io_context {
-private:
-  boost::local_shared_ptr<detail::io_context_frame> framep_;
+namespace {
 
-  struct cqe_guard {
-    io_uring* ring;
-    io_uring_cqe* cqe;
-
-    ~cqe_guard() { io_uring_cqe_seen(ring, cqe); }
-  };
-
-  boost::unordered_flat_map<std::uint64_t, task>& tasks() const noexcept {
-    return framep_->tasks_;
+template <class Rep, class Period>
+fiona::task
+sleep_coro(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
+  {
+    duration_guard guard(d);
+    co_await sleep_for(ex, d);
   }
 
-public:
-  io_context()
-      : framep_(boost::make_local_shared<detail::io_context_frame>()) {}
-
-  executor get_executor() const noexcept { return executor{framep_}; }
-
-  void post(task t) {
-    auto ex = get_executor();
-    ex.post(t);
-  }
-
-  void run() {
-    auto ex = get_executor();
-
-    while (!tasks().empty()) {
-      io_uring_cqe* cqe = nullptr;
-      io_uring_wait_cqe(ex.ring(), &cqe);
-      auto guard = cqe_guard(ex.ring(), cqe);
-
-      auto pos = tasks().find(cqe->user_data);
-      if (pos == tasks().end()) {
-        tasks().erase(pos);
-        continue;
-      }
-
-      auto handle = std::coroutine_handle<>::from_address(
-          reinterpret_cast<void*>(cqe->user_data));
-
-      handle.resume();
-      if (handle.done()) {
-        handle.destroy();
-        tasks().erase(cqe->user_data);
-      }
-    }
-  }
-};
-
-} // namespace fiona
-
-struct timer_awaitable {
-  io_uring* ring = nullptr;
-  long long sec = 0;
-  long long nsec = 0;
-
-  bool await_ready() { return false; }
-  void await_suspend(std::coroutine_handle<> h) {
-    auto sqe = io_uring_get_sqe(ring);
-
-    __kernel_timespec ts;
-    ts.tv_sec = sec;
-    ts.tv_nsec = nsec;
-    io_uring_prep_timeout(sqe, &ts, 1, 0);
-    sqe->user_data = reinterpret_cast<std::uintptr_t>(h.address());
-    io_uring_submit(ring);
-  }
-
-  void await_resume() {}
-};
-
-timer_awaitable
-sleep_for(fiona::executor ex, std::chrono::seconds sec,
-          std::chrono::nanoseconds nsec) {
-  return {ex.ring(), sec.count(), nsec.count()};
-}
-
-task
-test_coro(fiona::executor ex) {
-  co_await sleep_for(ex, std::chrono::seconds(2),
-                     std::chrono::milliseconds(500));
+  ++num_runs;
   co_return;
 }
 
+fiona::task
+nested_sleep_coro(fiona::executor ex) {
+  {
+    std::chrono::milliseconds d(1500);
+    duration_guard guard(d);
+    co_await sleep_for(ex, d);
+  }
+
+  {
+    std::chrono::milliseconds d(750);
+    duration_guard guard(d);
+    co_await sleep_coro(ex, d);
+  }
+
+  ++num_runs;
+  co_return;
+}
+
+fiona::task
+nested_sleep_coro_late_return(fiona::executor ex) {
+  {
+    std::chrono::milliseconds d(1500);
+    duration_guard guard(d);
+    co_await sleep_coro(ex, d);
+  }
+
+  {
+    std::chrono::milliseconds d(2500);
+    duration_guard guard(d);
+    co_await sleep_for(ex, d);
+  }
+
+  ++num_runs;
+}
+
+fiona::task
+empty_coroutine(fiona::executor) {
+  ++num_runs;
+  co_return;
+}
+
+void
+test1() {
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(sleep_coro(ex, std::chrono::milliseconds(600)));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1);
+}
+
+void
+test2() {
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(nested_sleep_coro(ex));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 2);
+}
+
+void
+test3() {
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(nested_sleep_coro_late_return(ex));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 2);
+}
+
+void
+test4() {
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(empty_coroutine(ex));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1);
+}
+
+void
+test5() {
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(sleep_coro(ex, std::chrono::milliseconds(1750)));
+  ioc.post(nested_sleep_coro(ex));
+  ioc.post(nested_sleep_coro_late_return(ex));
+  ioc.post(empty_coroutine(ex));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1 + 2 + 2 + 1);
+}
+
+} // namespace
+
 int
 main() {
-  fiona::io_context ioc;
-  ioc.post(test_coro(ioc.get_executor()));
-  ioc.run();
-
+  test1();
+  test2();
+  test3();
+  test4();
+  test5();
   return boost::report_errors();
 }

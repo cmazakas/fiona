@@ -1,5 +1,9 @@
 {
   "dependencies": [
-    "boost-core"
+    "boost-assert",
+    "boost-core",
+    "boost-smart-ptr",
+    "boost-unordered",
+    "boost-container-hash"
   ]
 }
