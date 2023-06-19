@@ -18,7 +18,7 @@ struct timer_awaitable {
     __kernel_timespec ts;
     ts.tv_sec = sec;
     ts.tv_nsec = nsec;
-    io_uring_prep_timeout(sqe, &ts, UINT_MAX, 0);
+    io_uring_prep_timeout(sqe, &ts, 0, 0);
     sqe->user_data = reinterpret_cast<std::uintptr_t>(h.address());
     io_uring_submit(ring);
   }
