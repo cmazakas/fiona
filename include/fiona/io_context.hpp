@@ -23,8 +23,6 @@ struct io_context_frame;
 
 struct executor {
 private:
-  friend struct promise;
-
   boost::local_shared_ptr<detail::io_context_frame> framep_;
 
 public:
@@ -37,15 +35,13 @@ public:
 
 struct task {
 private:
-  friend struct io_context;
-
   struct awaitable {
     std::coroutine_handle<promise> h_;
 
     bool await_ready() const noexcept { return !h_ || h_.done(); }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<promise> awaiting_coro) noexcept;
+    await_suspend(std::coroutine_handle<> awaiting_coro) noexcept;
 
     void await_resume() noexcept {}
   };
@@ -77,22 +73,104 @@ public:
     return *this;
   }
 
-  void* address() const noexcept { return h_.address(); }
+  awaitable operator co_await() noexcept { return awaitable{h_}; }
+};
 
-  static task from_address(void* p) {
-    return task(std::coroutine_handle<promise_type>::from_address(p));
+struct promise {
+private:
+  struct final_awaitable {
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<promise> coro) noexcept {
+      return coro.promise().continuation_;
+    }
+
+    void await_resume() noexcept { BOOST_ASSERT(false); }
+  };
+
+  std::coroutine_handle<> continuation_ = nullptr;
+
+public:
+  task get_return_object() {
+    return {std::coroutine_handle<promise>::from_promise(*this)};
   }
 
-  awaitable operator co_await() noexcept { return awaitable{h_}; }
+  std::suspend_always initial_suspend() { return {}; }
+  final_awaitable final_suspend() noexcept { return {}; }
 
-  friend std::size_t hash_value(task const& t) noexcept {
+  void return_void() {}
+  void unhandled_exception() {}
+
+  void set_continuation(std::coroutine_handle<> continuation) {
+    BOOST_ASSERT(!continuation_);
+    continuation_ = continuation;
+  }
+};
+
+std::coroutine_handle<>
+task::awaitable::await_suspend(std::coroutine_handle<> awaiting_coro) noexcept {
+  /*
+   * because this awaitable is created using the coroutine_handle of a child
+   * coroutine, awaiting_coro is the parent
+   *
+   * store a handle to the parent in the Promise object so that we can
+   * access it later in Promise::final_suspend.
+   */
+  h_.promise().set_continuation(awaiting_coro);
+  return h_;
+}
+
+namespace detail {
+
+struct internal_promise;
+
+struct internal_task {
+  using promise_type = internal_promise;
+
+  std::coroutine_handle<promise_type> h_;
+
+  internal_task(std::coroutine_handle<promise_type> h) : h_(h) {}
+  ~internal_task() {
+    if (h_) {
+      h_.destroy();
+    }
+  }
+
+  internal_task(internal_task const&) = delete;
+  internal_task& operator=(internal_task const&) = delete;
+
+  internal_task(internal_task&& rhs) noexcept : h_(rhs.h_) { rhs.h_ = nullptr; }
+  internal_task& operator=(internal_task&& rhs) noexcept {
+    if (this != &rhs) {
+      auto h = h_;
+      h_ = rhs.h_;
+      rhs.h_ = h;
+    }
+    return *this;
+  }
+
+  friend std::size_t hash_value(internal_task const& t) noexcept {
     boost::hash<void*> hasher;
     return hasher(t.h_.address());
   }
 
-  friend bool operator==(task const& lhs, task const& rhs) {
-    return lhs.address() == rhs.address();
+  friend bool operator==(internal_task const& lhs, internal_task const& rhs) {
+    return lhs.h_.address() == rhs.h_.address();
   }
+};
+
+struct internal_promise {
+  internal_task get_return_object() {
+    return internal_task(
+        std::coroutine_handle<internal_promise>::from_promise(*this));
+  }
+
+  std::suspend_always initial_suspend() { return {}; }
+  std::suspend_always final_suspend() noexcept { return {}; }
+
+  void unhandled_exception() {}
+  void return_void() {}
 };
 
 struct hasher {
@@ -111,62 +189,19 @@ struct key_equal {
     return t == u;
   }
 
-  bool operator()(task const& t, void* p) const { return t.address() == p; }
-  bool operator()(void* p, task const& t) const { return t.address() == p; }
-};
-
-struct promise {
-private:
-  struct final_awaitable {
-    boost::unordered_flat_set<task, hasher, key_equal>* tasks;
-
-    bool await_ready() const noexcept { return false; }
-    void await_suspend(std::coroutine_handle<promise> coro) noexcept;
-    void await_resume() noexcept { BOOST_ASSERT(false); }
-  };
-
-  executor ex_;
-  std::coroutine_handle<> continuation_ = nullptr;
-
-public:
-  template <class... Args> promise(executor ex, Args&&...) noexcept : ex_(ex) {}
-
-  task get_return_object() {
-    return {std::coroutine_handle<promise>::from_promise(*this)};
+  bool operator()(internal_task const& t, void* p) const noexcept {
+    return t.h_.address() == p;
   }
 
-  std::suspend_always initial_suspend() { return {}; }
-  final_awaitable final_suspend() noexcept;
-
-  void return_void() {}
-  void unhandled_exception() {}
-
-  void set_continuation(std::coroutine_handle<promise> continuation) {
-    BOOST_ASSERT(!continuation_);
-    continuation_ = continuation;
+  bool operator()(void* p, internal_task const& t) const noexcept {
+    return t.h_.address() == p;
   }
 };
-
-std::coroutine_handle<>
-task::awaitable::await_suspend(
-    std::coroutine_handle<promise> awaiting_coro) noexcept {
-  /*
-   * because this awaitable is created using the coroutine_handle of a child
-   * coroutine, awaiting_coro is the parent
-   *
-   * store a handle to the parent in the Promise object so that we can access it
-   * later in Promise::final_suspend.
-   */
-  h_.promise().set_continuation(awaiting_coro);
-  return h_;
-}
-
-namespace detail {
 
 struct io_context_frame {
   friend struct executor;
 
-  boost::unordered_flat_set<task, hasher, key_equal> tasks_;
+  boost::unordered_flat_set<internal_task, hasher, key_equal> tasks_;
   io_uring io_ring_;
 
   io_context_frame() {
@@ -185,31 +220,42 @@ executor::ring() const noexcept {
   return &framep_->io_ring_;
 }
 
+detail::internal_task
+scheduler(io_uring* ring, task t) {
+  struct this_coro_awaitable {
+    std::coroutine_handle<> h_ = nullptr;
+
+    bool await_ready() { return false; }
+    bool await_suspend(std::coroutine_handle<> h) {
+      h_ = h;
+      return false;
+    }
+
+    auto await_resume() { return h_; }
+  };
+
+  co_await t;
+
+  auto h = co_await this_coro_awaitable{};
+  auto sqe = io_uring_get_sqe(ring);
+  io_uring_prep_nop(sqe);
+
+  sqe->user_data = reinterpret_cast<std::uintptr_t>(h.address());
+
+  io_uring_submit(ring);
+  co_return;
+}
+
 void
 executor::post(task t) {
+  auto it = scheduler(ring(), std::move(t));
+
   auto sqe = io_uring_get_sqe(ring());
   io_uring_prep_nop(sqe);
-  sqe->user_data = reinterpret_cast<std::uintptr_t>(t.address());
-
-  framep_->tasks_.insert(std::move(t));
-
+  sqe->user_data = reinterpret_cast<std::uintptr_t>(it.h_.address());
   io_uring_submit(ring());
-}
 
-void
-promise::final_awaitable::await_suspend(
-    std::coroutine_handle<promise> coro) noexcept {
-  auto h = coro.promise().continuation_;
-  if (h) {
-    return h.resume();
-  }
-
-  tasks->erase(coro.address());
-}
-
-promise::final_awaitable
-promise::final_suspend() noexcept {
-  return {&ex_.framep_->tasks_};
+  framep_->tasks_.insert(std::move(it));
 }
 
 struct io_context {
@@ -240,13 +286,24 @@ public:
     auto ex = get_executor();
 
     while (!tasks().empty()) {
+      auto p = ([&ex] {
+        io_uring_cqe* cqe = nullptr;
+        io_uring_wait_cqe(ex.ring(), &cqe);
+        auto guard = cqe_guard(ex.ring(), cqe);
 
-      io_uring_cqe* cqe = nullptr;
-      io_uring_wait_cqe(ex.ring(), &cqe);
-      auto guard = cqe_guard(ex.ring(), cqe);
+        auto p = reinterpret_cast<void*>(cqe->user_data);
+        return p;
+      })();
 
-      auto p = reinterpret_cast<void*>(cqe->user_data);
       auto h = std::coroutine_handle<>::from_address(p);
+
+      if (auto pos = tasks().find(p); pos != tasks().end()) {
+        if (h.done()) {
+          tasks().erase(pos);
+          continue;
+        }
+      }
+
       h.resume();
     }
   }
