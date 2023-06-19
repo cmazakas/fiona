@@ -125,11 +125,14 @@ test5() {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post(sleep_coro(ex, std::chrono::milliseconds(1750)));
+  ioc.post(sleep_coro(ex, std::chrono::milliseconds(235)));
   ioc.post(nested_sleep_coro(ex));
   ioc.post(nested_sleep_coro_late_return(ex));
   ioc.post(empty_coroutine(ex));
-  ioc.run();
+  {
+    duration_guard guard(std::chrono::milliseconds(1500 + 2500));
+    ioc.run();
+  }
   BOOST_TEST_EQ(num_runs, 1 + 2 + 2 + 1);
 }
 
