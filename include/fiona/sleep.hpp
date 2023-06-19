@@ -18,7 +18,7 @@ struct timer_awaitable {
     __kernel_timespec ts;
     ts.tv_sec = sec;
     ts.tv_nsec = nsec;
-    io_uring_prep_timeout(sqe, &ts, 1, 0);
+    io_uring_prep_timeout(sqe, &ts, UINT_MAX, 0);
     sqe->user_data = reinterpret_cast<std::uintptr_t>(h.address());
     io_uring_submit(ring);
   }
@@ -31,7 +31,7 @@ timer_awaitable
 sleep_for(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
   auto sec = std::chrono::floor<std::chrono::seconds>(d);
   auto nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(d - sec);
-  return {ex.ring(), sec.count(), nsec.count()};
+  return timer_awaitable{ex.ring(), sec.count(), nsec.count()};
 }
 } // namespace fiona
 
