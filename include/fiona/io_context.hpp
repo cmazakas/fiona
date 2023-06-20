@@ -21,6 +21,11 @@ namespace detail {
 struct io_context_frame;
 }
 
+struct awaitable_base {
+  virtual void await_process_cqe(io_uring_cqe* cqe) = 0;
+  virtual std::coroutine_handle<> handle() const noexcept = 0;
+};
+
 struct executor {
 private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
@@ -35,8 +40,10 @@ public:
 
 struct task {
 private:
-  struct awaitable {
+  struct awaitable final : public awaitable_base {
     std::coroutine_handle<promise> h_;
+
+    awaitable(std::coroutine_handle<promise> h) : h_(h) {}
 
     bool await_ready() const noexcept { return !h_ || h_.done(); }
 
@@ -44,6 +51,9 @@ private:
     await_suspend(std::coroutine_handle<> awaiting_coro) noexcept;
 
     void await_resume() noexcept {}
+
+    void await_process_cqe(io_uring_cqe*) {}
+    std::coroutine_handle<> handle() const noexcept { return h_; }
   };
 
   std::coroutine_handle<promise> h_ = nullptr;
@@ -286,24 +296,25 @@ public:
     auto ex = get_executor();
 
     while (!tasks().empty()) {
-      auto p = ([&ex] {
-        io_uring_cqe* cqe = nullptr;
-        io_uring_wait_cqe(ex.ring(), &cqe);
-        auto guard = cqe_guard(ex.ring(), cqe);
+      io_uring_cqe* cqe = nullptr;
+      io_uring_wait_cqe(ex.ring(), &cqe);
+      auto guard = cqe_guard(ex.ring(), cqe);
 
-        auto p = reinterpret_cast<void*>(cqe->user_data);
-        return p;
-      })();
-
-      auto h = std::coroutine_handle<>::from_address(p);
+      auto p = reinterpret_cast<void*>(cqe->user_data);
 
       if (auto pos = tasks().find(p); pos != tasks().end()) {
+        auto h = std::coroutine_handle<>::from_address(p);
         if (h.done()) {
           tasks().erase(pos);
-          continue;
+        } else {
+          h.resume();
         }
+        continue;
       }
 
+      auto q = static_cast<awaitable_base*>(p);
+      q->await_process_cqe(cqe);
+      auto h = q->handle();
       h.resume();
     }
   }

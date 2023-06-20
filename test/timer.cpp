@@ -32,7 +32,8 @@ fiona::task
 sleep_coro(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
   {
     duration_guard guard(d);
-    co_await sleep_for(ex, d);
+    auto ec = co_await sleep_for(ex, d);
+    BOOST_TEST(!ec);
   }
 
   ++num_runs;
@@ -44,7 +45,8 @@ nested_sleep_coro(fiona::executor ex) {
   {
     std::chrono::milliseconds d(1500);
     duration_guard guard(d);
-    co_await sleep_for(ex, d);
+    auto ec = co_await sleep_for(ex, d);
+    BOOST_TEST(!ec);
   }
 
   {
@@ -68,7 +70,8 @@ nested_sleep_coro_late_return(fiona::executor ex) {
   {
     std::chrono::milliseconds d(2500);
     duration_guard guard(d);
-    co_await sleep_for(ex, d);
+    auto ec = co_await sleep_for(ex, d);
+    BOOST_TEST(!ec);
   }
 
   ++num_runs;
