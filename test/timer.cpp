@@ -80,8 +80,18 @@ empty_coroutine(fiona::executor) {
   co_return;
 }
 
+fiona::task
+nested_post_timer(fiona::executor ex) {
+  ex.post(nested_sleep_coro(ex));
+  ex.post(nested_sleep_coro_late_return(ex));
+
+  ++num_runs;
+  co_return;
+}
+
 void
 test1() {
+  std::cout << __func__ << std::endl;
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -92,6 +102,7 @@ test1() {
 
 void
 test2() {
+  std::cout << __func__ << std::endl;
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -102,6 +113,7 @@ test2() {
 
 void
 test3() {
+  std::cout << __func__ << std::endl;
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -112,6 +124,7 @@ test3() {
 
 void
 test4() {
+  std::cout << __func__ << std::endl;
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -122,6 +135,7 @@ test4() {
 
 void
 test5() {
+  std::cout << __func__ << std::endl;
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -136,6 +150,17 @@ test5() {
   BOOST_TEST_EQ(num_runs, 1 + 2 + 2 + 1);
 }
 
+void
+test6() {
+  std::cout << __func__ << std::endl;
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(nested_post_timer(ex));
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1 + 2 + 2);
+}
+
 } // namespace
 
 int
@@ -145,5 +170,6 @@ main() {
   test3();
   test4();
   test5();
+  test6();
   return boost::report_errors();
 }
