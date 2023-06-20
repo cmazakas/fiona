@@ -92,6 +92,23 @@ nested_post_timer(fiona::executor ex) {
   co_return;
 }
 
+fiona::task
+recursion_test(fiona::executor ex, int n) {
+  if (n == 0) {
+    ++num_runs;
+    co_return;
+  }
+
+  {
+    std::chrono::milliseconds d(100);
+    duration_guard guard(d);
+    auto ec = co_await sleep_for(ex, d);
+    BOOST_TEST(!ec);
+  }
+
+  co_await recursion_test(ex, n - 1);
+}
+
 void
 test1() {
   std::cout << __func__ << std::endl;
@@ -164,6 +181,19 @@ test6() {
   BOOST_TEST_EQ(num_runs, 1 + 2 + 2);
 }
 
+void
+test7() {
+  std::cout << __func__ << std::endl;
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  for (int i = 0; i < 10; ++i) {
+    ioc.post(recursion_test(ex, 20));
+  }
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 10);
+}
+
 } // namespace
 
 int
@@ -174,5 +204,6 @@ main() {
   test4();
   test5();
   test6();
+  test7();
   return boost::report_errors();
 }
