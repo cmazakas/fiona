@@ -4,9 +4,21 @@
 
 #include <boost/core/lightweight_test.hpp>
 
+#include <cstdlib>
 #include <iostream>
 
 static int num_runs = 0;
+
+struct seeder {
+  seeder(unsigned seed) { std::srand(seed); }
+};
+
+seeder initialize_seed(4122023);
+
+std::chrono::milliseconds
+get_sleep_duration() {
+  return std::chrono::milliseconds{200 + (std::rand() % 1000)};
+}
 
 template <class Rep, class Period> struct duration_guard {
   std::chrono::duration<Rep, Period> expected;
@@ -44,14 +56,14 @@ sleep_coro(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
 fiona::task
 nested_sleep_coro(fiona::executor ex) {
   {
-    std::chrono::milliseconds d(1500);
+    auto d = get_sleep_duration();
     duration_guard guard(d);
     auto ec = co_await sleep_for(ex, d);
     BOOST_TEST(!ec);
   }
 
   {
-    std::chrono::milliseconds d(750);
+    auto d = get_sleep_duration();
     duration_guard guard(d);
     co_await sleep_coro(ex, d);
   }
@@ -63,13 +75,13 @@ nested_sleep_coro(fiona::executor ex) {
 fiona::task
 nested_sleep_coro_late_return(fiona::executor ex) {
   {
-    std::chrono::milliseconds d(1500);
+    auto d = get_sleep_duration();
     duration_guard guard(d);
     co_await sleep_coro(ex, d);
   }
 
   {
-    std::chrono::milliseconds d(2500);
+    auto d = get_sleep_duration();
     duration_guard guard(d);
     auto ec = co_await sleep_for(ex, d);
     BOOST_TEST(!ec);
@@ -100,12 +112,9 @@ recursion_test(fiona::executor ex, int n) {
     co_return;
   }
 
-  {
-    std::chrono::milliseconds d(100);
-    duration_guard guard(d);
-    auto ec = co_await sleep_for(ex, d);
-    BOOST_TEST(!ec);
-  }
+  std::chrono::microseconds d(500);
+  auto ec = co_await sleep_for(ex, d);
+  BOOST_TEST(!ec);
 
   co_await recursion_test(ex, n - 1);
 }
@@ -116,7 +125,7 @@ test1() {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post(sleep_coro(ex, std::chrono::milliseconds(600)));
+  ioc.post(sleep_coro(ex, get_sleep_duration()));
   ioc.run();
   BOOST_TEST_EQ(num_runs, 1);
 }
@@ -160,14 +169,11 @@ test5() {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post(sleep_coro(ex, std::chrono::milliseconds(235)));
+  ioc.post(sleep_coro(ex, get_sleep_duration()));
   ioc.post(nested_sleep_coro(ex));
   ioc.post(nested_sleep_coro_late_return(ex));
   ioc.post(empty_coroutine(ex));
-  {
-    duration_guard guard(std::chrono::milliseconds(1500 + 2500));
-    ioc.run();
-  }
+  ioc.run();
   BOOST_TEST_EQ(num_runs, 1 + 2 + 2 + 1);
 }
 
@@ -189,10 +195,23 @@ test7() {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   for (int i = 0; i < 10; ++i) {
-    ioc.post(recursion_test(ex, 20));
+    ioc.post(recursion_test(ex, 2000));
   }
   ioc.run();
   BOOST_TEST_EQ(num_runs, 10);
+}
+
+void
+test8() {
+  std::cout << __func__ << std::endl;
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  for (int i = 0; i < 1000; ++i) {
+    ioc.post(sleep_coro(ex, get_sleep_duration()));
+  }
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1000);
 }
 
 } // namespace
@@ -206,5 +225,6 @@ main() {
   test5();
   test6();
   test7();
+  test8();
   return boost::report_errors();
 }
