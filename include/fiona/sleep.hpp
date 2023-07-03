@@ -1,16 +1,19 @@
 #ifndef FIONA_SLEEP_HPP
 #define FIONA_SLEEP_HPP
 
+#include <fiona/detail/awaitable_base.hpp>
 #include <fiona/error.hpp>
+#include <fiona/io_context.hpp>
 
 #include <chrono>
+#include <coroutine>
 #include <system_error>
 
 #include <liburing.h>
 
 namespace fiona {
 
-struct timer_awaitable final : public awaitable_base {
+struct timer_awaitable final : public detail::awaitable_base {
   io_uring* ring = nullptr;
   long long sec = 0;
   long long nsec = 0;

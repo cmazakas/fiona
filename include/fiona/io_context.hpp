@@ -1,6 +1,8 @@
 #ifndef FIONA_IO_CONTEXT_HPP
 #define FIONA_IO_CONTEXT_HPP
 
+#include <fiona/detail/awaitable_base.hpp>
+
 #include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
 #include <boost/smart_ptr/local_shared_ptr.hpp>
@@ -21,11 +23,6 @@ namespace detail {
 struct io_context_frame;
 }
 
-struct awaitable_base {
-  virtual void await_process_cqe(io_uring_cqe* cqe) = 0;
-  virtual std::coroutine_handle<> handle() const noexcept = 0;
-};
-
 struct executor {
 private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
@@ -40,7 +37,7 @@ public:
 
 struct task {
 private:
-  struct awaitable final : public awaitable_base {
+  struct awaitable final : public detail::awaitable_base {
     std::coroutine_handle<promise> h_;
 
     awaitable(std::coroutine_handle<promise> h) : h_(h) {}
@@ -312,7 +309,7 @@ public:
         continue;
       }
 
-      auto q = static_cast<awaitable_base*>(p);
+      auto q = static_cast<detail::awaitable_base*>(p);
       q->await_process_cqe(cqe);
       auto h = q->handle();
       h.resume();

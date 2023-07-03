@@ -1,5 +1,6 @@
-#include <fiona/io_context.hpp>
 #include <fiona/sleep.hpp>
+
+#include <fiona/io_context.hpp>
 
 #include <boost/core/lightweight_test.hpp>
 
