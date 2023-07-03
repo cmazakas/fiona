@@ -20,7 +20,8 @@ get_sleep_duration() {
   return std::chrono::milliseconds{200 + (std::rand() % 1000)};
 }
 
-template <class Rep, class Period> struct duration_guard {
+template <class Rep, class Period>
+struct duration_guard {
   std::chrono::duration<Rep, Period> expected;
   std::chrono::system_clock::time_point prev;
 
@@ -41,7 +42,7 @@ template <class Rep, class Period> struct duration_guard {
 namespace {
 
 template <class Rep, class Period>
-fiona::task
+fiona::task<void>
 sleep_coro(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
   {
     duration_guard guard(d);
@@ -53,7 +54,7 @@ sleep_coro(fiona::executor ex, std::chrono::duration<Rep, Period> d) {
   co_return;
 }
 
-fiona::task
+fiona::task<void>
 nested_sleep_coro(fiona::executor ex) {
   {
     auto d = get_sleep_duration();
@@ -72,7 +73,7 @@ nested_sleep_coro(fiona::executor ex) {
   co_return;
 }
 
-fiona::task
+fiona::task<void>
 nested_sleep_coro_late_return(fiona::executor ex) {
   {
     auto d = get_sleep_duration();
@@ -90,13 +91,13 @@ nested_sleep_coro_late_return(fiona::executor ex) {
   ++num_runs;
 }
 
-fiona::task
+fiona::task<void>
 empty_coroutine(fiona::executor) {
   ++num_runs;
   co_return;
 }
 
-fiona::task
+fiona::task<void>
 nested_post_timer(fiona::executor ex) {
   ex.post(nested_sleep_coro(ex));
   ex.post(nested_sleep_coro_late_return(ex));
@@ -105,7 +106,7 @@ nested_post_timer(fiona::executor ex) {
   co_return;
 }
 
-fiona::task
+fiona::task<void>
 recursion_test(fiona::executor ex, int n) {
   if (n == 0) {
     ++num_runs;
@@ -117,6 +118,17 @@ recursion_test(fiona::executor ex, int n) {
   BOOST_TEST(!ec);
 
   co_await recursion_test(ex, n - 1);
+}
+
+fiona::task<void>
+return_value_test() {
+  auto f = []() -> fiona::task<std::vector<int>> {
+    co_return std::vector<int>{1, 2, 3, 4};
+  };
+
+  auto vec = co_await f();
+  BOOST_TEST_EQ(vec.size(), 4u);
+  ++num_runs;
 }
 
 void
@@ -214,6 +226,17 @@ test8() {
   BOOST_TEST_EQ(num_runs, 1000);
 }
 
+void
+test9() {
+  std::cout << __func__ << std::endl;
+  num_runs = 0;
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.post(return_value_test());
+  ioc.run();
+  BOOST_TEST_EQ(num_runs, 1);
+}
+
 } // namespace
 
 int
@@ -226,5 +249,6 @@ main() {
   test6();
   test7();
   test8();
+  test9();
   return boost::report_errors();
 }

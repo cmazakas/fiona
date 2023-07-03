@@ -1,2 +1,3 @@
 AlwaysBreakAfterReturnType: TopLevel
 PointerAlignment: Left
+AlwaysBreakTemplateDeclarations: Yes
