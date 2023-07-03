@@ -167,19 +167,6 @@ struct internal_task {
   }
 };
 
-struct internal_promise {
-  internal_task get_return_object() {
-    return internal_task(
-        std::coroutine_handle<internal_promise>::from_promise(*this));
-  }
-
-  std::suspend_always initial_suspend() { return {}; }
-  std::suspend_always final_suspend() noexcept { return {}; }
-
-  void unhandled_exception() {}
-  void return_void() {}
-};
-
 struct hasher {
   using is_transparent = void;
 
@@ -205,10 +192,42 @@ struct key_equal {
   }
 };
 
+using task_set_type =
+    boost::unordered_flat_set<internal_task, hasher, key_equal>;
+
+struct internal_promise {
+  struct internal_final_awaitable {
+    task_set_type& tasks;
+
+    bool await_ready() const noexcept { return false; }
+    void await_suspend(std::coroutine_handle<> h) noexcept {
+      tasks.erase(h.address());
+    }
+
+    void await_resume() noexcept { BOOST_ASSERT(false); }
+  };
+
+  template <class... Args>
+  internal_promise(task_set_type& tasks_, Args&&...) : tasks(tasks_) {}
+
+  internal_task get_return_object() {
+    return internal_task(
+        std::coroutine_handle<internal_promise>::from_promise(*this));
+  }
+
+  std::suspend_always initial_suspend() { return {}; }
+  internal_final_awaitable final_suspend() noexcept { return {tasks}; }
+
+  void unhandled_exception() {}
+  void return_void() {}
+
+  task_set_type& tasks;
+};
+
 struct io_context_frame {
   friend struct executor;
 
-  boost::unordered_flat_set<internal_task, hasher, key_equal> tasks_;
+  task_set_type tasks_;
   io_uring io_ring_;
 
   io_context_frame() {
@@ -228,34 +247,14 @@ executor::ring() const noexcept {
 }
 
 detail::internal_task
-scheduler(io_uring* ring, task t) {
-  struct this_coro_awaitable {
-    std::coroutine_handle<> h_ = nullptr;
-
-    bool await_ready() { return false; }
-    bool await_suspend(std::coroutine_handle<> h) {
-      h_ = h;
-      return false;
-    }
-
-    auto await_resume() { return h_; }
-  };
-
+scheduler(detail::task_set_type& tasks, io_uring* ring, task t) {
   co_await t;
-
-  auto h = co_await this_coro_awaitable{};
-  auto sqe = io_uring_get_sqe(ring);
-  io_uring_prep_nop(sqe);
-
-  sqe->user_data = reinterpret_cast<std::uintptr_t>(h.address());
-
-  io_uring_submit(ring);
   co_return;
 }
 
 void
 executor::post(task t) {
-  auto it = scheduler(ring(), std::move(t));
+  auto it = scheduler(framep_->tasks_, ring(), std::move(t));
 
   auto sqe = io_uring_get_sqe(ring());
   io_uring_prep_nop(sqe);
@@ -301,16 +300,17 @@ public:
 
       if (auto pos = tasks().find(p); pos != tasks().end()) {
         auto h = std::coroutine_handle<>::from_address(p);
-        if (h.done()) {
-          tasks().erase(pos);
-        } else {
-          h.resume();
-        }
+
+        BOOST_ASSERT(!h.done());
+        h.resume();
+
         continue;
       }
 
       auto q = static_cast<detail::awaitable_base*>(p);
+
       q->await_process_cqe(cqe);
+
       auto h = q->handle();
       h.resume();
     }
