@@ -1,9 +1,10 @@
 {
   "dependencies": [
     "boost-assert",
+    "boost-config",
+    "boost-container-hash",
     "boost-core",
     "boost-smart-ptr",
-    "boost-unordered",
-    "boost-container-hash"
+    "boost-unordered"
   ]
 }

@@ -1,6 +1,8 @@
 #ifndef FIONA_ERROR_HPP
 #define FIONA_ERROR_HPP
 
+#include <boost/config.hpp>
+
 #include <cstring>
 #include <iostream>
 #include <system_error>
@@ -14,7 +16,20 @@ struct error_code : public std::error_code {
        << std::strerror(ec.value());
     return os;
   }
+
+  static error_code from_errno(int e) {
+    return {std::make_error_code(static_cast<std::errc>(e))};
+  }
 };
+
+namespace detail {
+
+BOOST_NOINLINE BOOST_NORETURN inline void
+throw_errno_as_error_code(int e) {
+  throw error_code::from_errno(e);
+}
+
+} // namespace detail
 
 } // namespace fiona
 
