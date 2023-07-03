@@ -1,1 +1,1 @@
-fiona_test(timer)
+fiona_test(timer_test)
