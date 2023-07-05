@@ -51,7 +51,7 @@ private:
     std::coroutine_handle<>
     await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept;
 
-    decltype( auto ) await_resume() noexcept {
+    decltype( auto ) await_resume() {
       BOOST_ASSERT( h_ );
       return h_.promise().result();
     }

@@ -128,6 +128,14 @@ return_value_test() {
 
   auto vec = co_await f();
   BOOST_TEST_EQ( vec.size(), 4u );
+
+  auto throwing = []() -> fiona::task<int> {
+    throw std::logic_error( "rawr" );
+    co_return 1337;
+  };
+
+  BOOST_TEST_THROWS( co_await throwing(), std::logic_error );
+
   ++num_runs;
 }
 
