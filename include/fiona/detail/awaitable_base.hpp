@@ -9,7 +9,7 @@ namespace fiona {
 namespace detail {
 
 struct awaitable_base {
-  virtual void await_process_cqe(io_uring_cqe* cqe) = 0;
+  virtual void await_process_cqe( io_uring_cqe* cqe ) = 0;
   virtual std::coroutine_handle<> handle() const noexcept = 0;
 };
 
