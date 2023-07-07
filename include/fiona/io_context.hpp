@@ -57,7 +57,7 @@ private:
     }
 
     void await_process_cqe( io_uring_cqe* ) {}
-    std::coroutine_handle<> handle() const noexcept { return h_; }
+    std::coroutine_handle<> handle() noexcept { return h_; }
   };
 
   std::coroutine_handle<promise<T>> h_ = nullptr;
@@ -406,7 +406,9 @@ public:
       q->await_process_cqe( cqe );
 
       auto h = q->handle();
-      h.resume();
+      if ( h ) {
+        h.resume();
+      }
     }
   }
 };

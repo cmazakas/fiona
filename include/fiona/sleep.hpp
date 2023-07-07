@@ -46,7 +46,7 @@ struct timer_awaitable final : public detail::awaitable_base {
     }
   }
 
-  std::coroutine_handle<> handle() const noexcept { return h; }
+  std::coroutine_handle<> handle() noexcept { return h; }
 };
 
 template <class Rep, class Period>
