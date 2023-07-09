@@ -2,6 +2,7 @@
 #define FIONA_ERROR_HPP
 
 #include <boost/config.hpp>
+#include <boost/system/result.hpp>
 
 #include <cstring>
 #include <iostream>
@@ -30,6 +31,9 @@ throw_errno_as_error_code( int e ) {
 }
 
 } // namespace detail
+
+template <class T>
+using result = boost::system::result<T, error_code>;
 
 } // namespace fiona
 

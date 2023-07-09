@@ -11,6 +11,7 @@
 
 #include <coroutine>
 #include <cstddef>
+#include <iostream>
 
 #include <liburing.h>
 
@@ -321,13 +322,22 @@ struct internal_promise {
 struct io_context_frame {
   friend struct executor;
 
+  constexpr static unsigned sq_entries = 512;
+  constexpr static unsigned cq_entries = 4096;
+
   task_set_type tasks_;
   io_uring io_ring_;
 
   io_context_frame() {
-    unsigned const entries = 32;
-    unsigned const flags = 0;
-    io_uring_queue_init( entries, &io_ring_, flags );
+    unsigned const entries = sq_entries;
+
+    io_uring_params params;
+    memset( &params, 0, sizeof( params ) );
+
+    params.cq_entries = cq_entries;
+    params.flags |= IORING_SETUP_CQSIZE;
+
+    io_uring_queue_init_params( entries, &io_ring_, &params );
   }
 
   ~io_context_frame() { io_uring_queue_exit( &io_ring_ ); }
@@ -372,6 +382,9 @@ private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
 
 public:
+  constexpr static auto const cq_entries = detail::io_context_frame::cq_entries;
+  constexpr static auto const sq_entries = detail::io_context_frame::sq_entries;
+
   io_context()
       : framep_( boost::make_local_shared<detail::io_context_frame>() ) {}
 
@@ -391,6 +404,7 @@ public:
       auto guard = cqe_guard( ex.ring(), cqe );
 
       auto p = reinterpret_cast<void*>( cqe->user_data );
+      BOOST_ASSERT( cqe->user_data );
 
       if ( auto pos = tasks().find( p ); pos != tasks().end() ) {
         auto h = std::coroutine_handle<>::from_address( p );
@@ -402,7 +416,6 @@ public:
       }
 
       auto q = static_cast<detail::awaitable_base*>( p );
-
       q->await_process_cqe( cqe );
 
       auto h = q->handle();
