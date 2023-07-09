@@ -2,12 +2,16 @@
 
 #include <fiona/io_context.hpp>
 
-#include <boost/core/lightweight_test.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
 #include <iostream>
 
 static int num_runs = 0;
+
+#define CHECK_GE( T, U ) CHECK( T >= U )
+#define CHECK_EQ( T, U ) CHECK( T == U )
+#define CHECK_LT( T, U ) CHECK( T < U )
 
 struct seeder {
   seeder( unsigned seed ) { std::srand( seed ); }
@@ -34,8 +38,8 @@ struct duration_guard {
     auto elapsed =
         std::chrono::duration_cast<std::chrono::duration<Rep, Period>>( now -
                                                                         prev );
-    BOOST_TEST_GE( elapsed, expected );
-    BOOST_TEST_LT( elapsed, expected * 1.05 );
+    CHECK_GE( elapsed, expected );
+    CHECK_LT( elapsed, expected * 1.05 );
   }
 };
 
@@ -47,7 +51,7 @@ sleep_coro( fiona::executor ex, std::chrono::duration<Rep, Period> d ) {
   {
     duration_guard guard( d );
     auto ec = co_await sleep_for( ex, d );
-    BOOST_TEST( !ec );
+    CHECK( !ec );
   }
 
   ++num_runs;
@@ -60,7 +64,7 @@ nested_sleep_coro( fiona::executor ex ) {
     auto d = get_sleep_duration();
     duration_guard guard( d );
     auto ec = co_await sleep_for( ex, d );
-    BOOST_TEST( !ec );
+    CHECK( !ec );
   }
 
   {
@@ -85,7 +89,7 @@ nested_sleep_coro_late_return( fiona::executor ex ) {
     auto d = get_sleep_duration();
     duration_guard guard( d );
     auto ec = co_await sleep_for( ex, d );
-    BOOST_TEST( !ec );
+    CHECK( !ec );
   }
 
   ++num_runs;
@@ -115,7 +119,7 @@ recursion_test( fiona::executor ex, int n ) {
 
   std::chrono::microseconds d( 500 );
   auto ec = co_await sleep_for( ex, d );
-  BOOST_TEST( !ec );
+  CHECK( !ec );
 
   co_await recursion_test( ex, n - 1 );
 }
@@ -127,65 +131,57 @@ return_value_test() {
   };
 
   auto vec = co_await f();
-  BOOST_TEST_EQ( vec.size(), 4u );
+  CHECK_EQ( vec.size(), 4u );
 
   auto throwing = []() -> fiona::task<int> {
     throw std::logic_error( "rawr" );
     co_return 1337;
   };
 
-  BOOST_TEST_THROWS( co_await throwing(), std::logic_error );
+  CHECK_THROWS( co_await throwing() );
 
   ++num_runs;
 }
 
-void
-test1() {
-  std::cout << __func__ << std::endl;
+} // namespace
+
+TEST_CASE( "single sleep" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( sleep_coro( ex, get_sleep_duration() ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1 );
+  CHECK_EQ( num_runs, 1 );
 }
 
-void
-test2() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "nested coroutine invocation" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( nested_sleep_coro( ex ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 2 );
+  CHECK_EQ( num_runs, 2 );
 }
 
-void
-test3() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "nested coroutine invocation (part 2)" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( nested_sleep_coro_late_return( ex ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 2 );
+  CHECK_EQ( num_runs, 2 );
 }
 
-void
-test4() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "empty coroutine" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( empty_coroutine( ex ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1 );
+  CHECK_EQ( num_runs, 1 );
 }
 
-void
-test5() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "multiple concurrent tasks" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -194,23 +190,19 @@ test5() {
   ioc.post( nested_sleep_coro_late_return( ex ) );
   ioc.post( empty_coroutine( ex ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1 + 2 + 2 + 1 );
+  CHECK_EQ( num_runs, 1 + 2 + 2 + 1 );
 }
 
-void
-test6() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "nested post() invocation" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( nested_post_timer( ex ) );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1 + 2 + 2 );
+  CHECK_EQ( num_runs, 1 + 2 + 2 );
 }
 
-void
-test7() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "recursion test" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -218,12 +210,10 @@ test7() {
     ioc.post( recursion_test( ex, 2000 ) );
   }
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 10 );
+  CHECK_EQ( num_runs, 10 );
 }
 
-void
-test8() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "mild stress test" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -231,32 +221,14 @@ test8() {
     ioc.post( sleep_coro( ex, get_sleep_duration() ) );
   }
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1000 );
+  CHECK_EQ( num_runs, 1000 );
 }
 
-void
-test9() {
-  std::cout << __func__ << std::endl;
+TEST_CASE( "coroutine return test" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( return_value_test() );
   ioc.run();
-  BOOST_TEST_EQ( num_runs, 1 );
-}
-
-} // namespace
-
-int
-main() {
-  test1();
-  test2();
-  test3();
-  test4();
-  test5();
-  test6();
-  test7();
-  test8();
-  test9();
-  return boost::report_errors();
+  CHECK_EQ( num_runs, 1 );
 }

@@ -5,6 +5,6 @@
     "boost-container-hash",
     "boost-core",
     "boost-smart-ptr",
-    "boost-unordered"
+    "catch2"
   ]
 }

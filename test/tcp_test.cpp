@@ -1,12 +1,9 @@
 #include <fiona/io_context.hpp>
 #include <fiona/tcp.hpp>
 
-#include <boost/core/lightweight_test.hpp>
+#include <catch2/catch_test_macros.hpp>
 
-namespace {
-
-void
-acceptor_test() {
+TEST_CASE( "accept() tests" ) {
   constexpr std::uint32_t localhost = 0x7f000001;
   constexpr std::uint16_t port = 3030;
   constexpr int num_clients = 1;
@@ -20,7 +17,7 @@ acceptor_test() {
 
     for ( int num_accepted = 0; num_accepted < num_clients; ++num_accepted ) {
       auto fd = co_await a;
-      close( fd );
+      close( fd.value() );
     }
 
     co_return;
@@ -30,16 +27,8 @@ acceptor_test() {
     fiona::tcp::client client( ex );
 
     auto ec = co_await client.async_connect( localhost, port );
-    BOOST_TEST( !ec );
+    CHECK( !ec );
   } )( ex ) );
 
   ioc.run();
-}
-
-} // namespace
-
-int
-main() {
-  acceptor_test();
-  return boost::report_errors();
 }
