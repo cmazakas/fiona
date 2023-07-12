@@ -165,3 +165,32 @@ TEST_CASE( "accept CQ overflow" ) {
 
   CHECK( num_runs == num_clients + 1 );
 }
+
+TEST_CASE( "client connect timeout" ) {
+
+  num_runs = 0;
+
+  auto client = []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    // use one of the IP addresses from the test networks:
+    // 192.0.2.0/24
+    // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+    auto ec = co_await client.async_connect( 0xc0'00'02'00, 3301 );
+
+    CHECK( ec );
+    CHECK( ec == fiona::error_code::from_errno( ECANCELED ) );
+
+    ++num_runs;
+    co_return;
+  };
+
+  constexpr int num_clients = 100;
+
+  fiona::io_context ioc;
+  for ( int i = 0; i < num_clients; ++i ) {
+    ioc.post( client( ioc.get_executor() ) );
+  }
+  ioc.run();
+  CHECK( num_runs == num_clients );
+}

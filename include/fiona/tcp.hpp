@@ -219,7 +219,18 @@ private:
         io_uring_prep_connect( sqe, fd_,
                                reinterpret_cast<sockaddr const*>( &addr_ ),
                                sizeof( addr_ ) );
-        sqe->user_data = reinterpret_cast<std::uintptr_t>( this );
+        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+        io_uring_sqe_set_data( sqe, this );
+
+        auto timeout_sqe = io_uring_get_sqe( ring );
+
+        __kernel_timespec ts;
+        ts.tv_sec = 2;
+        ts.tv_nsec = 0;
+        io_uring_prep_link_timeout( timeout_sqe, &ts, 0 );
+        io_uring_sqe_set_data( timeout_sqe, nullptr );
+        io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
+
         io_uring_submit( ring );
 
         h_ = h;
