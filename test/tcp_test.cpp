@@ -115,8 +115,10 @@ TEST_CASE( "accept CQ overflow" ) {
   // this test purposefully exceeds the size of the completion queue so
   // that our multishot accept() needs to be rescheduled
 
-  constexpr std::size_t num_clients = 5000;
-  REQUIRE( num_clients > fiona::io_context::cq_entries );
+  // this number will roughly double because of the one-to-one correspondence
+  // between a connect() CQE and the accept() CQE
+  constexpr std::size_t num_clients = 2600;
+  REQUIRE( 2 * num_clients >= fiona::io_context::cq_entries );
 
   num_runs = 0;
 
