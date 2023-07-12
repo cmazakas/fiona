@@ -313,7 +313,10 @@ struct internal_promise {
   std::suspend_always initial_suspend() { return {}; }
   internal_final_awaitable final_suspend() noexcept { return { tasks }; }
 
-  void unhandled_exception() {}
+  void unhandled_exception() {
+    std::rethrow_exception( std::current_exception() );
+  }
+
   void return_void() {}
 
   task_set_type& tasks;
@@ -396,6 +399,13 @@ public:
   }
 
   void run() {
+    struct guard {
+      detail::task_set_type& tasks;
+      ~guard() { tasks.clear(); }
+    };
+
+    guard g{ tasks() };
+
     auto ex = get_executor();
 
     while ( !tasks().empty() ) {
