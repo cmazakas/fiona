@@ -1,19 +1,19 @@
+#include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/sleep.hpp>
 #include <fiona/tcp.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_translate_exception.hpp>
 
 #include <atomic>
 #include <cstdint>
 
-constexpr std::uint32_t localhost = 0x7f000001;
-
-std::uint16_t
-get_port() {
-  static std::atomic_uint16_t port = 3030;
-  return ++port;
+CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
+  return ex.message();
 }
+
+constexpr std::uint32_t localhost = 0x7f000001;
 
 static int num_runs = 0;
 
@@ -23,28 +23,31 @@ TEST_CASE( "accept sanity test" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  auto const port = get_port();
+  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  auto const port = acceptor.port();
 
-  ioc.post(
-      ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-        fiona::tcp::acceptor acceptor( ex, localhost, port );
-        auto a = acceptor.async_accept();
+  auto server = []( fiona::tcp::acceptor acceptor,
+                    fiona::executor ex ) -> fiona::task<void> {
+    auto a = acceptor.async_accept();
 
-        auto fd = co_await a;
-        close( fd.value() );
+    auto fd = co_await a;
+    close( fd.value() );
 
-        ++num_runs;
-        co_return;
-      } )( ex, port ) );
+    ++num_runs;
+    co_return;
+  };
 
-  ioc.post(
-      ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-        fiona::tcp::client client( ex );
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
 
-        auto ec = co_await client.async_connect( localhost, port );
-        CHECK( !ec );
-        ++num_runs;
-      } )( ex, port ) );
+    auto ec = co_await client.async_connect( localhost, port );
+    CHECK( !ec );
+    ++num_runs;
+  };
+
+  ioc.post( server( std::move( acceptor ), ex ) );
+  ioc.post( client( ex, port ) );
 
   ioc.run();
 
@@ -63,10 +66,11 @@ TEST_CASE( "accept back-pressure test" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  auto const port = get_port();
+  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  auto const port = acceptor.port();
 
-  ex.post( ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-    fiona::tcp::acceptor acceptor( ex, localhost, port );
+  auto server = []( fiona::tcp::acceptor acceptor,
+                    fiona::executor ex ) -> fiona::task<void> {
     auto a = acceptor.async_accept();
 
     {
@@ -86,17 +90,20 @@ TEST_CASE( "accept back-pressure test" ) {
     }
 
     ++num_runs;
-  } )( ex, port ) );
+  };
 
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto ec = co_await client.async_connect( localhost, port );
+    CHECK( !ec );
+    ++num_runs;
+  };
+
+  ioc.post( server( std::move( acceptor ), ex ) );
   for ( unsigned i = 0; i < num_clients; ++i ) {
-    ex.post(
-        ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-          fiona::tcp::client client( ex );
-
-          auto ec = co_await client.async_connect( localhost, port );
-          CHECK( !ec );
-          ++num_runs;
-        } )( ex, port ) );
+    ex.post( client( ex, port ) );
   }
 
   ioc.run();
@@ -116,10 +123,12 @@ TEST_CASE( "accept CQ overflow" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  auto const port = get_port();
+  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
 
-  ex.post( ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-    fiona::tcp::acceptor acceptor( ex, localhost, port );
+  auto const port = acceptor.port();
+
+  auto server = []( fiona::tcp::acceptor acceptor,
+                    fiona::executor ex ) -> fiona::task<void> {
     auto a = acceptor.async_accept();
 
     {
@@ -128,24 +137,26 @@ TEST_CASE( "accept CQ overflow" ) {
     }
 
     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
-
     for ( unsigned i = 1; i < num_clients; ++i ) {
       auto fd = co_await a;
       close( fd.value() );
     }
 
     ++num_runs;
-  } )( ex, port ) );
+  };
 
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto ec = co_await client.async_connect( localhost, port );
+    CHECK( !ec );
+    ++num_runs;
+  };
+
+  ex.post( server( std::move( acceptor ), ex ) );
   for ( unsigned i = 0; i < num_clients; ++i ) {
-    ex.post(
-        ( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
-          fiona::tcp::client client( ex );
-
-          auto ec = co_await client.async_connect( localhost, port );
-          CHECK( !ec );
-          ++num_runs;
-        } )( ex, port ) );
+    ex.post( client( ex, port ) );
   }
 
   ioc.run();

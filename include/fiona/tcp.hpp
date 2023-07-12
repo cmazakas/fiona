@@ -84,12 +84,51 @@ private:
   };
 
 private:
+  sockaddr_storage addr_storage_;
   fiona::executor ex_;
   int fd_ = -1;
+  bool is_ipv4_ = true;
 
 public:
+  acceptor() = delete;
+  acceptor( acceptor const& ) = delete;
+  acceptor& operator=( acceptor const& ) = delete;
+
+  acceptor( acceptor&& rhs ) noexcept : ex_( std::move( rhs.ex_ ) ) {
+    memcpy( &addr_storage_, &rhs.addr_storage_, sizeof( addr_storage_ ) );
+
+    fd_ = rhs.fd_;
+    rhs.fd_ = -1;
+
+    is_ipv4_ = rhs.is_ipv4_;
+  }
+
+  acceptor& operator=( acceptor&& rhs ) noexcept {
+    if ( this != &rhs ) {
+      memcpy( &addr_storage_, &rhs.addr_storage_, sizeof( addr_storage_ ) );
+
+      ex_ = std::move( rhs.ex_ );
+
+      fd_ = rhs.fd_;
+      rhs.fd_ = -1;
+
+      is_ipv4_ = rhs.is_ipv4_;
+    }
+
+    return *this;
+  }
+
+  ~acceptor() {
+    if ( fd_ != -1 ) {
+      close( fd_ );
+    }
+  }
+
   acceptor( fiona::executor ex, std::uint32_t ipv4_addr, std::uint16_t port )
       : ex_( ex ) {
+
+    memset( &addr_storage_, 0, sizeof( addr_storage_ ) );
+
     int fd = socket( AF_INET, SOCK_STREAM, 0 );
     if ( fd == -1 ) {
       fiona::detail::throw_errno_as_error_code( errno );
@@ -118,11 +157,27 @@ public:
     }
 
     fd_ = fd;
+    is_ipv4_ = true;
+    if ( port == 0 ) {
+      socklen_t addrlen = sizeof( sockaddr_in );
+      if ( -1 == getsockname( fd_,
+                              reinterpret_cast<sockaddr*>( &addr_storage_ ),
+                              &addrlen ) ) {
+        fiona::detail::throw_errno_as_error_code( errno );
+      }
+    } else {
+      memcpy( &addr_storage_, &addr, sizeof( addr ) );
+    }
   }
 
-  ~acceptor() { close( fd_ ); }
-
   acceptor_awaitable async_accept() { return { ex_.ring(), fd_ }; }
+
+  std::uint16_t port() {
+    // current limitation because of wsl2's lack of ipv6
+    BOOST_ASSERT( is_ipv4_ );
+    auto paddr = reinterpret_cast<sockaddr_in const*>( &addr_storage_ );
+    return ntohs( paddr->sin_port );
+  }
 };
 
 struct client {
