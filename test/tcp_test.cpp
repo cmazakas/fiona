@@ -166,8 +166,33 @@ TEST_CASE( "accept CQ overflow" ) {
   CHECK( num_runs == num_clients + 1 );
 }
 
-TEST_CASE( "client connect timeout" ) {
+TEST_CASE( "client connection refused" ) {
+  num_runs = 0;
 
+  auto client = []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    client.timeout( std::chrono::seconds( 2 ) );
+
+    auto ec = co_await client.async_connect( localhost, 3301 );
+
+    CHECK( ec );
+    CHECK( ec == fiona::error_code::from_errno( ECONNREFUSED ) );
+
+    ++num_runs;
+    co_return;
+  };
+
+  constexpr int num_clients = 100;
+
+  fiona::io_context ioc;
+  for ( int i = 0; i < num_clients; ++i ) {
+    ioc.post( client( ioc.get_executor() ) );
+  }
+  ioc.run();
+  CHECK( num_runs == num_clients );
+}
+
+TEST_CASE( "client connect timeout" ) {
   num_runs = 0;
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
