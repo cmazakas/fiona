@@ -2,11 +2,13 @@
 #define FIONA_TCP_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/detail/time.hpp>
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
 
 #include <boost/assert.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <iostream>
@@ -187,6 +189,7 @@ private:
 
   private:
     sockaddr_storage addr_;
+    __kernel_timespec ts_;
     io_uring* ring_ = nullptr;
     std::coroutine_handle<> h_;
     int fd_ = -1;
@@ -194,8 +197,9 @@ private:
     bool initiated_ = false;
     bool done_ = false;
 
-    connect_awaitable( sockaddr_in ipv4_addr, io_uring* ring, int fd )
-        : ring_( ring ), fd_{ fd } {
+    connect_awaitable( sockaddr_in ipv4_addr, __kernel_timespec ts,
+                       io_uring* ring, int fd )
+        : ts_{ ts }, ring_( ring ), fd_{ fd } {
       memset( &addr_, 0, sizeof( addr_ ) );
       memcpy( &addr_, &ipv4_addr, sizeof( ipv4_addr ) );
     }
@@ -224,10 +228,7 @@ private:
 
         auto timeout_sqe = io_uring_get_sqe( ring );
 
-        __kernel_timespec ts;
-        ts.tv_sec = 2;
-        ts.tv_nsec = 0;
-        io_uring_prep_link_timeout( timeout_sqe, &ts, 0 );
+        io_uring_prep_link_timeout( timeout_sqe, &ts_, 0 );
         io_uring_sqe_set_data( timeout_sqe, nullptr );
         io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
 
@@ -256,6 +257,7 @@ private:
 
 private:
   fiona::executor ex_;
+  __kernel_timespec ts_;
   int fd_ = -1;
 
 public:
@@ -266,9 +268,18 @@ public:
     }
 
     fd_ = fd;
+    ts_.tv_sec = 30;
+    ts_.tv_nsec = 0;
   }
 
   ~client() { close( fd_ ); }
+
+  template <class Rep, class Period>
+  void timeout( std::chrono::duration<Rep, Period> const& d ) {
+    ts_ = fiona::detail::duration_to_timespec( d );
+  }
+
+  __kernel_timespec timeout() const noexcept { return ts_; }
 
   connect_awaitable async_connect( std::uint32_t ipv4_addr,
                                    std::uint16_t port ) {
@@ -278,7 +289,7 @@ public:
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
     addr.sin_addr.s_addr = htonl( ipv4_addr );
-    return { addr, ex_.ring(), fd_ };
+    return { addr, ts_, ex_.ring(), fd_ };
   }
 };
 

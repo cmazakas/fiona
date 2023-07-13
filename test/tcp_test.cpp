@@ -172,6 +172,7 @@ TEST_CASE( "client connect timeout" ) {
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
+    client.timeout( std::chrono::seconds( 2 ) );
 
     // use one of the IP addresses from the test networks:
     // 192.0.2.0/24
