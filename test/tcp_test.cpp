@@ -26,8 +26,7 @@ TEST_CASE( "accept sanity test" ) {
   fiona::tcp::acceptor acceptor( ex, localhost, 0 );
   auto const port = acceptor.port();
 
-  auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor ex ) -> fiona::task<void> {
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto a = acceptor.async_accept();
 
     auto fd = co_await a;
@@ -43,10 +42,13 @@ TEST_CASE( "accept sanity test" ) {
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
+
+    co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
+
     ++num_runs;
   };
 
-  ioc.post( server( std::move( acceptor ), ex ) );
+  ioc.post( server( std::move( acceptor ) ) );
   ioc.post( client( ex, port ) );
 
   ioc.run();
@@ -98,6 +100,7 @@ TEST_CASE( "accept back-pressure test" ) {
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
+
     ++num_runs;
   };
 

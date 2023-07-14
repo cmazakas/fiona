@@ -7,6 +7,7 @@
 #include <fiona/io_context.hpp>
 
 #include <boost/assert.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -23,64 +24,89 @@ namespace tcp {
 
 struct acceptor {
 private:
-  struct acceptor_awaitable final : fiona::detail::awaitable_base {
+  struct acceptor_awaitable {
     friend struct acceptor;
 
   private:
-    sockaddr_storage addr_storage_;
-    socklen_t addr_storage_size_ = sizeof( addr_storage_ );
-    std::deque<int> connections_;
-    std::coroutine_handle<> h_;
-    io_uring* ring_ = nullptr;
-    int fd_ = -1;
-    bool initiated_ = false;
+    struct frame final : fiona::detail::awaitable_base {
+      sockaddr_storage addr_storage_;
+      socklen_t addr_storage_size_ = sizeof( addr_storage_ );
+      std::deque<int> connections_;
+      std::coroutine_handle<> h_;
+      io_uring* ring_ = nullptr;
+      int fd_ = -1;
+      bool initiated_ = false;
 
-    acceptor_awaitable( io_uring* ring, int fd ) : ring_( ring ), fd_{ fd } {}
+      frame( io_uring* ring, int fd ) : ring_( ring ), fd_{ fd } {}
+      virtual ~frame() {}
+
+      void await_process_cqe( io_uring_cqe* cqe ) {
+        auto fd = cqe->res;
+        connections_.push_back( fd );
+        if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
+          initiated_ = false;
+        }
+
+        if ( ( cqe->flags & IORING_CQE_F_MORE ) && ( cqe->res >= 0 ) ) {
+          intrusive_ptr_add_ref( this );
+        }
+      }
+
+      std::coroutine_handle<> handle() noexcept {
+        auto h = h_;
+        h_ = nullptr;
+        return h;
+      }
+    };
+
+    acceptor_awaitable( io_uring* ring, int fd )
+        : p_( boost::intrusive_ptr<frame>( new frame( ring, fd ) ) ) {}
+
+    boost::intrusive_ptr<frame> p_;
 
   public:
     ~acceptor_awaitable() {
-      if ( initiated_ ) {
-        auto ring = ring_;
+      auto& self = *p_;
+
+      if ( self.initiated_ ) {
+        auto ring = self.ring_;
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_cancel( sqe, this, 0 );
-        sqe->user_data = reinterpret_cast<std::uintptr_t>( this );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_data( sqe, nullptr );
         io_uring_submit( ring );
+
+        intrusive_ptr_release( p_.get() );
       }
     }
 
-    void await_process_cqe( io_uring_cqe* cqe ) {
-      auto fd = cqe->res;
-      connections_.push_back( fd );
-      if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
-        initiated_ = false;
-      }
+    bool await_ready() noexcept {
+      auto& self = *p_;
+      return !self.connections_.empty();
     }
 
-    std::coroutine_handle<> handle() noexcept {
-      auto h = h_;
-      h_ = nullptr;
-      return h;
-    }
-
-    bool await_ready() noexcept { return !connections_.empty(); }
     void await_suspend( std::coroutine_handle<> h ) {
-      h_ = h;
-      if ( !initiated_ ) {
-        auto ring = ring_;
-        auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_multishot_accept(
-            sqe, fd_, reinterpret_cast<sockaddr*>( &addr_storage_ ),
-            &addr_storage_size_, 0 );
-        sqe->user_data = reinterpret_cast<std::uintptr_t>( this );
-        io_uring_submit( ring );
-        initiated_ = true;
+      auto& self = *p_;
+      self.h_ = h;
+      if ( self.initiated_ ) {
+        return;
       }
+
+      auto ring = self.ring_;
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_multishot_accept(
+          sqe, self.fd_, reinterpret_cast<sockaddr*>( &self.addr_storage_ ),
+          &self.addr_storage_size_, 0 );
+      io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+      io_uring_submit( ring );
+      self.initiated_ = true;
     }
 
     fiona::result<int> await_resume() {
-      BOOST_ASSERT( !connections_.empty() );
-      auto fd = connections_.front();
-      connections_.pop_front();
+      auto& self = *p_;
+      BOOST_ASSERT( !self.connections_.empty() );
+      auto fd = self.connections_.front();
+      self.connections_.pop_front();
       return fd;
     }
   };
@@ -182,86 +208,15 @@ public:
   }
 };
 
-struct client {
-private:
-  struct connect_awaitable final : public fiona::detail::awaitable_base {
-    friend struct client;
+struct stream {
 
-  private:
-    sockaddr_storage addr_;
-    __kernel_timespec ts_;
-    io_uring* ring_ = nullptr;
-    std::coroutine_handle<> h_;
-    int fd_ = -1;
-    int res_ = 0;
-    bool initiated_ = false;
-    bool done_ = false;
-
-    connect_awaitable( sockaddr_in ipv4_addr, __kernel_timespec ts,
-                       io_uring* ring, int fd )
-        : ts_{ ts }, ring_( ring ), fd_{ fd } {
-      memset( &addr_, 0, sizeof( addr_ ) );
-      memcpy( &addr_, &ipv4_addr, sizeof( ipv4_addr ) );
-    }
-
-  public:
-    ~connect_awaitable() {
-      if ( initiated_ && !done_ ) {
-        auto ring = ring_;
-        auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_cancel( sqe, this, 0 );
-        sqe->user_data = reinterpret_cast<std::uintptr_t>( this );
-        io_uring_submit( ring );
-      }
-    }
-
-    bool await_ready() { return false; }
-    void await_suspend( std::coroutine_handle<> h ) {
-      if ( !initiated_ ) {
-        auto ring = ring_;
-        auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_connect( sqe, fd_,
-                               reinterpret_cast<sockaddr const*>( &addr_ ),
-                               sizeof( addr_ ) );
-        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
-        io_uring_sqe_set_data( sqe, this );
-
-        auto timeout_sqe = io_uring_get_sqe( ring );
-
-        io_uring_prep_link_timeout( timeout_sqe, &ts_, 0 );
-        io_uring_sqe_set_data( timeout_sqe, nullptr );
-        io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
-
-        io_uring_submit( ring );
-
-        h_ = h;
-        initiated_ = true;
-      }
-    }
-
-    fiona::error_code await_resume() {
-      if ( res_ == 0 ) {
-        return {};
-      }
-
-      return fiona::error_code::from_errno( -res_ );
-    }
-
-    void await_process_cqe( io_uring_cqe* cqe ) {
-      res_ = cqe->res;
-      done_ = true;
-    }
-
-    std::coroutine_handle<> handle() noexcept { return h_; }
-  };
-
-private:
+protected:
   fiona::executor ex_;
   __kernel_timespec ts_;
   int fd_ = -1;
 
 public:
-  client( fiona::executor ex ) : ex_( ex ) {
+  stream( fiona::executor ex ) : ex_( ex ) {
     int fd = socket( AF_INET, SOCK_STREAM, 0 );
     if ( fd == -1 ) {
       fiona::detail::throw_errno_as_error_code( errno );
@@ -272,7 +227,7 @@ public:
     ts_.tv_nsec = 0;
   }
 
-  ~client() { close( fd_ ); }
+  ~stream() { close( fd_ ); }
 
   template <class Rep, class Period>
   void timeout( std::chrono::duration<Rep, Period> const& d ) {
@@ -280,6 +235,97 @@ public:
   }
 
   __kernel_timespec timeout() const noexcept { return ts_; }
+};
+
+struct client : public stream {
+private:
+  struct connect_awaitable {
+    friend struct client;
+
+  private:
+    struct frame final : public fiona::detail::awaitable_base {
+      sockaddr_storage addr_;
+      __kernel_timespec ts_;
+      io_uring* ring_ = nullptr;
+      std::coroutine_handle<> h_;
+      int fd_ = -1;
+      int res_ = 0;
+      bool initiated_ = false;
+      bool done_ = false;
+
+      void await_process_cqe( io_uring_cqe* cqe ) {
+        res_ = cqe->res;
+        done_ = true;
+      }
+
+      std::coroutine_handle<> handle() noexcept { return h_; }
+
+      frame( sockaddr_in ipv4_addr, __kernel_timespec ts, io_uring* ring,
+             int fd )
+          : ts_{ ts }, ring_( ring ), fd_{ fd } {
+        memset( &addr_, 0, sizeof( addr_ ) );
+        memcpy( &addr_, &ipv4_addr, sizeof( ipv4_addr ) );
+      }
+    };
+
+    boost::intrusive_ptr<frame> p_;
+
+    connect_awaitable( sockaddr_in ipv4_addr, __kernel_timespec ts,
+                       io_uring* ring, int fd )
+        : p_( new frame( ipv4_addr, ts, ring, fd ) ) {}
+
+  public:
+    ~connect_awaitable() {
+      auto& self = *p_;
+      if ( self.initiated_ && !self.done_ ) {
+        BOOST_ASSERT( false );
+        // auto ring = ring_;
+        // auto sqe = io_uring_get_sqe( ring );
+        // io_uring_prep_cancel( sqe, this, 0 );
+        // io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        // io_uring_submit( ring );
+      }
+    }
+
+    bool await_ready() { return false; }
+    void await_suspend( std::coroutine_handle<> h ) {
+      auto& self = *p_;
+      if ( !self.initiated_ ) {
+        auto ring = self.ring_;
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_connect( sqe, self.fd_,
+                               reinterpret_cast<sockaddr const*>( &self.addr_ ),
+                               sizeof( self.addr_ ) );
+        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+        io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+
+        auto timeout_sqe = io_uring_get_sqe( ring );
+
+        io_uring_prep_link_timeout( timeout_sqe, &self.ts_, 0 );
+        io_uring_sqe_set_data( timeout_sqe, nullptr );
+        io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
+
+        io_uring_submit( ring );
+
+        self.h_ = h;
+        self.initiated_ = true;
+      }
+    }
+
+    fiona::error_code await_resume() {
+      auto& self = *p_;
+      if ( self.res_ == 0 ) {
+        return {};
+      }
+
+      return fiona::error_code::from_errno( -self.res_ );
+    }
+  };
+
+public:
+  client( fiona::executor ex ) : stream( ex ) {}
+
+  ~client() = default;
 
   connect_awaitable async_connect( std::uint32_t ipv4_addr,
                                    std::uint16_t port ) {

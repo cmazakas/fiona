@@ -5,6 +5,7 @@
 
 #include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/local_shared_ptr.hpp>
 #include <boost/smart_ptr/make_local_shared.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
@@ -354,7 +355,8 @@ executor::ring() const noexcept {
 }
 
 detail::internal_task
-scheduler( detail::task_set_type& tasks, io_uring* ring, task<void> t ) {
+scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
+           task<void> t ) {
   co_await t;
   co_return;
 }
@@ -407,14 +409,17 @@ public:
     guard g{ tasks() };
 
     auto ex = get_executor();
+    auto ring = ex.ring();
 
     while ( !tasks().empty() ) {
       io_uring_cqe* cqe = nullptr;
-      io_uring_wait_cqe( ex.ring(), &cqe );
-      auto guard = cqe_guard( ex.ring(), cqe );
+      io_uring_wait_cqe( ring, &cqe );
+      auto guard = cqe_guard( ring, cqe );
+      auto p = io_uring_cqe_get_data( cqe );
 
-      auto p = reinterpret_cast<void*>( cqe->user_data );
-      BOOST_ASSERT( cqe->user_data );
+      if ( !p ) {
+        continue;
+      }
 
       if ( auto pos = tasks().find( p ); pos != tasks().end() ) {
         auto h = std::coroutine_handle<>::from_address( p );
@@ -425,13 +430,30 @@ public:
         continue;
       }
 
-      auto q = static_cast<detail::awaitable_base*>( p );
+      auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
+                                     false );
+
+      BOOST_ASSERT( q->use_count() >= 1 );
+
+      if ( q->use_count() == 1 ) {
+        continue;
+      }
+
       q->await_process_cqe( cqe );
 
       auto h = q->handle();
       if ( h ) {
         h.resume();
       }
+    }
+
+    io_uring_cqe* cqe = nullptr;
+    while ( 0 == io_uring_peek_cqe( ring, &cqe ) ) {
+      auto guard = cqe_guard( ring, cqe );
+      auto p = io_uring_cqe_get_data( cqe );
+      auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
+                                     false );
+      (void)q;
     }
   }
 };
