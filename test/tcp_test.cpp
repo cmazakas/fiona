@@ -45,6 +45,10 @@ TEST_CASE( "accept sanity test" ) {
 
     co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
 
+    char const msg[] = "hello, world!";
+    auto result = co_await client.async_write( msg, std::size( msg ) );
+    CHECK( result.value() == std::size( msg ) );
+
     ++num_runs;
   };
 

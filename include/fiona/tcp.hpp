@@ -209,6 +209,90 @@ public:
 };
 
 struct stream {
+private:
+  struct write_awaitable {
+    friend struct stream;
+
+  private:
+    struct frame final : public fiona::detail::awaitable_base {
+      __kernel_timespec ts_;
+      io_uring* ring_ = nullptr;
+      void const* buf_ = nullptr;
+      std::coroutine_handle<> h_ = nullptr;
+      unsigned nbytes_ = 0;
+      int fd_ = -1;
+      int res_ = 0;
+      bool initiated_ = false;
+      bool done_ = false;
+
+      virtual ~frame() {}
+
+      frame( __kernel_timespec ts, io_uring* ring, int fd, void const* buf,
+             unsigned nbytes )
+          : ts_{ ts }, ring_( ring ), buf_( buf ), nbytes_{ nbytes },
+            fd_{ fd } {}
+
+      void await_process_cqe( io_uring_cqe* cqe ) {
+        res_ = cqe->res;
+        done_ = true;
+      }
+
+      std::coroutine_handle<> handle() noexcept { return h_; }
+    };
+
+  private:
+    boost::intrusive_ptr<frame> p_;
+
+    write_awaitable( __kernel_timespec ts, io_uring* ring, int fd,
+                     void const* buf, unsigned nbytes )
+        : p_( new frame( ts, ring, fd, buf, nbytes ) ) {}
+
+  public:
+    ~write_awaitable() {
+      auto& self = *p_;
+      if ( self.initiated_ && !self.done_ ) {
+        BOOST_ASSERT( false );
+        // auto ring = ring_;
+        // auto sqe = io_uring_get_sqe( ring );
+        // io_uring_prep_cancel( sqe, this, 0 );
+        // io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        // io_uring_submit( ring );
+      }
+    }
+
+    bool await_ready() { return false; }
+    void await_suspend( std::coroutine_handle<> h ) {
+      auto& self = *p_;
+      if ( self.initiated_ ) {
+        return;
+      }
+
+      auto ring = self.ring_;
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_write( sqe, self.fd_, self.buf_, self.nbytes_, 0 );
+      io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+      io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+
+      auto timeout_sqe = io_uring_get_sqe( ring );
+
+      io_uring_prep_link_timeout( timeout_sqe, &self.ts_, 0 );
+      io_uring_sqe_set_data( timeout_sqe, nullptr );
+      io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
+
+      io_uring_submit( ring );
+
+      self.h_ = h;
+      self.initiated_ = true;
+    }
+
+    fiona::result<std::size_t> await_resume() {
+      auto& self = *p_;
+      if ( self.res_ >= 0 ) {
+        return { static_cast<std::size_t>( self.res_ ) };
+      }
+      return fiona::error_code::from_errno( -self.res_ );
+    }
+  };
 
 protected:
   fiona::executor ex_;
@@ -235,6 +319,10 @@ public:
   }
 
   __kernel_timespec timeout() const noexcept { return ts_; }
+
+  write_awaitable async_write( void const* buf, unsigned nbytes ) {
+    return write_awaitable( ts_, ex_.ring(), fd_, buf, nbytes );
+  }
 };
 
 struct client : public stream {
