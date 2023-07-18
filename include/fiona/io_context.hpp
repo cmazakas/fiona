@@ -367,7 +367,7 @@ executor::post( task<void> t ) {
 
   auto sqe = io_uring_get_sqe( ring() );
   io_uring_prep_nop( sqe );
-  sqe->user_data = reinterpret_cast<std::uintptr_t>( it.h_.address() );
+  io_uring_sqe_set_data( sqe, it.h_.address() );
   io_uring_submit( ring() );
 
   framep_->tasks_.insert( std::move( it ) );
@@ -384,6 +384,7 @@ private:
 
   decltype( auto ) tasks() const noexcept { return ( framep_->tasks_ ); }
 
+private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
 
 public:
@@ -406,10 +407,58 @@ public:
       ~guard() { tasks.clear(); }
     };
 
-    guard g{ tasks() };
+    struct dangling_cqe_guard {
+      boost::unordered_flat_set<void*> tasks;
+      io_uring* ring;
+      dangling_cqe_guard( detail::task_set_type const& tasks_, io_uring* ring_ )
+          : ring( ring_ ) {
+        for ( auto const& t : tasks_ ) {
+          tasks.insert( t.h_.address() );
+        }
+      }
+
+      ~dangling_cqe_guard() {
+        boost::unordered_flat_set<void*> blacklist;
+
+        io_uring_cqe* cqe = nullptr;
+        while ( 0 == io_uring_peek_cqe( ring, &cqe ) ) {
+          auto guard = cqe_guard( ring, cqe );
+          auto p = io_uring_cqe_get_data( cqe );
+
+          if ( p == nullptr ) {
+            continue;
+          }
+
+          if ( tasks.find( p ) != tasks.end() ) {
+            continue;
+          }
+
+          if ( blacklist.find( p ) != blacklist.end() ) {
+            // when destructing, we can have N CQEs associated with an awaitable
+            // because of multishot ops
+            // our normal I/O loop handles this case fine, but during cleanup
+            // like this we need to be aware that multiple CQEs can share the
+            // same user_data
+            continue;
+          }
+
+          auto q = boost::intrusive_ptr(
+              static_cast<detail::awaitable_base*>( p ), false );
+
+          if ( q->use_count() == 1 ) {
+            blacklist.insert( p );
+          }
+
+          (void)q;
+        }
+      }
+    };
 
     auto ex = get_executor();
     auto ring = ex.ring();
+
+    dangling_cqe_guard dangling_guard{ tasks(), ring };
+    guard g{ tasks() };
 
     while ( !tasks().empty() ) {
       io_uring_cqe* cqe = nullptr;
@@ -432,7 +481,6 @@ public:
 
       auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
                                      false );
-
       BOOST_ASSERT( q->use_count() >= 1 );
 
       if ( q->use_count() == 1 ) {
@@ -440,20 +488,10 @@ public:
       }
 
       q->await_process_cqe( cqe );
-
       auto h = q->handle();
       if ( h ) {
         h.resume();
       }
-    }
-
-    io_uring_cqe* cqe = nullptr;
-    while ( 0 == io_uring_peek_cqe( ring, &cqe ) ) {
-      auto guard = cqe_guard( ring, cqe );
-      auto p = io_uring_cqe_get_data( cqe );
-      auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
-                                     false );
-      (void)q;
     }
   }
 };

@@ -60,7 +60,7 @@ private:
     };
 
     acceptor_awaitable( io_uring* ring, int fd )
-        : p_( boost::intrusive_ptr<frame>( new frame( ring, fd ) ) ) {}
+        : p_( new frame( ring, fd ) ) {}
 
     boost::intrusive_ptr<frame> p_;
 
@@ -71,12 +71,10 @@ private:
       if ( self.initiated_ ) {
         auto ring = self.ring_;
         auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_cancel( sqe, this, 0 );
+        io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
         io_uring_submit( ring );
-
-        intrusive_ptr_release( p_.get() );
       }
     }
 
@@ -366,12 +364,12 @@ private:
     ~connect_awaitable() {
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
-        BOOST_ASSERT( false );
-        // auto ring = ring_;
-        // auto sqe = io_uring_get_sqe( ring );
-        // io_uring_prep_cancel( sqe, this, 0 );
-        // io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-        // io_uring_submit( ring );
+        auto ring = self.ring_;
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_cancel( sqe, p_.get(), 0 );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_submit( ring );
       }
     }
 
