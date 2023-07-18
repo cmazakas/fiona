@@ -404,20 +404,16 @@ public:
   void run() {
     struct guard {
       detail::task_set_type& tasks;
-      ~guard() { tasks.clear(); }
-    };
-
-    struct dangling_cqe_guard {
-      boost::unordered_flat_set<void*> tasks;
       io_uring* ring;
-      dangling_cqe_guard( detail::task_set_type const& tasks_, io_uring* ring_ )
-          : ring( ring_ ) {
-        for ( auto const& t : tasks_ ) {
-          tasks.insert( t.h_.address() );
-        }
-      }
 
-      ~dangling_cqe_guard() {
+      ~guard() {
+        boost::unordered_flat_set<void*> task_addrs;
+        for ( auto const& t : tasks ) {
+          task_addrs.insert( t.h_.address() );
+        }
+
+        tasks.clear();
+
         boost::unordered_flat_set<void*> blacklist;
 
         io_uring_cqe* cqe = nullptr;
@@ -429,7 +425,7 @@ public:
             continue;
           }
 
-          if ( tasks.find( p ) != tasks.end() ) {
+          if ( task_addrs.find( p ) != task_addrs.end() ) {
             continue;
           }
 
@@ -457,8 +453,7 @@ public:
     auto ex = get_executor();
     auto ring = ex.ring();
 
-    dangling_cqe_guard dangling_guard{ tasks(), ring };
-    guard g{ tasks() };
+    guard g{ tasks(), ring };
 
     while ( !tasks().empty() ) {
       io_uring_cqe* cqe = nullptr;
