@@ -7,7 +7,7 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-find_package(liburing 2.4 EXACT REQUIRED)
+find_package(liburing 2.4 REQUIRED)
 find_package(Boost 1.82 REQUIRED)
 
 add_library(fiona INTERFACE)
