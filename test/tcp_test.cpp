@@ -6,8 +6,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_translate_exception.hpp>
 
-#include <atomic>
 #include <cstdint>
+#include <string_view>
 
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
   return ex.message();
@@ -21,6 +21,8 @@ TEST_CASE( "accept sanity test" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
   auto ex = ioc.get_executor();
 
   fiona::tcp::acceptor acceptor( ex, localhost, 0 );
@@ -29,9 +31,16 @@ TEST_CASE( "accept sanity test" ) {
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto a = acceptor.async_accept();
 
-    auto fd = co_await a;
-    close( fd.value() );
+    auto stream = co_await a;
 
+    auto r = stream.value().async_recv( 0 );
+    auto buf = co_await r;
+
+    auto octets = buf.readable_bytes();
+    auto str = std::string_view( reinterpret_cast<char const*>( octets.data() ),
+                                 octets.size() - 1 );
+    CHECK( octets.size() > 0 );
+    CHECK( str == "hello, world!" );
     ++num_runs;
     co_return;
   };
@@ -81,8 +90,8 @@ TEST_CASE( "accept back-pressure test" ) {
 
     {
       // actually start the multishot accept sqe
-      auto fd = co_await a;
-      close( fd.value() );
+      auto stream = co_await a;
+      (void)stream;
     }
 
     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
@@ -90,9 +99,9 @@ TEST_CASE( "accept back-pressure test" ) {
     for ( unsigned i = 1; i < num_clients; ++i ) {
       // ideally, this doesn't suspend at all and instead we just start pulling
       // from the queue of waiting connections
-      auto fd = co_await a;
-      CHECK( fd.value() >= 0 );
-      close( fd.value() );
+      auto stream = co_await a;
+
+      CHECK( stream.has_value() );
     }
 
     ++num_runs;
@@ -141,14 +150,14 @@ TEST_CASE( "accept CQ overflow" ) {
     auto a = acceptor.async_accept();
 
     {
-      auto fd = co_await a;
-      close( fd.value() );
+      auto stream = co_await a;
+      CHECK( stream.has_value() );
     }
 
     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
     for ( unsigned i = 1; i < num_clients; ++i ) {
-      auto fd = co_await a;
-      close( fd.value() );
+      auto stream = co_await a;
+      CHECK( stream.has_value() );
     }
 
     ++num_runs;

@@ -13,8 +13,10 @@
 #include <coroutine>
 #include <cstddef>
 #include <iostream>
+#include <span>
 
 #include <liburing.h>
+#include <sys/mman.h>
 
 namespace fiona {
 
@@ -28,6 +30,111 @@ namespace detail {
 struct io_context_frame;
 }
 
+using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
+
+struct buf_ring {
+private:
+  buffer_sequence_type bufs_;
+  io_uring* ring_ = nullptr;
+  io_uring_buf_ring* buf_ring_ = nullptr;
+  std::uint16_t bgid_ = 0;
+
+public:
+  buf_ring() = delete;
+
+  buf_ring( buf_ring const& ) = delete;
+  buf_ring& operator=( buf_ring const& ) = delete;
+
+  buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
+            std::uint16_t bgid )
+      : bufs_( num_bufs ), ring_( ring ), bgid_{ bgid } {
+
+    void* mapped =
+        mmap( nullptr, sizeof( io_uring_buf ) * bufs_.size(),
+              PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0 );
+
+    if ( mapped == MAP_FAILED ) {
+      throw std::bad_alloc();
+    }
+
+    for ( auto& buf : bufs_ ) {
+      buf.resize( buf_size );
+    }
+
+    buf_ring_ = static_cast<io_uring_buf_ring*>( mapped );
+
+    io_uring_buf_reg reg;
+    std::memset( &reg, 0, sizeof( reg ) );
+    reg.bgid = bgid_;
+    reg.flags = 0;
+    reg.ring_addr = reinterpret_cast<std::uintptr_t>( buf_ring_ );
+    reg.ring_entries = bufs_.size();
+
+    io_uring_buf_ring_init( buf_ring_ );
+
+    auto ret = io_uring_register_buf_ring( ring_, &reg, 0 );
+    if ( ret != 0 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    for ( std::size_t i = 0; i < bufs_.size(); ++i ) {
+      auto& buf = bufs_[i];
+      io_uring_buf_ring_add( buf_ring_, buf.data(), buf.size(), i,
+                             io_uring_buf_ring_mask( bufs_.size() ), i );
+    }
+    io_uring_buf_ring_advance( buf_ring_, bufs_.size() );
+  }
+
+  ~buf_ring() {
+    if ( buf_ring_ ) {
+      BOOST_ASSERT( ring_ );
+      io_uring_unregister_buf_ring( ring_, bgid_ );
+      munmap( buf_ring_, sizeof( io_uring_buf ) * bufs_.size() );
+    }
+  }
+
+  buf_ring( buf_ring&& rhs ) noexcept {
+    bufs_ = std::move( rhs.bufs_ );
+    ring_ = rhs.ring_;
+    buf_ring_ = rhs.buf_ring_;
+    bgid_ = rhs.bgid_;
+
+    rhs.ring_ = nullptr;
+    rhs.buf_ring_ = nullptr;
+    rhs.bgid_ = 0;
+  }
+
+  buf_ring& operator=( buf_ring&& rhs ) noexcept {
+    if ( this != &rhs ) {
+      if ( buf_ring_ ) {
+        BOOST_ASSERT( ring_ );
+        io_uring_unregister_buf_ring( ring_, bgid_ );
+        munmap( buf_ring_, sizeof( io_uring_buf ) * bufs_.size() );
+      }
+
+      bufs_ = std::move( rhs.bufs_ );
+      ring_ = rhs.ring_;
+      buf_ring_ = rhs.buf_ring_;
+      bgid_ = rhs.bgid_;
+
+      rhs.ring_ = nullptr;
+      rhs.buf_ring_ = nullptr;
+      rhs.bgid_ = 0;
+    }
+    return *this;
+  }
+
+  std::span<unsigned char> get_buffer( std::size_t bid ) noexcept {
+    return { bufs_[bid] };
+  }
+
+  io_uring_buf_ring* get() const noexcept { return buf_ring_; }
+
+  std::size_t size() const noexcept { return bufs_.size(); }
+
+  std::uint16_t bgid() const noexcept { return bgid_; }
+};
+
 struct executor {
 private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
@@ -38,6 +145,7 @@ public:
 
   io_uring* ring() const noexcept;
   void post( task<void> t );
+  buf_ring* get_buffer_group( std::size_t bgid ) noexcept;
 };
 
 template <class T>
@@ -330,6 +438,7 @@ struct io_context_frame {
   constexpr static unsigned cq_entries = 4096;
 
   task_set_type tasks_;
+  std::vector<buf_ring> buf_rings_;
   io_uring io_ring_;
 
   io_context_frame() {
@@ -373,6 +482,16 @@ executor::post( task<void> t ) {
   framep_->tasks_.insert( std::move( it ) );
 }
 
+buf_ring*
+executor::get_buffer_group( std::size_t bgid ) noexcept {
+  for ( auto& bg : framep_->buf_rings_ ) {
+    if ( bgid == bg.bgid() ) {
+      return &bg;
+    }
+  }
+  return nullptr;
+}
+
 struct io_context {
 private:
   struct cqe_guard {
@@ -399,6 +518,13 @@ public:
   void post( task<void> t ) {
     auto ex = get_executor();
     ex.post( std::move( t ) );
+  }
+
+  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size,
+                                 std::uint16_t buffer_group_id ) {
+    auto ring = &framep_->io_ring_;
+    auto br = buf_ring( ring, num_bufs, buf_size, buffer_group_id );
+    framep_->buf_rings_.push_back( std::move( br ) );
   }
 
   void run() {
