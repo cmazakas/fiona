@@ -25,14 +25,15 @@ namespace tcp {
 struct borrowed_buffer {
 private:
   io_uring_buf_ring* br_ = nullptr;
-  void* addr_;
+  void* addr_ = nullptr;
   unsigned len_ = 0;
   unsigned num_read_ = 0;
   std::size_t num_bufs_ = 0;
   std::uint16_t bid_ = 0;
 
 public:
-  borrowed_buffer() = delete;
+  borrowed_buffer() = default;
+
   borrowed_buffer( borrowed_buffer const& ) = delete;
   borrowed_buffer& operator=( borrowed_buffer const& ) = delete;
 
@@ -100,7 +101,7 @@ private:
 
   private:
     struct frame final : public fiona::detail::awaitable_base {
-      std::deque<borrowed_buffer> buffers_;
+      std::deque<result<borrowed_buffer>> buffers_;
 
       std::coroutine_handle<> h_;
       io_uring* ring_ = nullptr;
@@ -119,11 +120,17 @@ private:
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         if ( cqe->res >= 0 ) {
-          BOOST_ASSERT( cqe->flags & IORING_CQE_F_BUFFER );
-          std::uint16_t bid = cqe->flags >> 16;
-          auto buf = br_.get_buffer( bid );
-          buffers_.push_back( borrowed_buffer(
-              br_.get(), buf.data(), buf.size(), br_.size(), bid, cqe->res ) );
+          if ( cqe->flags & IORING_CQE_F_BUFFER ) {
+            std::uint16_t bid = cqe->flags >> 16;
+            auto buf = br_.get_buffer( bid );
+            buffers_.push_back( borrowed_buffer( br_.get(), buf.data(),
+                                                 buf.size(), br_.size(), bid,
+                                                 cqe->res ) );
+          } else {
+            buffers_.push_back( borrowed_buffer{} );
+          }
+        } else {
+          buffers_.push_back( fiona::error_code::from_errno( -cqe->res ) );
         }
 
         if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
@@ -184,7 +191,7 @@ private:
       self.initiated_ = true;
     }
 
-    borrowed_buffer await_resume() {
+    result<borrowed_buffer> await_resume() {
       auto& self = *p_;
       BOOST_ASSERT( !self.buffers_.empty() );
       auto borrowed_buf = std::move( self.buffers_.front() );

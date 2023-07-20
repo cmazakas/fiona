@@ -36,7 +36,7 @@ TEST_CASE( "accept sanity test" ) {
     auto r = stream.value().async_recv( 0 );
     auto buf = co_await r;
 
-    auto octets = buf.readable_bytes();
+    auto octets = buf.value().readable_bytes();
     auto str = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() - 1 );
     CHECK( octets.size() > 0 );
@@ -235,4 +235,99 @@ TEST_CASE( "client connect timeout" ) {
   }
   ioc.run();
   CHECK( num_runs == num_clients );
+}
+
+TEST_CASE( "tcp echo" ) {
+  num_runs = 0;
+  constexpr int num_clients = 100;
+  constexpr int num_msgs = 1000;
+  constexpr std::uint16_t bgid = 0;
+
+  constexpr std::string_view msg = "hello, world!";
+
+  fiona::io_context ioc;
+  ioc.register_buffer_sequence( 1024, 128, bgid );
+
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  auto const port = acceptor.port();
+
+  auto handle_request = []( fiona::executor ex, fiona::tcp::stream stream,
+                            std::string_view msg ) -> fiona::task<void> {
+    std::size_t num_bytes = 0;
+
+    auto rx = stream.async_recv( bgid );
+
+    while ( num_bytes < num_msgs * msg.size() ) {
+      auto borrowed_buf = co_await rx;
+
+      auto octets = borrowed_buf.value().readable_bytes();
+      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
+                                 octets.size() );
+      CHECK( m == msg );
+
+      auto num_written =
+          co_await stream.async_write( octets.data(), octets.size() );
+
+      CHECK( !num_written.has_error() );
+      CHECK( num_written.value() == octets.size() );
+      num_bytes += octets.size();
+    }
+
+    ++num_runs;
+  };
+
+  auto server = [handle_request]( fiona::executor ex,
+                                  fiona::tcp::acceptor acceptor,
+                                  std::string_view msg ) -> fiona::task<void> {
+    auto a = acceptor.async_accept();
+
+    std::vector<fiona::tcp::stream> sessions;
+    for ( int i = 0; i < num_clients; ++i ) {
+      auto stream = co_await a;
+      ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
+    }
+
+    ++num_runs;
+    co_return;
+  };
+
+  auto client = []( fiona::executor ex, std::uint16_t port,
+                    std::string_view msg ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto ec = co_await client.async_connect( localhost, port );
+    CHECK( !ec );
+
+    std::size_t num_bytes = 0;
+
+    auto rx = client.async_recv( bgid );
+
+    while ( num_bytes < num_msgs * msg.size() ) {
+      auto result = co_await client.async_write( msg.data(), msg.size() );
+      CHECK( result.value() == std::size( msg ) );
+
+      auto borrowed_buf = co_await rx;
+
+      auto octets = borrowed_buf.value().readable_bytes();
+      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
+                                 octets.size() );
+      CHECK( m == msg );
+
+      num_bytes += octets.size();
+    }
+
+    ++num_runs;
+  };
+
+  ioc.post( server( ex, std::move( acceptor ), msg ) );
+
+  for ( int i = 0; i < num_clients; ++i ) {
+    ioc.post( client( ex, port, msg ) );
+  }
+
+  ioc.run();
+
+  CHECK( num_runs == 1 + ( 2 * num_clients ) );
 }
