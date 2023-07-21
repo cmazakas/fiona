@@ -462,11 +462,6 @@ struct io_context_frame {
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
-
-    // ret = io_uring_register_ring_fd( &io_ring_ );
-    // if ( ret != 1 ) {
-    //   fiona::detail::throw_errno_as_error_code( -ret );
-    // }
   }
 
   ~io_context_frame() { io_uring_queue_exit( &io_ring_ ); }
@@ -596,6 +591,12 @@ public:
     auto ring = ex.ring();
 
     guard g{ tasks(), ring };
+
+    int ret = -1;
+    ret = io_uring_register_ring_fd( ex.ring() );
+    if ( ret != 1 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
 
     while ( !tasks().empty() ) {
       io_uring_cqe* cqe = nullptr;
