@@ -437,11 +437,14 @@ struct io_context_frame {
   constexpr static unsigned sq_entries = 512;
   constexpr static unsigned cq_entries = 4096;
 
+  int ret = -1;
+
+  io_uring io_ring_;
   task_set_type tasks_;
   std::vector<buf_ring> buf_rings_;
-  io_uring io_ring_;
+  std::vector<int> files_;
 
-  io_context_frame() {
+  io_context_frame() : files_( 24'000, -1 ) {
     unsigned const entries = sq_entries;
 
     io_uring_params params;
@@ -450,7 +453,20 @@ struct io_context_frame {
     params.cq_entries = cq_entries;
     params.flags |= IORING_SETUP_CQSIZE;
 
-    io_uring_queue_init_params( entries, &io_ring_, &params );
+    ret = io_uring_queue_init_params( entries, &io_ring_, &params );
+    if ( ret != 0 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    ret = io_uring_register_files( &io_ring_, files_.data(), files_.size() );
+    if ( ret != 0 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    // ret = io_uring_register_ring_fd( &io_ring_ );
+    // if ( ret != 1 ) {
+    //   fiona::detail::throw_errno_as_error_code( -ret );
+    // }
   }
 
   ~io_context_frame() { io_uring_queue_exit( &io_ring_ ); }

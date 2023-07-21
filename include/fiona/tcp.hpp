@@ -183,7 +183,7 @@ private:
       auto ring = self.ring_;
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
-      io_uring_sqe_set_flags( sqe, IOSQE_BUFFER_SELECT );
+      io_uring_sqe_set_flags( sqe, IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
       sqe->buf_group = self.bgid_;
 
@@ -242,12 +242,12 @@ private:
     ~write_awaitable() {
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
-        BOOST_ASSERT( false );
-        // auto ring = ring_;
-        // auto sqe = io_uring_get_sqe( ring );
-        // io_uring_prep_cancel( sqe, this, 0 );
-        // io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-        // io_uring_submit( ring );
+        auto ring = self.ring_;
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_cancel( sqe, p_.get(), 0 );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_submit( ring );
       }
     }
 
@@ -262,7 +262,7 @@ private:
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_write( sqe, self.fd_, self.buf_, self.nbytes_, 0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+      io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
 
       auto timeout_sqe = io_uring_get_sqe( ring );
 
@@ -296,20 +296,7 @@ public:
   stream( stream const& ) = delete;
   stream& operator=( stream const& ) = delete;
 
-  stream( fiona::executor ex ) : ex_( ex ) {
-    int fd = socket( AF_INET, SOCK_STREAM, 0 );
-    if ( fd == -1 ) {
-      fiona::detail::throw_errno_as_error_code( errno );
-    }
-
-    fd_ = fd;
-    ts_.tv_sec = 30;
-    ts_.tv_nsec = 0;
-  }
-
-  stream( fiona::executor ex, int fd ) : ex_( ex ), fd_{ fd } {
-    BOOST_ASSERT( ( fcntl( fd_, F_GETFD ) != -1 ) || ( errno != EBADF ) );
-  }
+  stream( fiona::executor ex, int fd ) : ex_( ex ), ts_{}, fd_{ fd } {}
 
   stream( stream&& rhs ) noexcept
       : ex_( std::move( rhs.ex_ ) ), ts_{ rhs.ts_ }, fd_{ rhs.fd_ } {
@@ -319,14 +306,24 @@ public:
 
   ~stream() {
     if ( fd_ >= 0 ) {
-      close( fd_ );
+      auto ring = ex_.ring();
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_close_direct( sqe, fd_ );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      io_uring_sqe_set_data( sqe, nullptr );
+      io_uring_submit( ring );
     }
   }
 
   stream& operator=( stream&& rhs ) noexcept {
     if ( this != &rhs ) {
       if ( fd_ >= 0 ) {
-        close( fd_ );
+        auto ring = ex_.ring();
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_close_direct( sqe, fd_ );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_submit( ring );
       }
 
       ex_ = std::move( rhs.ex_ );
@@ -347,12 +344,10 @@ public:
   __kernel_timespec timeout() const noexcept { return ts_; }
 
   write_awaitable async_write( void const* buf, unsigned nbytes ) {
-    BOOST_ASSERT( ( fcntl( fd_, F_GETFD ) != -1 ) || ( errno != EBADF ) );
     return write_awaitable( ts_, ex_.ring(), fd_, buf, nbytes );
   }
 
   recv_awaitable async_recv( std::uint16_t bgid ) {
-    BOOST_ASSERT( ( fcntl( fd_, F_GETFD ) != -1 ) || ( errno != EBADF ) );
     auto maybe_group = ex_.get_buffer_group( bgid );
     if ( !maybe_group ) {
       fiona::detail::throw_errno_as_error_code( EINVAL );
@@ -435,9 +430,8 @@ private:
 
       auto ring = self.ring_;
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_multishot_accept(
-          sqe, self.fd_, reinterpret_cast<sockaddr*>( &self.addr_storage_ ),
-          &self.addr_storage_size_, 0 );
+      io_uring_prep_multishot_accept_direct( sqe, self.fd_, nullptr, nullptr,
+                                             0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
       io_uring_submit( ring );
       self.initiated_ = true;
@@ -551,6 +545,70 @@ public:
 
 struct client : public stream {
 private:
+  friend struct client_awaitable;
+
+  struct client_awaitable {
+    friend struct client;
+
+    struct frame final : public fiona::detail::awaitable_base {
+      executor ex_;
+      std::coroutine_handle<> h_;
+      int fd_ = -1;
+      bool initiated_ = false;
+      bool done_ = false;
+
+      frame( executor ex ) : ex_( ex ) {}
+
+      void await_process_cqe( io_uring_cqe* cqe ) {
+        fd_ = cqe->res;
+        done_ = true;
+      }
+
+      std::coroutine_handle<> handle() noexcept { return h_; }
+    };
+
+    boost::intrusive_ptr<frame> p_;
+
+    client_awaitable( executor ex ) : p_( new frame( ex ) ) {}
+
+    ~client_awaitable() {
+      auto& self = *p_;
+      if ( self.initiated_ && !self.done_ ) {
+        auto ring = self.ex_.ring();
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_cancel( sqe, p_.get(), 0 );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_submit( ring );
+      }
+    }
+
+    bool await_ready() const noexcept { return false; }
+    void await_suspend( std::coroutine_handle<> h ) {
+      auto& self = *p_;
+      if ( self.initiated_ ) {
+        return;
+      }
+
+      self.h_ = h;
+      auto ring = self.ex_.ring();
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_socket_direct_alloc( sqe, AF_INET, SOCK_STREAM, 0, 0 );
+      io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+      io_uring_submit( ring );
+
+      self.initiated_ = true;
+    }
+
+    result<client> await_resume() {
+      auto& self = *p_;
+      if ( self.fd_ < 0 ) {
+        return fiona::error_code::from_errno( -self.fd_ );
+      }
+      return { client( self.ex_, self.fd_ ) };
+    }
+  };
+
   struct connect_awaitable {
     friend struct client;
 
@@ -608,7 +666,7 @@ private:
         io_uring_prep_connect( sqe, self.fd_,
                                reinterpret_cast<sockaddr const*>( &self.addr_ ),
                                sizeof( self.addr_ ) );
-        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
         io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
 
         auto timeout_sqe = io_uring_get_sqe( ring );
@@ -634,10 +692,18 @@ private:
     }
   };
 
-public:
-  client( fiona::executor ex ) : stream( ex ) {}
+  client( fiona::executor ex, int fd ) : stream( ex, fd ) {}
 
+public:
   ~client() = default;
+
+  client( client const& ) = delete;
+  client& operator=( client const& ) = delete;
+
+  client( client&& rhs ) noexcept = default;
+  client& operator=( client&& rhs ) noexcept = default;
+
+  static client_awaitable make( executor ex ) { return client_awaitable( ex ); }
 
   connect_awaitable async_connect( std::uint32_t ipv4_addr,
                                    std::uint16_t port ) {

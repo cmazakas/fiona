@@ -41,13 +41,20 @@ TEST_CASE( "accept sanity test" ) {
                                  octets.size() - 1 );
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
+
+    auto n_result =
+        co_await stream.value().async_write( octets.data(), octets.size() );
+
+    CHECK( n_result.value() == octets.size() );
+
     ++num_runs;
     co_return;
   };
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
@@ -109,7 +116,8 @@ TEST_CASE( "accept back-pressure test" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
@@ -165,10 +173,14 @@ TEST_CASE( "accept CQ overflow" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
-
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
+    client.timeout( std::chrono::seconds( 3 ) );
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
+    if ( ec ) {
+      throw ec;
+    }
     ++num_runs;
   };
 
@@ -186,7 +198,8 @@ TEST_CASE( "client connection refused" ) {
   num_runs = 0;
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
     client.timeout( std::chrono::seconds( 2 ) );
 
     auto ec = co_await client.async_connect( localhost, 3301 );
@@ -212,7 +225,8 @@ TEST_CASE( "client connect timeout" ) {
   num_runs = 0;
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
     client.timeout( std::chrono::seconds( 2 ) );
 
     // use one of the IP addresses from the test networks:
@@ -239,7 +253,7 @@ TEST_CASE( "client connect timeout" ) {
 
 TEST_CASE( "tcp echo" ) {
   num_runs = 0;
-  constexpr int num_clients = 100;
+  constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
   constexpr std::uint16_t bgid = 0;
 
@@ -253,7 +267,7 @@ TEST_CASE( "tcp echo" ) {
   fiona::tcp::acceptor acceptor( ex, localhost, 0 );
   auto const port = acceptor.port();
 
-  auto handle_request = []( fiona::executor ex, fiona::tcp::stream stream,
+  auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void> {
     std::size_t num_bytes = 0;
 
@@ -283,7 +297,6 @@ TEST_CASE( "tcp echo" ) {
                                   std::string_view msg ) -> fiona::task<void> {
     auto a = acceptor.async_accept();
 
-    std::vector<fiona::tcp::stream> sessions;
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await a;
       ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
@@ -295,7 +308,8 @@ TEST_CASE( "tcp echo" ) {
 
   auto client = []( fiona::executor ex, std::uint16_t port,
                     std::string_view msg ) -> fiona::task<void> {
-    fiona::tcp::client client( ex );
+    auto client_result = co_await fiona::tcp::client::make( ex );
+    auto& client = client_result.value();
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );
@@ -331,3 +345,10 @@ TEST_CASE( "tcp echo" ) {
 
   CHECK( num_runs == 1 + ( 2 * num_clients ) );
 }
+
+// things to test:
+// * removing buffer groups during async ops
+// * buffer exhausting
+// * recv timeouts
+// * exceptions being thrown at random times
+// * update accept() to be more result-oriented instead of just `i32`
