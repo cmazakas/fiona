@@ -458,7 +458,12 @@ struct io_context_frame {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
 
-    ret = io_uring_register_files( &io_ring_, files_.data(), files_.size() );
+    ret = io_uring_register_ring_fd( &io_ring_ );
+    if ( ret != 1 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    ret = io_uring_register_files_sparse( &io_ring_, params_.num_files_ );
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
