@@ -259,16 +259,22 @@ private:
       }
 
       auto ring = self.ring_;
-      auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_write( sqe, self.fd_, self.buf_, self.nbytes_, 0 );
-      io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
 
-      auto timeout_sqe = io_uring_get_sqe( ring );
+      {
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_send( sqe, self.fd_, self.buf_, self.nbytes_,
+                            MSG_WAITALL );
+        io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
+      }
 
-      io_uring_prep_link_timeout( timeout_sqe, &self.ts_, 0 );
-      io_uring_sqe_set_data( timeout_sqe, nullptr );
-      io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
+      {
+        auto sqe = io_uring_get_sqe( ring );
+
+        io_uring_prep_link_timeout( sqe, &self.ts_, 0 );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      }
 
       io_uring_submit( ring );
 
@@ -309,7 +315,7 @@ public:
       auto ring = ex_.ring();
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_close_direct( sqe, fd_ );
-      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS | IOSQE_FIXED_FILE );
       io_uring_sqe_set_data( sqe, nullptr );
       io_uring_submit( ring );
     }
@@ -321,7 +327,8 @@ public:
         auto ring = ex_.ring();
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_close_direct( sqe, fd_ );
-        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+        io_uring_sqe_set_flags( sqe,
+                                IOSQE_CQE_SKIP_SUCCESS | IOSQE_FIXED_FILE );
         io_uring_sqe_set_data( sqe, nullptr );
         io_uring_submit( ring );
       }
