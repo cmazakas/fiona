@@ -463,8 +463,8 @@ public:
         io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
 
         advance_guard guard = { .ring = ring, .count = 0 };
-        for ( guard.count = 0; guard.count < num_ready; ++guard.count ) {
-          on_cqe( cqes[guard.count] );
+        for ( ; guard.count < num_ready; ) {
+          on_cqe( cqes[guard.count++] );
         }
         continue;
       }
