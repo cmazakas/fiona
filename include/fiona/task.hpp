@@ -1,8 +1,6 @@
 #ifndef FIONA_TASK_HPP
 #define FIONA_TASK_HPP
 
-#include <fiona/detail/awaitable_base.hpp>
-
 #include <coroutine>
 
 namespace fiona {
@@ -13,7 +11,7 @@ struct promise;
 template <class T>
 struct task {
 private:
-  struct awaitable final : public detail::awaitable_base {
+  struct awaitable {
     std::coroutine_handle<promise<T>> h_;
 
     awaitable( std::coroutine_handle<promise<T>> h ) : h_( h ) {}
@@ -27,9 +25,6 @@ private:
       BOOST_ASSERT( h_ );
       return h_.promise().result();
     }
-
-    void await_process_cqe( io_uring_cqe* ) {}
-    std::coroutine_handle<> handle() noexcept { return h_; }
   };
 
   std::coroutine_handle<promise<T>> h_ = nullptr;
