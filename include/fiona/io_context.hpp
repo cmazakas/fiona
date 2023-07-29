@@ -2,6 +2,7 @@
 #define FIONA_IO_CONTEXT_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/task.hpp>
 
 #include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
@@ -20,17 +21,17 @@
 
 namespace fiona {
 
-template <class T>
-struct task;
-
-template <class T>
-struct promise;
-
 namespace detail {
 struct io_context_frame;
 }
 
 using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
+
+struct io_context_params {
+  std::uint32_t sq_entries = 512;
+  std::uint32_t cq_entries = 4096;
+  std::uint32_t num_files_ = 1024;
+};
 
 struct buf_ring {
 private:
@@ -63,12 +64,13 @@ public:
 
     buf_ring_ = static_cast<io_uring_buf_ring*>( mapped );
 
-    io_uring_buf_reg reg;
-    std::memset( &reg, 0, sizeof( reg ) );
-    reg.bgid = bgid_;
-    reg.flags = 0;
-    reg.ring_addr = reinterpret_cast<std::uintptr_t>( buf_ring_ );
-    reg.ring_entries = bufs_.size();
+    io_uring_buf_reg reg = {
+        .ring_addr = reinterpret_cast<std::uintptr_t>( buf_ring_ ),
+        .ring_entries = static_cast<std::uint32_t>( bufs_.size() ),
+        .bgid = bgid_,
+        .flags = 0,
+        .resv = { 0 },
+    };
 
     io_uring_buf_ring_init( buf_ring_ );
 
@@ -147,186 +149,6 @@ public:
   void post( task<void> t );
   buf_ring* get_buffer_group( std::size_t bgid ) noexcept;
 };
-
-template <class T>
-struct task {
-private:
-  struct awaitable final : public detail::awaitable_base {
-    std::coroutine_handle<promise<T>> h_;
-
-    awaitable( std::coroutine_handle<promise<T>> h ) : h_( h ) {}
-
-    bool await_ready() const noexcept { return !h_ || h_.done(); }
-
-    std::coroutine_handle<>
-    await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept;
-
-    decltype( auto ) await_resume() {
-      BOOST_ASSERT( h_ );
-      return h_.promise().result();
-    }
-
-    void await_process_cqe( io_uring_cqe* ) {}
-    std::coroutine_handle<> handle() noexcept { return h_; }
-  };
-
-  std::coroutine_handle<promise<T>> h_ = nullptr;
-
-public:
-  using promise_type = ::fiona::promise<T>;
-
-  task() = default;
-  task( std::coroutine_handle<promise<T>> h ) : h_( h ) {}
-
-  ~task() {
-    if ( h_ ) {
-      h_.destroy();
-    }
-  }
-
-  task( task const& ) = delete;
-  task& operator=( task const& ) = delete;
-
-  task( task&& rhs ) noexcept : h_( rhs.h_ ) { rhs.h_ = nullptr; }
-  task& operator=( task&& rhs ) noexcept {
-    if ( this != &rhs ) {
-      auto h = h_;
-      h_ = rhs.h_;
-      rhs.h_ = h;
-    }
-    return *this;
-  }
-
-  awaitable operator co_await() noexcept { return awaitable{ h_ }; }
-};
-
-struct promise_base {
-private:
-  struct final_awaitable {
-    bool await_ready() const noexcept { return false; }
-
-    template <class Promise>
-    std::coroutine_handle<>
-    await_suspend( std::coroutine_handle<Promise> coro ) noexcept {
-      return coro.promise().continuation_;
-    }
-
-    void await_resume() noexcept { BOOST_ASSERT( false ); }
-  };
-
-  std::coroutine_handle<> continuation_ = nullptr;
-
-public:
-  promise_base() = default;
-
-  std::suspend_always initial_suspend() { return {}; }
-  final_awaitable final_suspend() noexcept { return {}; }
-
-  void set_continuation( std::coroutine_handle<> continuation ) {
-    BOOST_ASSERT( !continuation_ );
-    continuation_ = continuation;
-  }
-};
-
-template <class T>
-struct promise final : public promise_base {
-private:
-  enum class result_type { uninit, ok, err };
-
-  result_type rt = result_type::uninit;
-  union {
-    T value_;
-    std::exception_ptr exception_;
-  };
-
-public:
-  promise() noexcept {}
-  ~promise() {
-    switch ( rt ) {
-    case result_type::ok:
-      value_.~T();
-      break;
-
-    case result_type::err:
-      exception_.~exception_ptr();
-      break;
-
-    default:
-      BOOST_ASSERT( false );
-      break;
-    }
-  }
-
-  task<T> get_return_object() {
-    return { std::coroutine_handle<promise>::from_promise( *this ) };
-  }
-
-  template <class Expr>
-  void return_value( Expr&& expr ) {
-    new ( std::addressof( value_ ) ) T( std::forward<Expr>( expr ) );
-    rt = result_type::ok;
-  }
-
-  void unhandled_exception() {
-    new ( std::addressof( exception_ ) )
-        std::exception_ptr( std::current_exception() );
-    rt = result_type::err;
-  }
-
-  T& result() & {
-    if ( rt == result_type::err ) {
-      std::rethrow_exception( exception_ );
-    }
-    return value_;
-  }
-
-  T&& result() && {
-    if ( rt == result_type::err ) {
-      std::rethrow_exception( exception_ );
-    }
-    return std::move( value_ );
-  }
-};
-
-template <>
-struct promise<void> final : public promise_base {
-private:
-  enum class result_type { uninit, ok, err };
-
-  std::exception_ptr exception_;
-
-public:
-  task<void> get_return_object() {
-    return { std::coroutine_handle<promise>::from_promise( *this ) };
-  }
-
-  void return_void() {}
-
-  void unhandled_exception() {
-    exception_ = std::exception_ptr( std::current_exception() );
-  }
-
-  void result() {
-    if ( exception_ ) {
-      std::rethrow_exception( exception_ );
-    }
-  }
-};
-
-template <class T>
-std::coroutine_handle<>
-task<T>::awaitable::await_suspend(
-    std::coroutine_handle<> awaiting_coro ) noexcept {
-  /*
-   * because this awaitable is created using the coroutine_handle of a
-   * child coroutine, awaiting_coro is the parent
-   *
-   * store a handle to the parent in the Promise object so that we can
-   * access it later in Promise::final_suspend.
-   */
-  h_.promise().set_continuation( awaiting_coro );
-  return h_;
-}
 
 namespace detail {
 
@@ -432,28 +254,27 @@ struct internal_promise {
 };
 
 struct io_context_frame {
-  friend struct executor;
-
-  constexpr static unsigned sq_entries = 512;
-  constexpr static unsigned cq_entries = 4096;
-
-  int ret = -1;
-
   io_uring io_ring_;
   task_set_type tasks_;
+  io_context_params params_;
   std::vector<buf_ring> buf_rings_;
-  std::vector<int> files_;
 
-  io_context_frame() : files_( 24'000, -1 ) {
-    unsigned const entries = sq_entries;
+  io_context_frame( io_context_params const& io_ctx_params )
+      : params_( io_ctx_params ) {
 
-    io_uring_params params;
-    memset( &params, 0, sizeof( params ) );
+    int ret = -1;
 
-    params.cq_entries = cq_entries;
-    params.flags |= IORING_SETUP_CQSIZE;
+    io_uring_params params = {};
+    params.cq_entries = io_ctx_params.cq_entries;
 
-    ret = io_uring_queue_init_params( entries, &io_ring_, &params );
+    {
+      auto& flags = params.flags;
+      flags |= IORING_SETUP_CQSIZE;
+      flags |= IORING_SETUP_SINGLE_ISSUER;
+      flags |= IORING_SETUP_COOP_TASKRUN;
+    }
+
+    ret = io_uring_queue_init_params( params_.sq_entries, &io_ring_, &params );
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
@@ -523,13 +344,12 @@ private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
 
 public:
-  constexpr static auto const cq_entries = detail::io_context_frame::cq_entries;
-  constexpr static auto const sq_entries = detail::io_context_frame::sq_entries;
-
-  io_context()
-      : framep_( boost::make_local_shared<detail::io_context_frame>() ) {}
+  io_context( io_context_params const& params = {} )
+      : framep_(
+            boost::make_local_shared<detail::io_context_frame>( params ) ) {}
 
   executor get_executor() const noexcept { return executor{ framep_ }; }
+  io_context_params params() const noexcept { return framep_->params_; }
 
   void post( task<void> t ) {
     auto ex = get_executor();
@@ -544,6 +364,16 @@ public:
   }
 
   void run() {
+    struct advance_guard {
+      io_uring* ring = nullptr;
+      unsigned count = 0;
+      ~advance_guard() {
+        if ( ring ) {
+          io_uring_cq_advance( ring, count );
+        }
+      }
+    };
+
     struct guard {
       detail::task_set_type& tasks;
       io_uring* ring;
@@ -592,25 +422,11 @@ public:
       }
     };
 
-    auto ex = get_executor();
-    auto ring = ex.ring();
-
-    guard g{ tasks(), ring };
-
-    int ret = -1;
-    ret = io_uring_register_ring_fd( ex.ring() );
-    if ( ret != 1 ) {
-      fiona::detail::throw_errno_as_error_code( -ret );
-    }
-
-    while ( !tasks().empty() ) {
-      io_uring_cqe* cqe = nullptr;
-      io_uring_wait_cqe( ring, &cqe );
-      auto guard = cqe_guard( ring, cqe );
+    auto on_cqe = [this]( io_uring_cqe* cqe ) {
       auto p = io_uring_cqe_get_data( cqe );
 
       if ( !p ) {
-        continue;
+        return;
       }
 
       if ( auto pos = tasks().find( p ); pos != tasks().end() ) {
@@ -619,7 +435,7 @@ public:
         BOOST_ASSERT( !h.done() );
         h.resume();
 
-        continue;
+        return;
       }
 
       auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
@@ -627,14 +443,36 @@ public:
       BOOST_ASSERT( q->use_count() >= 1 );
 
       if ( q->use_count() == 1 ) {
-        continue;
+        return;
       }
 
       q->await_process_cqe( cqe );
-      auto h = q->handle();
-      if ( h ) {
+      if ( auto h = q->handle(); h ) {
         h.resume();
       }
+    };
+
+    auto ex = get_executor();
+    auto ring = ex.ring();
+    auto cqes = std::vector<io_uring_cqe*>( framep_->params_.cq_entries );
+
+    guard g{ tasks(), ring };
+    while ( !tasks().empty() ) {
+      auto num_ready = io_uring_cq_ready( ring );
+      if ( num_ready > 0 ) {
+        io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
+
+        advance_guard guard = { .ring = ring, .count = 0 };
+        for ( guard.count = 0; guard.count < num_ready; ++guard.count ) {
+          on_cqe( cqes[guard.count] );
+        }
+        continue;
+      }
+
+      io_uring_cqe* cqe = nullptr;
+      io_uring_wait_cqe( ring, &cqe );
+      auto guard = cqe_guard( ring, cqe );
+      on_cqe( cqe );
     }
   }
 };
