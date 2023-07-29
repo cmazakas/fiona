@@ -141,12 +141,12 @@ TEST_CASE( "accept CQ overflow" ) {
 
   // this number will roughly double because of the one-to-one correspondence
   // between a connect() CQE and the accept() CQE
-  constexpr std::size_t num_clients = 2600;
+  constexpr std::size_t num_clients = 600;
 
   num_runs = 0;
 
   fiona::io_context_params params{
-      .sq_entries = 512, .cq_entries = 4096, .num_files_ = 16 * 1024 };
+      .sq_entries = 512, .cq_entries = 1024, .num_files_ = 2000 };
 
   fiona::io_context ioc( params );
   REQUIRE( 2 * num_clients >= ioc.params().cq_entries );
