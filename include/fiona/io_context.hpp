@@ -483,9 +483,9 @@ public:
                                      false );
       BOOST_ASSERT( q->use_count() >= 1 );
 
-      if ( q->use_count() == 1 ) {
-        return;
-      }
+      // if ( q->use_count() == 1 ) {
+      //   return;
+      // }
 
       q->await_process_cqe( cqe );
       if ( auto h = q->handle(); h ) {
