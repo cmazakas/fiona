@@ -70,7 +70,7 @@ public:
 template <class Rep, class Period>
 timer_awaitable
 sleep_for( fiona::executor ex, std::chrono::duration<Rep, Period> d ) {
-  return timer_awaitable( ex.ring(), d );
+  return timer_awaitable( detail::executor_access_policy::ring( ex ), d );
 }
 
 } // namespace fiona

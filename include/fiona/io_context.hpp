@@ -138,17 +138,21 @@ public:
   std::uint16_t bgid() const noexcept { return bgid_; }
 };
 
+namespace detail {
+struct executor_access_policy;
+} // namespace detail
+
 struct executor {
 private:
+  friend struct detail::executor_access_policy;
+
   boost::local_shared_ptr<detail::io_context_frame> framep_;
 
 public:
   executor( boost::local_shared_ptr<detail::io_context_frame> framep ) noexcept
       : framep_( std::move( framep ) ) {}
 
-  io_uring* ring() const noexcept;
   void post( task<void> t );
-  buf_ring* get_buffer_group( std::size_t bgid ) noexcept;
 };
 
 namespace detail {
@@ -302,11 +306,6 @@ struct io_context_frame {
 
 } // namespace detail
 
-io_uring*
-executor::ring() const noexcept {
-  return &framep_->io_ring_;
-}
-
 detail::internal_task
 scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
            task<void> t ) {
@@ -314,26 +313,61 @@ scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
   co_return;
 }
 
+namespace detail {
+
+struct executor_access_policy {
+  static io_uring* ring( executor ex ) noexcept {
+    return &ex.framep_->io_ring_;
+  }
+
+  static int get_available_fd( executor ex ) {
+    auto& fds = ex.framep_->fds_;
+    if ( fds.empty() ) {
+      return -1;
+    }
+    auto pos = fds.begin();
+    auto fd = *pos;
+    fds.erase( pos );
+    return fd;
+  }
+
+  static void claim_fd( executor ex, int fd ) {
+    auto& fds = ex.framep_->fds_;
+    auto ret = fds.erase( fd );
+    (void)ret;
+    BOOST_ASSERT( ret > 0 );
+  }
+
+  static void release_fd( executor ex, int fd ) {
+    auto& fds = ex.framep_->fds_;
+    auto itb = fds.insert( fd );
+    (void)itb;
+    BOOST_ASSERT( itb.second );
+  }
+
+  static buf_ring* get_buffer_group( executor ex, std::size_t bgid ) noexcept {
+    for ( auto& bg : ex.framep_->buf_rings_ ) {
+      if ( bgid == bg.bgid() ) {
+        return &bg;
+      }
+    }
+    return nullptr;
+  }
+};
+
+} // namespace detail
+
 void
 executor::post( task<void> t ) {
-  auto it = scheduler( framep_->tasks_, ring(), std::move( t ) );
+  auto ring = detail::executor_access_policy::ring( *this );
+  auto it = scheduler( framep_->tasks_, ring, std::move( t ) );
 
-  auto sqe = io_uring_get_sqe( ring() );
+  auto sqe = io_uring_get_sqe( ring );
   io_uring_prep_nop( sqe );
   io_uring_sqe_set_data( sqe, it.h_.address() );
-  io_uring_submit( ring() );
+  io_uring_submit( ring );
 
   framep_->tasks_.insert( std::move( it ) );
-}
-
-buf_ring*
-executor::get_buffer_group( std::size_t bgid ) noexcept {
-  for ( auto& bg : framep_->buf_rings_ ) {
-    if ( bgid == bg.bgid() ) {
-      return &bg;
-    }
-  }
-  return nullptr;
 }
 
 struct io_context {
@@ -460,7 +494,7 @@ public:
     };
 
     auto ex = get_executor();
-    auto ring = ex.ring();
+    auto ring = detail::executor_access_policy::ring( ex );
     auto cqes = std::vector<io_uring_cqe*>( framep_->params_.cq_entries );
 
     guard g{ tasks(), ring };

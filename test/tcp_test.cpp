@@ -146,7 +146,7 @@ TEST_CASE( "accept CQ overflow" ) {
   num_runs = 0;
 
   fiona::io_context_params params{
-      .sq_entries = 512, .cq_entries = 1024, .num_files_ = 2000 };
+      .sq_entries = 512, .cq_entries = 1024, .num_files = 2000 };
 
   fiona::io_context ioc( params );
   REQUIRE( 2 * num_clients >= ioc.params().cq_entries );
@@ -264,7 +264,10 @@ TEST_CASE( "tcp echo" ) {
 
   constexpr std::string_view msg = "hello, world!";
 
-  fiona::io_context ioc;
+  fiona::io_context_params params;
+  params.num_files = 1024;
+
+  fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, bgid );
 
   auto ex = ioc.get_executor();
@@ -349,6 +352,78 @@ TEST_CASE( "tcp echo" ) {
   ioc.run();
 
   CHECK( num_runs == 1 + ( 2 * num_clients ) );
+}
+
+TEST_CASE( "fd reuse" ) {
+  num_runs = 0;
+  // want to prove that the runtime correctly manages its set of file
+  // descriptors by proving they can be reused over and over again
+
+  constexpr std::uint32_t num_files = 10;
+
+  fiona::io_context_params params;
+  params.num_files = num_files;
+
+  fiona::io_context ioc;
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  auto const port = acceptor.port();
+
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto a = acceptor.async_accept();
+
+    std::uint32_t num_accepted = 0;
+
+    while ( num_accepted < 3 * num_files ) {
+      auto stream = co_await a;
+      ++num_accepted;
+      std::cout << "accepted " << num_accepted << " client connections!"
+                << std::endl;
+
+      auto r = stream.value().async_recv( 0 );
+      auto buf = co_await r;
+
+      auto octets = buf.value().readable_bytes();
+      auto str = std::string_view(
+          reinterpret_cast<char const*>( octets.data() ), octets.size() - 1 );
+      CHECK( octets.size() > 0 );
+      CHECK( str == "hello, world!" );
+
+      auto n_result =
+          co_await stream.value().async_write( octets.data(), octets.size() );
+
+      CHECK( n_result.value() == octets.size() );
+    }
+
+    ++num_runs;
+    co_return;
+  };
+
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    for ( std::uint32_t i = 0; i < 3 * num_files; ++i ) {
+      auto client_result = co_await fiona::tcp::client::make( ex );
+      auto& client = client_result.value();
+
+      auto ec = co_await client.async_connect( localhost, port );
+      CHECK( !ec );
+
+      char const msg[] = "hello, world!";
+      auto result = co_await client.async_write( msg, std::size( msg ) );
+      CHECK( result.value() == std::size( msg ) );
+    }
+    ++num_runs;
+  };
+
+  ioc.post( server( std::move( acceptor ) ) );
+  ioc.post( client( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
 }
 
 // things to test:

@@ -312,19 +312,21 @@ public:
 
   ~stream() {
     if ( fd_ >= 0 ) {
-      auto ring = ex_.ring();
+      auto ring = detail::executor_access_policy::ring( ex_ );
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_close_direct( sqe, fd_ );
       io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS | IOSQE_FIXED_FILE );
       io_uring_sqe_set_data( sqe, nullptr );
       io_uring_submit( ring );
+
+      detail::executor_access_policy::release_fd( ex_, fd_ );
     }
   }
 
   stream& operator=( stream&& rhs ) noexcept {
     if ( this != &rhs ) {
       if ( fd_ >= 0 ) {
-        auto ring = ex_.ring();
+        auto ring = detail::executor_access_policy::ring( ex_ );
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_close_direct( sqe, fd_ );
         io_uring_sqe_set_flags( sqe,
@@ -351,16 +353,20 @@ public:
   __kernel_timespec timeout() const noexcept { return ts_; }
 
   write_awaitable async_write( void const* buf, unsigned nbytes ) {
-    return write_awaitable( ts_, ex_.ring(), fd_, buf, nbytes );
+    return write_awaitable( ts_, detail::executor_access_policy::ring( ex_ ),
+                            fd_, buf, nbytes );
   }
 
   recv_awaitable async_recv( std::uint16_t bgid ) {
-    auto maybe_group = ex_.get_buffer_group( bgid );
+    auto maybe_group =
+        detail::executor_access_policy::get_buffer_group( ex_, bgid );
+
     if ( !maybe_group ) {
       fiona::detail::throw_errno_as_error_code( EINVAL );
     }
 
-    return recv_awaitable( ex_.ring(), *maybe_group, fd_, bgid );
+    return recv_awaitable( detail::executor_access_policy::ring( ex_ ),
+                           *maybe_group, fd_, bgid );
   }
 };
 
@@ -394,6 +400,10 @@ private:
 
         if ( ( cqe->flags & IORING_CQE_F_MORE ) && ( cqe->res >= 0 ) ) {
           intrusive_ptr_add_ref( this );
+        }
+
+        if ( cqe->res >= 0 ) {
+          detail::executor_access_policy::claim_fd( ex_, fd );
         }
       }
 
@@ -449,6 +459,10 @@ private:
       BOOST_ASSERT( !self.connections_.empty() );
       auto fd = self.connections_.front();
       self.connections_.pop_front();
+      if ( fd < 0 ) {
+        return error_code::from_errno( -fd );
+      }
+
       return stream( self.ex_, fd );
     }
   };
@@ -540,7 +554,9 @@ public:
     }
   }
 
-  accept_awaitable async_accept() { return { ex_, ex_.ring(), fd_ }; }
+  accept_awaitable async_accept() {
+    return { ex_, detail::executor_access_policy::ring( ex_ ), fd_ };
+  }
 
   std::uint16_t port() {
     // current limitation because of wsl2's lack of ipv6
@@ -567,7 +583,9 @@ private:
       frame( executor ex ) : ex_( ex ) {}
 
       void await_process_cqe( io_uring_cqe* cqe ) {
-        fd_ = cqe->res;
+        if ( cqe->res < 0 ) {
+          fd_ = cqe->res;
+        }
         done_ = true;
       }
 
@@ -581,7 +599,7 @@ private:
     ~client_awaitable() {
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
-        auto ring = self.ex_.ring();
+        auto ring = detail::executor_access_policy::ring( self.ex_ );
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
@@ -598,9 +616,12 @@ private:
       }
 
       self.h_ = h;
-      auto ring = self.ex_.ring();
+      auto ring = detail::executor_access_policy::ring( self.ex_ );
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_socket_direct_alloc( sqe, AF_INET, SOCK_STREAM, 0, 0 );
+      auto file_idx =
+          detail::executor_access_policy::get_available_fd( self.ex_ );
+      self.fd_ = file_idx;
+      io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, file_idx, 0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
       io_uring_submit( ring );
 
@@ -720,7 +741,7 @@ public:
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
     addr.sin_addr.s_addr = htonl( ipv4_addr );
-    return { addr, ts_, ex_.ring(), fd_ };
+    return { addr, ts_, detail::executor_access_policy::ring( ex_ ), fd_ };
   }
 };
 
