@@ -2,6 +2,7 @@
 #define FIONA_IO_CONTEXT_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/error.hpp>
 #include <fiona/task.hpp>
 
 #include <boost/assert.hpp>
@@ -30,7 +31,7 @@ using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
 struct io_context_params {
   std::uint32_t sq_entries = 512;
   std::uint32_t cq_entries = 4096;
-  std::uint32_t num_files_ = 1024;
+  std::uint32_t num_files = 1024;
 };
 
 struct buf_ring {
@@ -258,6 +259,7 @@ struct io_context_frame {
   task_set_type tasks_;
   io_context_params params_;
   std::vector<buf_ring> buf_rings_;
+  boost::unordered_flat_set<int> fds_;
 
   io_context_frame( io_context_params const& io_ctx_params )
       : params_( io_ctx_params ) {
@@ -284,9 +286,14 @@ struct io_context_frame {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
 
-    ret = io_uring_register_files_sparse( &io_ring_, params_.num_files_ );
+    ret = io_uring_register_files_sparse( &io_ring_, params_.num_files );
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    fds_.reserve( params_.num_files );
+    for ( int i = 0; i < static_cast<int>( params_.num_files ); ++i ) {
+      fds_.insert( i );
     }
   }
 

@@ -1,7 +1,10 @@
 #ifndef FIONA_TASK_HPP
 #define FIONA_TASK_HPP
 
+#include <boost/assert.hpp>
+
 #include <coroutine>
+#include <exception>
 
 namespace fiona {
 

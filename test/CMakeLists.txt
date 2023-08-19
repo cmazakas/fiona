@@ -1,2 +1,14 @@
 fiona_test(timer_test)
 fiona_test(tcp_test)
+
+function(self_include_test filename)
+  add_executable(self_include_test_${filename} self_includes/${filename}.cpp)
+  target_link_libraries(self_include_test_${filename} PRIVATE fiona)
+  add_test(NAME self_include_test_${filename} COMMAND self_include_test_${filename})
+endfunction()
+
+self_include_test(error)
+self_include_test(io_context)
+self_include_test(sleep)
+self_include_test(task)
+self_include_test(tcp)
