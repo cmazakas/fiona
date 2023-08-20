@@ -359,12 +359,13 @@ TEST_CASE( "fd reuse" ) {
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
 
-  constexpr std::uint32_t num_files = 10;
+  constexpr std::uint32_t num_files = 20;
+  constexpr std::uint32_t total_connections = 4 * num_files;
 
   fiona::io_context_params params;
   params.num_files = num_files;
 
-  fiona::io_context ioc;
+  fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, 0 );
 
   auto ex = ioc.get_executor();
@@ -377,11 +378,9 @@ TEST_CASE( "fd reuse" ) {
 
     std::uint32_t num_accepted = 0;
 
-    while ( num_accepted < 3 * num_files ) {
+    while ( num_accepted < total_connections ) {
       auto stream = co_await a;
       ++num_accepted;
-      std::cout << "accepted " << num_accepted << " client connections!"
-                << std::endl;
 
       auto r = stream.value().async_recv( 0 );
       auto buf = co_await r;
@@ -404,7 +403,7 @@ TEST_CASE( "fd reuse" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    for ( std::uint32_t i = 0; i < 3 * num_files; ++i ) {
+    for ( std::uint32_t i = 0; i < total_connections; ++i ) {
       auto client_result = co_await fiona::tcp::client::make( ex );
       auto& client = client_result.value();
 

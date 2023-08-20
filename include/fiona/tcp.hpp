@@ -315,7 +315,7 @@ public:
       auto ring = detail::executor_access_policy::ring( ex_ );
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_close_direct( sqe, fd_ );
-      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS | IOSQE_FIXED_FILE );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       io_uring_sqe_set_data( sqe, nullptr );
       io_uring_submit( ring );
 
@@ -329,10 +329,11 @@ public:
         auto ring = detail::executor_access_policy::ring( ex_ );
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_close_direct( sqe, fd_ );
-        io_uring_sqe_set_flags( sqe,
-                                IOSQE_CQE_SKIP_SUCCESS | IOSQE_FIXED_FILE );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
         io_uring_submit( ring );
+
+        detail::executor_access_policy::release_fd( ex_, fd_ );
       }
 
       ex_ = std::move( rhs.ex_ );
@@ -398,7 +399,7 @@ private:
           initiated_ = false;
         }
 
-        if ( ( cqe->flags & IORING_CQE_F_MORE ) && ( cqe->res >= 0 ) ) {
+        if ( ( cqe->flags & IORING_CQE_F_MORE ) /* && ( cqe->res >= 0 ) */ ) {
           intrusive_ptr_add_ref( this );
         }
 
