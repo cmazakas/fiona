@@ -2,6 +2,7 @@
 #define FIONA_TCP_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/detail/get_sqe.hpp>
 #include <fiona/detail/time.hpp>
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
@@ -18,6 +19,8 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <sys/socket.h>
+
+#include <thread>
 
 namespace fiona {
 namespace tcp {
@@ -160,7 +163,7 @@ private:
       auto& self = *p_;
       if ( self.initiated_ ) {
         auto ring = self.ring_;
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -181,13 +184,12 @@ private:
       }
 
       auto ring = self.ring_;
-      auto sqe = io_uring_get_sqe( ring );
+      auto sqe = fiona::detail::get_sqe( ring );
       io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
       io_uring_sqe_set_flags( sqe, IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
       sqe->buf_group = self.bgid_;
 
-      io_uring_submit( ring );
       self.initiated_ = true;
     }
 
@@ -243,7 +245,7 @@ private:
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
         auto ring = self.ring_;
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -261,7 +263,7 @@ private:
       auto ring = self.ring_;
 
       {
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_send( sqe, self.fd_, self.buf_, self.nbytes_,
                             MSG_WAITALL );
         io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
@@ -269,14 +271,12 @@ private:
       }
 
       {
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
 
         io_uring_prep_link_timeout( sqe, &self.ts_, 0 );
         io_uring_sqe_set_data( sqe, nullptr );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       }
-
-      io_uring_submit( ring );
 
       self.h_ = h;
       self.initiated_ = true;
@@ -313,7 +313,7 @@ public:
   ~stream() {
     if ( fd_ >= 0 ) {
       auto ring = detail::executor_access_policy::ring( ex_ );
-      auto sqe = io_uring_get_sqe( ring );
+      auto sqe = fiona::detail::get_sqe( ring );
       io_uring_prep_close_direct( sqe, fd_ );
       io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       io_uring_sqe_set_data( sqe, nullptr );
@@ -327,7 +327,7 @@ public:
     if ( this != &rhs ) {
       if ( fd_ >= 0 ) {
         auto ring = detail::executor_access_policy::ring( ex_ );
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_close_direct( sqe, fd_ );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -426,7 +426,7 @@ private:
 
       if ( self.initiated_ ) {
         auto ring = self.ring_;
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -447,11 +447,10 @@ private:
       }
 
       auto ring = self.ring_;
-      auto sqe = io_uring_get_sqe( ring );
+      auto sqe = fiona::detail::get_sqe( ring );
       io_uring_prep_multishot_accept_direct( sqe, self.fd_, nullptr, nullptr,
                                              0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      io_uring_submit( ring );
       self.initiated_ = true;
     }
 
@@ -601,7 +600,7 @@ private:
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
         auto ring = detail::executor_access_policy::ring( self.ex_ );
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -618,13 +617,12 @@ private:
 
       self.h_ = h;
       auto ring = detail::executor_access_policy::ring( self.ex_ );
-      auto sqe = io_uring_get_sqe( ring );
+      auto sqe = fiona::detail::get_sqe( ring );
       auto file_idx =
           detail::executor_access_policy::get_available_fd( self.ex_ );
       self.fd_ = file_idx;
       io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, file_idx, 0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      io_uring_submit( ring );
 
       self.initiated_ = true;
     }
@@ -678,7 +676,7 @@ private:
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
         auto ring = self.ring_;
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -691,20 +689,18 @@ private:
       auto& self = *p_;
       if ( !self.initiated_ ) {
         auto ring = self.ring_;
-        auto sqe = io_uring_get_sqe( ring );
+        auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_connect( sqe, self.fd_,
                                reinterpret_cast<sockaddr const*>( &self.addr_ ),
                                sizeof( self.addr_ ) );
         io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
         io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
 
-        auto timeout_sqe = io_uring_get_sqe( ring );
+        auto timeout_sqe = fiona::detail::get_sqe( ring );
 
         io_uring_prep_link_timeout( timeout_sqe, &self.ts_, 0 );
         io_uring_sqe_set_data( timeout_sqe, nullptr );
         io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
-
-        io_uring_submit( ring );
 
         self.h_ = h;
         self.initiated_ = true;

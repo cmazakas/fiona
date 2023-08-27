@@ -215,7 +215,9 @@ TEST_CASE( "recursion test" ) {
 
 TEST_CASE( "mild stress test" ) {
   num_runs = 0;
-  fiona::io_context ioc;
+  fiona::io_context_params params;
+  params.sq_entries = 4096;
+  fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
   for ( int i = 0; i < 1000; ++i ) {
     ioc.post( sleep_coro( ex, get_sleep_duration() ) );

@@ -494,22 +494,15 @@ public:
         break;
       }
 
+      io_uring_submit_and_wait( ring, 1 );
 
       auto num_ready = io_uring_cq_ready( ring );
-      if ( num_ready > 0 ) {
-        io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
+      io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
 
-        advance_guard guard = { .ring = ring, .count = 0 };
-        for ( ; guard.count < num_ready; ) {
-          on_cqe( cqes[guard.count++] );
-        }
-        continue;
+      advance_guard guard = { .ring = ring, .count = 0 };
+      for ( ; guard.count < num_ready; ) {
+        on_cqe( cqes[guard.count++] );
       }
-
-      io_uring_cqe* cqe = nullptr;
-      io_uring_wait_cqe( ring, &cqe );
-      auto guard = cqe_guard( ring, cqe );
-      on_cqe( cqe );
     }
   }
 };

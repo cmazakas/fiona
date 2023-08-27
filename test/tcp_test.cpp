@@ -266,6 +266,8 @@ TEST_CASE( "tcp echo" ) {
 
   fiona::io_context_params params;
   params.num_files = 1024;
+  params.sq_entries = 4096;
+  params.cq_entries = 4096;
 
   fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, bgid );
@@ -318,6 +320,8 @@ TEST_CASE( "tcp echo" ) {
                     std::string_view msg ) -> fiona::task<void> {
     auto client_result = co_await fiona::tcp::client::make( ex );
     auto& client = client_result.value();
+
+    client.timeout( std::chrono::seconds( 3 ) );
 
     auto ec = co_await client.async_connect( localhost, port );
     CHECK( !ec );

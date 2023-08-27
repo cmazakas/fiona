@@ -2,6 +2,7 @@
 #define FIONA_SLEEP_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/detail/get_sqe.hpp>
 #include <fiona/detail/time.hpp>
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
@@ -54,11 +55,10 @@ public:
     self.h = h_;
 
     auto ring = self.ring;
-    auto sqe = io_uring_get_sqe( ring );
+    auto sqe = fiona::detail::get_sqe( ring );
 
     io_uring_prep_timeout( sqe, &self.ts, 0, 0 );
     io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-    io_uring_submit( ring );
   }
 
   error_code await_resume() {
