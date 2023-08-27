@@ -12,7 +12,12 @@ find_package(Boost 1.82 REQUIRED)
 
 add_library(fiona INTERFACE)
 target_include_directories(fiona INTERFACE include)
-target_link_libraries(fiona INTERFACE liburing::liburing Boost::headers)
+target_link_libraries(
+  fiona
+  INTERFACE
+  liburing::liburing
+  Boost::headers
+)
 
 include(CTest)
 include(FionaTest)
