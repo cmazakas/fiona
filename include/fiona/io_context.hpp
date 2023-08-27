@@ -11,9 +11,11 @@
 #include <boost/smart_ptr/local_shared_ptr.hpp>
 #include <boost/smart_ptr/make_local_shared.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
+#include <boost/unordered/unordered_node_set.hpp>
 
 #include <coroutine>
 #include <cstddef>
+#include <deque>
 #include <iostream>
 #include <span>
 
@@ -22,17 +24,13 @@
 
 namespace fiona {
 
-namespace detail {
-struct io_context_frame;
-}
-
-using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
-
 struct io_context_params {
-  std::uint32_t sq_entries = 512;
+  std::uint32_t sq_entries = 4096;
   std::uint32_t cq_entries = 4096;
   std::uint32_t num_files = 1024;
 };
+
+using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
 
 struct buf_ring {
 private:
@@ -139,23 +137,6 @@ public:
 };
 
 namespace detail {
-struct executor_access_policy;
-} // namespace detail
-
-struct executor {
-private:
-  friend struct detail::executor_access_policy;
-
-  boost::local_shared_ptr<detail::io_context_frame> framep_;
-
-public:
-  executor( boost::local_shared_ptr<detail::io_context_frame> framep ) noexcept
-      : framep_( std::move( framep ) ) {}
-
-  void post( task<void> t );
-};
-
-namespace detail {
 
 struct internal_promise;
 
@@ -224,7 +205,7 @@ struct key_equal {
 };
 
 using task_set_type =
-    boost::unordered_flat_set<internal_task, hasher, key_equal>;
+    boost::unordered_node_set<internal_task, hasher, key_equal>;
 
 struct internal_promise {
   struct internal_final_awaitable {
@@ -264,6 +245,7 @@ struct io_context_frame {
   io_context_params params_;
   std::vector<buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
+  std::deque<internal_task*> run_queue_;
 
   io_context_frame( io_context_params const& io_ctx_params )
       : params_( io_ctx_params ) {
@@ -306,12 +288,22 @@ struct io_context_frame {
 
 } // namespace detail
 
-detail::internal_task
-scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
-           task<void> t ) {
-  co_await t;
-  co_return;
-}
+namespace detail {
+struct executor_access_policy;
+} // namespace detail
+
+struct executor {
+private:
+  friend struct detail::executor_access_policy;
+
+  boost::local_shared_ptr<detail::io_context_frame> framep_;
+
+public:
+  executor( boost::local_shared_ptr<detail::io_context_frame> framep ) noexcept
+      : framep_( std::move( framep ) ) {}
+
+  void post( task<void> t );
+};
 
 namespace detail {
 
@@ -357,17 +349,23 @@ struct executor_access_policy {
 
 } // namespace detail
 
+detail::internal_task
+scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
+           task<void> t ) {
+  co_await t;
+  co_return;
+}
+
 void
 executor::post( task<void> t ) {
   auto ring = detail::executor_access_policy::ring( *this );
-  auto it = scheduler( framep_->tasks_, ring, std::move( t ) );
 
-  auto sqe = io_uring_get_sqe( ring );
-  io_uring_prep_nop( sqe );
-  io_uring_sqe_set_data( sqe, it.h_.address() );
-  io_uring_submit( ring );
+  auto [it, b] = framep_->tasks_.insert(
+      scheduler( framep_->tasks_, ring, std::move( t ) ) );
 
-  framep_->tasks_.insert( std::move( it ) );
+  BOOST_ASSERT( b );
+  framep_->run_queue_.push_back(
+      const_cast<detail::internal_task*>( std::addressof( *it ) ) );
 }
 
 struct io_context {
@@ -378,8 +376,6 @@ private:
 
     ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
   };
-
-  decltype( auto ) tasks() const noexcept { return ( framep_->tasks_ ); }
 
 private:
   boost::local_shared_ptr<detail::io_context_frame> framep_;
@@ -463,19 +459,10 @@ public:
       }
     };
 
-    auto on_cqe = [this]( io_uring_cqe* cqe ) {
+    auto on_cqe = []( io_uring_cqe* cqe ) {
       auto p = io_uring_cqe_get_data( cqe );
 
       if ( !p ) {
-        return;
-      }
-
-      if ( auto pos = tasks().find( p ); pos != tasks().end() ) {
-        auto h = std::coroutine_handle<>::from_address( p );
-
-        BOOST_ASSERT( !h.done() );
-        h.resume();
-
         return;
       }
 
@@ -492,9 +479,22 @@ public:
     auto ex = get_executor();
     auto ring = detail::executor_access_policy::ring( ex );
     auto cqes = std::vector<io_uring_cqe*>( framep_->params_.cq_entries );
+    auto& tasks = framep_->tasks_;
 
-    guard g{ tasks(), ring };
-    while ( !tasks().empty() ) {
+    guard g{ tasks, ring };
+    while ( !tasks.empty() ) {
+      auto& run_queue = framep_->run_queue_;
+      while ( !run_queue.empty() ) {
+        auto t = run_queue.front();
+        t->h_.resume();
+        run_queue.pop_front();
+      }
+
+      if ( tasks.empty() ) {
+        break;
+      }
+
+
       auto num_ready = io_uring_cq_ready( ring );
       if ( num_ready > 0 ) {
         io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
