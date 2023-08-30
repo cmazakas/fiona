@@ -385,7 +385,9 @@ private:
       std::coroutine_handle<> h_;
       io_uring* ring_ = nullptr;
       int fd_ = -1;
+      int peer_fd_ = -1;
       bool initiated_ = false;
+      bool done_ = false;
 
       frame( executor ex, io_uring* ring, int fd )
           : ex_( ex ), ring_( ring ), fd_{ fd } {}
@@ -393,19 +395,11 @@ private:
       virtual ~frame() {}
 
       void await_process_cqe( io_uring_cqe* cqe ) {
-        auto fd = cqe->res;
-        connections_.push_back( fd );
-        if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
-          initiated_ = false;
+        if ( cqe->res < 0 ) {
+          detail::executor_access_policy::release_fd( ex_, peer_fd_ );
+          peer_fd_ = cqe->res;
         }
-
-        if ( ( cqe->flags & IORING_CQE_F_MORE ) /* && ( cqe->res >= 0 ) */ ) {
-          intrusive_ptr_add_ref( this );
-        }
-
-        if ( cqe->res >= 0 ) {
-          detail::executor_access_policy::claim_fd( ex_, fd );
-        }
+        done_ = true;
       }
 
       std::coroutine_handle<> handle() noexcept {
@@ -423,8 +417,7 @@ private:
   public:
     ~accept_awaitable() {
       auto& self = *p_;
-
-      if ( self.initiated_ ) {
+      if ( self.initiated_ && !self.done_ ) {
         auto ring = self.ring_;
         auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
@@ -434,31 +427,32 @@ private:
       }
     }
 
-    bool await_ready() noexcept {
-      auto& self = *p_;
-      return !self.connections_.empty();
-    }
+    bool await_ready() noexcept { return false; }
 
     void await_suspend( std::coroutine_handle<> h ) {
       auto& self = *p_;
-      self.h_ = h;
       if ( self.initiated_ ) {
         return;
       }
 
       auto ring = self.ring_;
       auto sqe = fiona::detail::get_sqe( ring );
-      io_uring_prep_multishot_accept_direct( sqe, self.fd_, nullptr, nullptr,
-                                             0 );
+      auto file_idx =
+          detail::executor_access_policy::get_available_fd( self.ex_ );
+
+      io_uring_prep_accept_direct( sqe, self.fd_, nullptr, nullptr, 0,
+                                   file_idx );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+
+      self.peer_fd_ = file_idx;
+      self.h_ = h;
       self.initiated_ = true;
     }
 
     fiona::result<stream> await_resume() {
       auto& self = *p_;
-      BOOST_ASSERT( !self.connections_.empty() );
-      auto fd = self.connections_.front();
-      self.connections_.pop_front();
+
+      auto fd = self.peer_fd_;
       if ( fd < 0 ) {
         return error_code::from_errno( -fd );
       }
@@ -535,7 +529,7 @@ public:
       fiona::detail::throw_errno_as_error_code( errno );
     }
 
-    constexpr int backlog = 256;
+    constexpr int backlog = 5000;
     if ( -1 == listen( fd, backlog ) ) {
       fiona::detail::throw_errno_as_error_code( errno );
     }
@@ -584,6 +578,7 @@ private:
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         if ( cqe->res < 0 ) {
+          detail::executor_access_policy::release_fd( ex_, fd_ );
           fd_ = cqe->res;
         }
         done_ = true;
@@ -616,14 +611,16 @@ private:
       }
 
       self.h_ = h;
+
       auto ring = detail::executor_access_policy::ring( self.ex_ );
       auto sqe = fiona::detail::get_sqe( ring );
       auto file_idx =
           detail::executor_access_policy::get_available_fd( self.ex_ );
+
       self.fd_ = file_idx;
+
       io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, file_idx, 0 );
       io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-
       self.initiated_ = true;
     }
 

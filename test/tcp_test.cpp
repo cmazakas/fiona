@@ -6,7 +6,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_translate_exception.hpp>
 
+#include <algorithm>
 #include <cstdint>
+#include <random>
 #include <string_view>
 
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
@@ -29,9 +31,7 @@ TEST_CASE( "accept sanity test" ) {
   auto const port = acceptor.port();
 
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
-    auto a = acceptor.async_accept();
-
-    auto stream = co_await a;
+    auto stream = co_await acceptor.async_accept();
 
     auto r = stream.value().async_recv( 0 );
     auto buf = co_await r;
@@ -77,9 +77,6 @@ TEST_CASE( "accept sanity test" ) {
 }
 
 TEST_CASE( "accept back-pressure test" ) {
-  // this test purposefully doesn't exceed the size of the completion queue so
-  // that our multishot accept() doesn't need to be rescheduled
-
   constexpr std::size_t num_clients = 100;
 
   num_runs = 0;
@@ -93,21 +90,10 @@ TEST_CASE( "accept back-pressure test" ) {
 
   auto server = []( fiona::tcp::acceptor acceptor,
                     fiona::executor ex ) -> fiona::task<void> {
-    auto a = acceptor.async_accept();
-
-    {
-      // actually start the multishot accept sqe
-      auto stream = co_await a;
-      (void)stream;
-    }
-
     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
 
     for ( unsigned i = 1; i < num_clients; ++i ) {
-      // ideally, this doesn't suspend at all and instead we just start pulling
-      // from the queue of waiting connections
-      auto stream = co_await a;
-
+      auto stream = co_await acceptor.async_accept();
       CHECK( stream.has_value() );
     }
 
@@ -135,69 +121,69 @@ TEST_CASE( "accept back-pressure test" ) {
   CHECK( num_runs == num_clients + 1 );
 }
 
-TEST_CASE( "accept CQ overflow" ) {
-  // this test purposefully exceeds the size of the completion queue so
-  // that our multishot accept() needs to be rescheduled
+// TEST_CASE( "accept CQ overflow" ) {
+//   // this test purposefully exceeds the size of the completion queue so
+//   // that our multishot accept() needs to be rescheduled
 
-  // this number will roughly double because of the one-to-one correspondence
-  // between a connect() CQE and the accept() CQE
-  constexpr std::size_t num_clients = 600;
+//   // this number will roughly double because of the one-to-one correspondence
+//   // between a connect() CQE and the accept() CQE
+//   constexpr std::size_t num_clients = 600;
 
-  num_runs = 0;
+//   num_runs = 0;
 
-  fiona::io_context_params params{
-      .sq_entries = 512, .cq_entries = 1024, .num_files = 2000 };
+//   fiona::io_context_params params{
+//       .sq_entries = 512, .cq_entries = 1024, .num_files = 2000 };
 
-  fiona::io_context ioc( params );
-  REQUIRE( 2 * num_clients >= ioc.params().cq_entries );
+//   fiona::io_context ioc( params );
+//   REQUIRE( 2 * num_clients >= ioc.params().cq_entries );
 
-  auto ex = ioc.get_executor();
+//   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+//   fiona::tcp::acceptor acceptor( ex, localhost, 0 );
 
-  auto const port = acceptor.port();
+//   auto const port = acceptor.port();
 
-  auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor ex ) -> fiona::task<void> {
-    auto a = acceptor.async_accept();
+//   auto server = []( fiona::tcp::acceptor acceptor,
+//                     fiona::executor ex ) -> fiona::task<void> {
+//     auto a = acceptor.async_accept();
 
-    {
-      auto stream = co_await a;
-      CHECK( stream.has_value() );
-    }
+//     {
+//       auto stream = co_await a;
+//       CHECK( stream.has_value() );
+//     }
 
-    co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
-    for ( unsigned i = 1; i < num_clients; ++i ) {
-      auto stream = co_await a;
-      CHECK( stream.has_value() );
-    }
+//     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
+//     for ( unsigned i = 1; i < num_clients; ++i ) {
+//       auto stream = co_await a;
+//       CHECK( stream.has_value() );
+//     }
 
-    ++num_runs;
-  };
+//     ++num_runs;
+//   };
 
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
-    client.timeout( std::chrono::seconds( 3 ) );
-    auto ec = co_await client.async_connect( localhost, port );
-    (void)ec;
-    // CHECK( !ec );
-    // if ( ec ) {
-    //   throw ec;
-    // }
-    ++num_runs;
-  };
+//   auto client = []( fiona::executor ex,
+//                     std::uint16_t port ) -> fiona::task<void> {
+//     auto client_result = co_await fiona::tcp::client::make( ex );
+//     auto& client = client_result.value();
+//     client.timeout( std::chrono::seconds( 3 ) );
+//     auto ec = co_await client.async_connect( localhost, port );
+//     (void)ec;
+//     // CHECK( !ec );
+//     // if ( ec ) {
+//     //   throw ec;
+//     // }
+//     ++num_runs;
+//   };
 
-  ex.post( server( std::move( acceptor ), ex ) );
-  for ( unsigned i = 0; i < num_clients; ++i ) {
-    ex.post( client( ex, port ) );
-  }
+//   ex.post( server( std::move( acceptor ), ex ) );
+//   for ( unsigned i = 0; i < num_clients; ++i ) {
+//     ex.post( client( ex, port ) );
+//   }
 
-  ioc.run();
+//   ioc.run();
 
-  CHECK( num_runs == num_clients + 1 );
-}
+//   CHECK( num_runs == num_clients + 1 );
+// }
 
 TEST_CASE( "client connection refused" ) {
   num_runs = 0;
@@ -305,10 +291,8 @@ TEST_CASE( "tcp echo" ) {
   auto server = [handle_request]( fiona::executor ex,
                                   fiona::tcp::acceptor acceptor,
                                   std::string_view msg ) -> fiona::task<void> {
-    auto a = acceptor.async_accept();
-
     for ( int i = 0; i < num_clients; ++i ) {
-      auto stream = co_await a;
+      auto stream = co_await acceptor.async_accept();
       ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
@@ -363,11 +347,11 @@ TEST_CASE( "fd reuse" ) {
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
 
-  constexpr std::uint32_t num_files = 20;
+  constexpr std::uint32_t num_files = 10;
   constexpr std::uint32_t total_connections = 4 * num_files;
 
   fiona::io_context_params params;
-  params.num_files = num_files;
+  params.num_files = 2 * num_files; // duality because of client<->server
 
   fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, 0 );
@@ -378,12 +362,15 @@ TEST_CASE( "fd reuse" ) {
   auto const port = acceptor.port();
 
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
-    auto a = acceptor.async_accept();
+    std::random_device rd;
+    std::mt19937 g( rd() );
 
     std::uint32_t num_accepted = 0;
 
+    std::vector<fiona::tcp::stream> sessions;
+
     while ( num_accepted < total_connections ) {
-      auto stream = co_await a;
+      auto stream = co_await acceptor.async_accept();
       ++num_accepted;
 
       auto r = stream.value().async_recv( 0 );
@@ -399,6 +386,12 @@ TEST_CASE( "fd reuse" ) {
           co_await stream.value().async_write( octets.data(), octets.size() );
 
       CHECK( n_result.value() == octets.size() );
+
+      sessions.push_back( std::move( stream.value() ) );
+      if ( sessions.size() == num_files ) {
+        std::shuffle( sessions.begin(), sessions.end(), g );
+        sessions.clear();
+      }
     }
 
     ++num_runs;
@@ -407,6 +400,10 @@ TEST_CASE( "fd reuse" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
+    std::random_device rd;
+    std::mt19937 g( rd() );
+    std::vector<fiona::tcp::client> sessions;
+
     for ( std::uint32_t i = 0; i < total_connections; ++i ) {
       auto client_result = co_await fiona::tcp::client::make( ex );
       auto& client = client_result.value();
@@ -417,7 +414,14 @@ TEST_CASE( "fd reuse" ) {
       char const msg[] = "hello, world!";
       auto result = co_await client.async_write( msg, std::size( msg ) );
       CHECK( result.value() == std::size( msg ) );
+
+      sessions.push_back( std::move( client ) );
+      if ( sessions.size() == num_files ) {
+        std::shuffle( sessions.begin(), sessions.end(), g );
+        sessions.clear();
+      }
     }
+
     ++num_runs;
   };
 

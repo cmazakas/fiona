@@ -251,6 +251,7 @@ struct io_context_frame {
       : params_( io_ctx_params ) {
 
     int ret = -1;
+    auto ring = &io_ring_;
 
     io_uring_params params = {};
     params.cq_entries = io_ctx_params.cq_entries;
@@ -262,28 +263,37 @@ struct io_context_frame {
       flags |= IORING_SETUP_COOP_TASKRUN;
     }
 
-    ret = io_uring_queue_init_params( params_.sq_entries, &io_ring_, &params );
+    ret = io_uring_queue_init_params( params_.sq_entries, ring, &params );
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
 
-    ret = io_uring_register_ring_fd( &io_ring_ );
+    ret = io_uring_register_ring_fd( ring );
     if ( ret != 1 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
 
-    ret = io_uring_register_files_sparse( &io_ring_, params_.num_files );
+    auto const num_files = params_.num_files;
+    ret = io_uring_register_files_sparse( ring, num_files );
     if ( ret != 0 ) {
       fiona::detail::throw_errno_as_error_code( -ret );
     }
 
-    fds_.reserve( params_.num_files );
-    for ( int i = 0; i < static_cast<int>( params_.num_files ); ++i ) {
+    fds_.reserve( num_files );
+    for ( int i = 0; i < static_cast<int>( num_files ); ++i ) {
       fds_.insert( i );
     }
   }
 
-  ~io_context_frame() { io_uring_queue_exit( &io_ring_ ); }
+  ~io_context_frame() {
+    auto ring = &io_ring_;
+    int ret = -1;
+    ret = io_uring_unregister_files( ring );
+    (void)ret;
+    BOOST_ASSERT( ret == 0 );
+
+    io_uring_queue_exit( ring );
+  }
 };
 
 } // namespace detail
@@ -320,17 +330,21 @@ struct executor_access_policy {
     auto pos = fds.begin();
     auto fd = *pos;
     fds.erase( pos );
+
+    BOOST_ASSERT( fd >= 0 );
+    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
+                  ex.framep_->params_.num_files );
     return fd;
   }
 
-  static void claim_fd( executor ex, int fd ) {
-    auto& fds = ex.framep_->fds_;
-    auto ret = fds.erase( fd );
-    (void)ret;
-    BOOST_ASSERT( ret > 0 );
-  }
-
   static void release_fd( executor ex, int fd ) {
+    if ( fd < 0 ) {
+      return;
+    }
+
+    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
+                  ex.framep_->params_.num_files );
+
     auto& fds = ex.framep_->fds_;
     auto itb = fds.insert( fd );
     (void)itb;
