@@ -7,9 +7,11 @@
 #include <catch2/catch_translate_exception.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <random>
 #include <string_view>
+#include <thread>
 
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
   return ex.message();
@@ -243,7 +245,7 @@ TEST_CASE( "client connect timeout" ) {
 }
 
 TEST_CASE( "tcp echo" ) {
-  num_runs = 0;
+  static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
   constexpr std::uint16_t bgid = 0;
@@ -285,7 +287,7 @@ TEST_CASE( "tcp echo" ) {
       num_bytes += octets.size();
     }
 
-    ++num_runs;
+    ++anum_runs;
   };
 
   auto server = [handle_request]( fiona::executor ex,
@@ -296,7 +298,7 @@ TEST_CASE( "tcp echo" ) {
       ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
-    ++num_runs;
+    ++anum_runs;
     co_return;
   };
 
@@ -328,18 +330,26 @@ TEST_CASE( "tcp echo" ) {
       num_bytes += octets.size();
     }
 
-    ++num_runs;
+    ++anum_runs;
   };
 
+  std::thread t1( [&params, &client, port, msg] {
+    fiona::io_context ioc( params );
+    ioc.register_buffer_sequence( 1024, 128, bgid );
+
+    auto ex = ioc.get_executor();
+    for ( int i = 0; i < num_clients; ++i ) {
+      ioc.post( client( ex, port, msg ) );
+    }
+    ioc.run();
+  } );
+
   ioc.post( server( ex, std::move( acceptor ), msg ) );
-
-  for ( int i = 0; i < num_clients; ++i ) {
-    ioc.post( client( ex, port, msg ) );
-  }
-
   ioc.run();
 
-  CHECK( num_runs == 1 + ( 2 * num_clients ) );
+  t1.join();
+
+  CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
 TEST_CASE( "fd reuse" ) {
