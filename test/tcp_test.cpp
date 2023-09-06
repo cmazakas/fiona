@@ -55,11 +55,12 @@ TEST_CASE( "accept sanity test" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
+    auto maybe_client =
+        co_await fiona::tcp::client::async_connect( ex, localhost, port );
 
-    auto ec = co_await client.async_connect( localhost, port );
-    CHECK( !ec );
+    CHECK( maybe_client.has_value() );
+
+    auto& client = maybe_client.value();
 
     co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
 
@@ -104,11 +105,9 @@ TEST_CASE( "accept back-pressure test" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
-
-    auto ec = co_await client.async_connect( localhost, port );
-    CHECK( !ec );
+    auto maybe_client =
+        co_await fiona::tcp::client::async_connect( ex, localhost, port );
+    CHECK( maybe_client.has_value() );
 
     ++num_runs;
   };
@@ -191,12 +190,10 @@ TEST_CASE( "client connection refused" ) {
   num_runs = 0;
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
-    client.timeout( std::chrono::seconds( 2 ) );
+    auto maybe_ec = co_await fiona::tcp::client::async_connect(
+        ex, localhost, 3301, std::chrono::seconds( 2 ) );
 
-    auto ec = co_await client.async_connect( localhost, 3301 );
-
+    auto ec = maybe_ec.error();
     CHECK( ec );
     CHECK( ec == fiona::error_code::from_errno( ECONNREFUSED ) );
 
@@ -218,14 +215,12 @@ TEST_CASE( "client connect timeout" ) {
   num_runs = 0;
 
   auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
-    client.timeout( std::chrono::seconds( 2 ) );
-
     // use one of the IP addresses from the test networks:
     // 192.0.2.0/24
     // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
-    auto ec = co_await client.async_connect( 0xc0'00'02'00, 3301 );
+    auto maybe_ec = co_await fiona::tcp::client::async_connect(
+        ex, 0xc0'00'02'00, 3301, std::chrono::seconds( 2 ) );
+    auto ec = maybe_ec.error();
 
     CHECK( ec );
     CHECK( ec == fiona::error_code::from_errno( ECANCELED ) );
@@ -304,13 +299,10 @@ TEST_CASE( "tcp echo" ) {
 
   auto client = []( fiona::executor ex, std::uint16_t port,
                     std::string_view msg ) -> fiona::task<void> {
-    auto client_result = co_await fiona::tcp::client::make( ex );
-    auto& client = client_result.value();
+    auto maybe_client = co_await fiona::tcp::client::async_connect(
+        ex, localhost, port, std::chrono::seconds( 3 ) );
 
-    client.timeout( std::chrono::seconds( 3 ) );
-
-    auto ec = co_await client.async_connect( localhost, port );
-    CHECK( !ec );
+    auto& client = maybe_client.value();
 
     std::size_t num_bytes = 0;
 
@@ -415,11 +407,10 @@ TEST_CASE( "fd reuse" ) {
     std::vector<fiona::tcp::client> sessions;
 
     for ( std::uint32_t i = 0; i < total_connections; ++i ) {
-      auto client_result = co_await fiona::tcp::client::make( ex );
-      auto& client = client_result.value();
+      auto maybe_client =
+          co_await fiona::tcp::client::async_connect( ex, localhost, port );
 
-      auto ec = co_await client.async_connect( localhost, port );
-      CHECK( !ec );
+      auto& client = maybe_client.value();
 
       char const msg[] = "hello, world!";
       auto result = co_await client.async_write( msg, std::size( msg ) );

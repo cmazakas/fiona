@@ -20,6 +20,14 @@ get_sqe( io_uring* ring ) {
   return sqe;
 }
 
+void
+reserve_sqes( io_uring* ring, unsigned n ) {
+  auto r = io_uring_sq_space_left( ring );
+  if ( r < n ) {
+    io_uring_submit( ring );
+  }
+}
+
 } // namespace detail
 } // namespace fiona
 

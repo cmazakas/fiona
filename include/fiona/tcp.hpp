@@ -140,7 +140,7 @@ private:
           initiated_ = false;
         }
 
-        if ( ( cqe->flags & IORING_CQE_F_MORE ) && ( cqe->res >= 0 ) ) {
+        if ( ( cqe->flags & IORING_CQE_F_MORE ) /*  && ( cqe->res >= 0 ) */ ) {
           intrusive_ptr_add_ref( this );
         }
       }
@@ -261,6 +261,10 @@ private:
       }
 
       auto ring = self.ring_;
+
+      if ( io_uring_sq_space_left( ring ) < 2 ) {
+        io_uring_submit( ring );
+      }
 
       {
         auto sqe = fiona::detail::get_sqe( ring );
@@ -638,26 +642,54 @@ private:
 
   private:
     struct frame final : public fiona::detail::awaitable_base {
-      sockaddr_storage addr_;
+      enum state { uninit, socket_created, connected, done };
+
       __kernel_timespec ts_;
-      io_uring* ring_ = nullptr;
+      sockaddr_storage addr_;
+      executor ex_;
       std::coroutine_handle<> h_;
       int fd_ = -1;
       int res_ = 0;
+      state s_ = state::uninit;
       bool initiated_ = false;
       bool done_ = false;
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         res_ = cqe->res;
-        done_ = true;
+
+        switch ( s_ ) {
+        case state::uninit: {
+          s_ = socket_created;
+          if ( res_ < 0 ) {
+            s_ = state::done;
+          }
+          break;
+        }
+
+        case state::socket_created: {
+          if ( res_ < 0 ) {
+            detail::executor_access_policy::release_fd( ex_, fd_ );
+          }
+
+          BOOST_ASSERT( use_count() == 2 );
+          done_ = true;
+          break;
+        }
+
+        default:
+          throw;
+        }
       }
 
-      std::coroutine_handle<> handle() noexcept { return h_; }
+      std::coroutine_handle<> handle() noexcept {
+        if ( !done_ ) {
+          return nullptr;
+        }
+        return h_;
+      }
 
-      frame( sockaddr_in ipv4_addr, __kernel_timespec ts, io_uring* ring,
-             int fd )
-          : ts_{ ts }, ring_( ring ), fd_{ fd } {
-        memset( &addr_, 0, sizeof( addr_ ) );
+      frame( sockaddr_in ipv4_addr, __kernel_timespec ts, executor ex )
+          : ts_{ ts }, ex_( ex ) {
         memcpy( &addr_, &ipv4_addr, sizeof( ipv4_addr ) );
       }
     };
@@ -665,14 +697,14 @@ private:
     boost::intrusive_ptr<frame> p_;
 
     connect_awaitable( sockaddr_in ipv4_addr, __kernel_timespec ts,
-                       io_uring* ring, int fd )
-        : p_( new frame( ipv4_addr, ts, ring, fd ) ) {}
+                       executor ex )
+        : p_( new frame( ipv4_addr, ts, ex ) ) {}
 
   public:
     ~connect_awaitable() {
       auto& self = *p_;
       if ( self.initiated_ && !self.done_ ) {
-        auto ring = self.ring_;
+        auto ring = fiona::detail::executor_access_policy::ring( self.ex_ );
         auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
@@ -684,33 +716,56 @@ private:
     bool await_ready() { return false; }
     void await_suspend( std::coroutine_handle<> h ) {
       auto& self = *p_;
-      if ( !self.initiated_ ) {
-        auto ring = self.ring_;
+      if ( self.initiated_ ) {
+        return;
+      }
+
+      auto ring = detail::executor_access_policy::ring( self.ex_ );
+      // socket() -> connect() + timeout
+      //
+      detail::reserve_sqes( ring, 3 );
+
+      {
+        auto sqe = fiona::detail::get_sqe( ring );
+        auto file_idx =
+            detail::executor_access_policy::get_available_fd( self.ex_ );
+
+        self.fd_ = file_idx;
+
+        io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, self.fd_,
+                                     0 );
+        io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+      }
+
+      {
         auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_connect( sqe, self.fd_,
                                reinterpret_cast<sockaddr const*>( &self.addr_ ),
                                sizeof( self.addr_ ) );
         io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
         io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-
-        auto timeout_sqe = fiona::detail::get_sqe( ring );
-
-        io_uring_prep_link_timeout( timeout_sqe, &self.ts_, 0 );
-        io_uring_sqe_set_data( timeout_sqe, nullptr );
-        io_uring_sqe_set_flags( timeout_sqe, IOSQE_CQE_SKIP_SUCCESS );
-
-        self.h_ = h;
-        self.initiated_ = true;
       }
+
+      {
+        auto sqe = fiona::detail::get_sqe( ring );
+
+        io_uring_prep_link_timeout( sqe, &self.ts_, 0 );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      }
+
+      self.h_ = h;
+      self.initiated_ = true;
     }
 
-    fiona::error_code await_resume() {
+    result<client> await_resume() {
       auto& self = *p_;
-      if ( self.res_ == 0 ) {
-        return {};
+      if ( self.res_ < 0 ) {
+        return fiona::error_code::from_errno( -self.res_ );
       }
 
-      return fiona::error_code::from_errno( -self.res_ );
+      return { client( self.ex_, self.fd_ ) };
     }
   };
 
@@ -727,15 +782,22 @@ public:
 
   static client_awaitable make( executor ex ) { return client_awaitable( ex ); }
 
-  connect_awaitable async_connect( std::uint32_t ipv4_addr,
-                                   std::uint16_t port ) {
+  static connect_awaitable async_connect( executor ex, std::uint32_t ipv4_addr,
+                                          std::uint16_t port ) {
+    return async_connect( ex, ipv4_addr, port, std::chrono::seconds( 3 ) );
+  }
 
-    sockaddr_in addr;
-    memset( &addr, 0, sizeof( addr ) );
+  template <class Rep, class Period>
+  static connect_awaitable
+  async_connect( executor ex, std::uint32_t ipv4_addr, std::uint16_t port,
+                 std::chrono::duration<Rep, Period> d ) {
+    auto ts = fiona::detail::duration_to_timespec( d );
+
+    sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
     addr.sin_addr.s_addr = htonl( ipv4_addr );
-    return { addr, ts_, detail::executor_access_policy::ring( ex_ ), fd_ };
+    return { addr, ts, ex };
   }
 };
 
