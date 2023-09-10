@@ -566,86 +566,15 @@ public:
 
 struct client : public stream {
 private:
-  friend struct client_awaitable;
-
-  struct client_awaitable {
-    friend struct client;
-
-    struct frame final : public fiona::detail::awaitable_base {
-      executor ex_;
-      std::coroutine_handle<> h_;
-      int fd_ = -1;
-      bool initiated_ = false;
-      bool done_ = false;
-
-      frame( executor ex ) : ex_( ex ) {}
-
-      void await_process_cqe( io_uring_cqe* cqe ) {
-        if ( cqe->res < 0 ) {
-          detail::executor_access_policy::release_fd( ex_, fd_ );
-          fd_ = cqe->res;
-        }
-        done_ = true;
-      }
-
-      std::coroutine_handle<> handle() noexcept { return h_; }
-    };
-
-    boost::intrusive_ptr<frame> p_;
-
-    client_awaitable( executor ex ) : p_( new frame( ex ) ) {}
-
-    ~client_awaitable() {
-      auto& self = *p_;
-      if ( self.initiated_ && !self.done_ ) {
-        auto ring = detail::executor_access_policy::ring( self.ex_ );
-        auto sqe = fiona::detail::get_sqe( ring );
-        io_uring_prep_cancel( sqe, p_.get(), 0 );
-        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-        io_uring_sqe_set_data( sqe, nullptr );
-        io_uring_submit( ring );
-      }
-    }
-
-    bool await_ready() const noexcept { return false; }
-    void await_suspend( std::coroutine_handle<> h ) {
-      auto& self = *p_;
-      if ( self.initiated_ ) {
-        return;
-      }
-
-      self.h_ = h;
-
-      auto ring = detail::executor_access_policy::ring( self.ex_ );
-      auto sqe = fiona::detail::get_sqe( ring );
-      auto file_idx =
-          detail::executor_access_policy::get_available_fd( self.ex_ );
-
-      self.fd_ = file_idx;
-
-      io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, file_idx, 0 );
-      io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      self.initiated_ = true;
-    }
-
-    result<client> await_resume() {
-      auto& self = *p_;
-      if ( self.fd_ < 0 ) {
-        return fiona::error_code::from_errno( -self.fd_ );
-      }
-      return { client( self.ex_, self.fd_ ) };
-    }
-  };
-
   struct connect_awaitable {
     friend struct client;
 
   private:
     struct frame final : public fiona::detail::awaitable_base {
-      enum state { uninit, socket_created, connected, done };
+      enum state { uninit, socket_created };
 
-      __kernel_timespec ts_;
       sockaddr_storage addr_;
+      __kernel_timespec ts_;
       executor ex_;
       std::coroutine_handle<> h_;
       int fd_ = -1;
@@ -661,7 +590,7 @@ private:
         case state::uninit: {
           s_ = socket_created;
           if ( res_ < 0 ) {
-            s_ = state::done;
+            done_ = true;
           }
           break;
         }
@@ -682,10 +611,13 @@ private:
       }
 
       std::coroutine_handle<> handle() noexcept {
+        BOOST_ASSERT( h_ );
         if ( !done_ ) {
           return nullptr;
         }
-        return h_;
+        auto h = h_;
+        h_ = nullptr;
+        return h;
       }
 
       frame( sockaddr_in ipv4_addr, __kernel_timespec ts, executor ex )
@@ -713,12 +645,18 @@ private:
       }
     }
 
-    bool await_ready() { return false; }
+    bool await_ready() {
+      auto& self = *p_;
+      return self.done_;
+    }
+
     void await_suspend( std::coroutine_handle<> h ) {
       auto& self = *p_;
       if ( self.initiated_ ) {
         return;
       }
+
+      BOOST_ASSERT( !self.done_ );
 
       auto ring = detail::executor_access_policy::ring( self.ex_ );
       // socket() -> connect() + timeout
@@ -779,8 +717,6 @@ public:
 
   client( client&& rhs ) noexcept = default;
   client& operator=( client&& rhs ) noexcept = default;
-
-  static client_awaitable make( executor ex ) { return client_awaitable( ex ); }
 
   static connect_awaitable async_connect( executor ex, std::uint32_t ipv4_addr,
                                           std::uint16_t port ) {
