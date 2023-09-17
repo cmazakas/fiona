@@ -10,11 +10,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(liburing 2.5 REQUIRED)
 find_package(Boost 1.82 REQUIRED)
 
-add_library(fiona INTERFACE)
-target_include_directories(fiona INTERFACE include)
+add_library(fiona src/io_context.cpp)
+target_include_directories(fiona PUBLIC include)
 target_link_libraries(
   fiona
-  INTERFACE
+  PUBLIC
   liburing::liburing
   Boost::headers
 )
