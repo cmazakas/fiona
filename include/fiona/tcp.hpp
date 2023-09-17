@@ -34,33 +34,25 @@ private:
   private:
     struct frame final : public fiona::detail::awaitable_base {
       std::deque<result<borrowed_buffer>> buffers_;
-
+      executor ex_;
       std::coroutine_handle<> h_;
-      io_uring* ring_ = nullptr;
-
       fiona::buf_ring& br_;
-
       int fd_ = -1;
       int res_ = 0;
       std::uint16_t bgid_ = 0;
-
       bool initiated_ = false;
 
-      frame( io_uring* ring, fiona::buf_ring& br, int fd, std::uint16_t bgid )
-          : ring_( ring ), br_( br ), fd_{ fd }, bgid_{ bgid } {}
+      frame( executor ex, fiona::buf_ring& br, int fd, std::uint16_t bgid )
+          : ex_( ex ), br_( br ), fd_{ fd }, bgid_{ bgid } {}
       virtual ~frame() {}
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         if ( cqe->res >= 0 ) {
-          if ( cqe->flags & IORING_CQE_F_BUFFER ) {
-            std::uint16_t bid = cqe->flags >> 16;
-            auto buf = br_.get_buffer( bid );
-            buffers_.push_back( borrowed_buffer( br_.get(), buf.data(),
-                                                 buf.size(), br_.size(), bid,
-                                                 cqe->res ) );
-          } else {
-            buffers_.push_back( borrowed_buffer{} );
-          }
+          BOOST_ASSERT( cqe->flags & IORING_CQE_F_BUFFER );
+          std::uint16_t bid = cqe->flags >> 16;
+          auto buf = br_.get_buffer( bid );
+          buffers_.push_back( borrowed_buffer(
+              br_.get(), buf.data(), buf.size(), br_.size(), bid, cqe->res ) );
         } else {
           buffers_.push_back( fiona::error_code::from_errno( -cqe->res ) );
         }
@@ -69,7 +61,7 @@ private:
           initiated_ = false;
         }
 
-        if ( ( cqe->flags & IORING_CQE_F_MORE ) /*  && ( cqe->res >= 0 ) */ ) {
+        if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {
           intrusive_ptr_add_ref( this );
         }
       }
@@ -81,9 +73,9 @@ private:
       }
     };
 
-    recv_awaitable( io_uring* ring, fiona::buf_ring& br, int fd,
+    recv_awaitable( executor ex, fiona::buf_ring& br, int fd,
                     std::uint16_t bgid )
-        : p_( new frame( ring, br, fd, bgid ) ) {}
+        : p_( new frame( ex, br, fd, bgid ) ) {}
 
     boost::intrusive_ptr<frame> p_;
 
@@ -91,7 +83,7 @@ private:
     ~recv_awaitable() {
       auto& self = *p_;
       if ( self.initiated_ ) {
-        auto ring = self.ring_;
+        auto ring = detail::executor_access_policy::ring( self.ex_ );
         auto sqe = fiona::detail::get_sqe( ring );
         io_uring_prep_cancel( sqe, p_.get(), 0 );
         io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
@@ -112,7 +104,7 @@ private:
         return;
       }
 
-      auto ring = self.ring_;
+      auto ring = detail::executor_access_policy::ring( self.ex_ );
       auto sqe = fiona::detail::get_sqe( ring );
       io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
       io_uring_sqe_set_flags( sqe, IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE );
@@ -292,15 +284,11 @@ public:
   }
 
   recv_awaitable async_recv( std::uint16_t bgid ) {
-    auto maybe_group =
-        detail::executor_access_policy::get_buffer_group( ex_, bgid );
-
-    if ( !maybe_group ) {
+    auto pgroup = detail::executor_access_policy::get_buffer_group( ex_, bgid );
+    if ( !pgroup ) {
       fiona::detail::throw_errno_as_error_code( EINVAL );
     }
-
-    return recv_awaitable( detail::executor_access_policy::ring( ex_ ),
-                           *maybe_group, fd_, bgid );
+    return recv_awaitable( ex_, *pgroup, fd_, bgid );
   }
 };
 
