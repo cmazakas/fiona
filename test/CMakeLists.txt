@@ -1,5 +1,6 @@
 fiona_test(timer_test)
 fiona_test(tcp_test)
+fiona_test(post_test)
 
 function(self_include_test filename)
   add_executable(self_include_test_${filename} self_includes/${filename}.cpp)

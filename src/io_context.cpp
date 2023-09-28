@@ -108,18 +108,6 @@ buf_ring::operator=( buf_ring&& rhs ) noexcept {
 }
 
 void
-executor::post( task<void> t ) {
-  auto ring = detail::executor_access_policy::ring( *this );
-
-  auto [it, b] = framep_->tasks_.insert(
-      scheduler( framep_->tasks_, ring, std::move( t ) ) );
-
-  BOOST_ASSERT( b );
-  framep_->run_queue_.push_back(
-      const_cast<detail::internal_task*>( std::addressof( *it ) ) );
-}
-
-void
 io_context::run() {
   struct cqe_guard {
     io_uring* ring;
@@ -143,12 +131,9 @@ io_context::run() {
     io_uring* ring;
 
     ~guard() {
-      boost::unordered_flat_set<void*> task_addrs;
-      for ( auto const& t : tasks ) {
-        task_addrs.insert( t.h_.address() );
+      for ( auto const& h : tasks ) {
+        h.destroy();
       }
-
-      tasks.clear();
 
       boost::unordered_flat_set<void*> blacklist;
 
@@ -158,10 +143,6 @@ io_context::run() {
         auto p = io_uring_cqe_get_data( cqe );
 
         if ( p == nullptr ) {
-          continue;
-        }
-
-        if ( task_addrs.find( p ) != task_addrs.end() ) {
           continue;
         }
 
@@ -212,8 +193,8 @@ io_context::run() {
   while ( !tasks.empty() ) {
     auto& run_queue = framep_->run_queue_;
     while ( !run_queue.empty() ) {
-      auto t = run_queue.front();
-      t->h_.resume();
+      auto h = run_queue.front();
+      h.resume();
       run_queue.pop_front();
     }
 
