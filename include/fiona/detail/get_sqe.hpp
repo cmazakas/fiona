@@ -8,7 +8,7 @@
 namespace fiona {
 namespace detail {
 
-io_uring_sqe*
+inline io_uring_sqe*
 get_sqe( io_uring* ring ) {
   auto sqe = io_uring_get_sqe( ring );
   if ( sqe ) {
@@ -20,7 +20,7 @@ get_sqe( io_uring* ring ) {
   return sqe;
 }
 
-void
+inline void
 reserve_sqes( io_uring* ring, unsigned n ) {
   auto r = io_uring_sq_space_left( ring );
   if ( r < n ) {
