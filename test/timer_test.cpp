@@ -1,3 +1,5 @@
+#include "helpers.hpp"
+
 #include <fiona/sleep.hpp>
 
 #include <fiona/io_context.hpp>
@@ -9,10 +11,6 @@
 
 static int num_runs = 0;
 
-#define CHECK_GE( T, U ) CHECK( T >= U )
-#define CHECK_EQ( T, U ) CHECK( T == U )
-#define CHECK_LT( T, U ) CHECK( T < U )
-
 struct seeder {
   seeder( unsigned seed ) { std::srand( seed ); }
 };
@@ -23,25 +21,6 @@ std::chrono::milliseconds
 get_sleep_duration() {
   return std::chrono::milliseconds{ 200 + ( std::rand() % 1000 ) };
 }
-
-template <class Rep, class Period>
-struct duration_guard {
-  std::chrono::duration<Rep, Period> expected;
-  std::chrono::system_clock::time_point prev;
-
-  duration_guard( std::chrono::duration<Rep, Period> expected_ )
-      : expected( expected_ ), prev( std::chrono::system_clock::now() ) {}
-
-  ~duration_guard() {
-    auto now = std::chrono::system_clock::now();
-
-    auto elapsed =
-        std::chrono::duration_cast<std::chrono::duration<Rep, Period>>( now -
-                                                                        prev );
-    CHECK_GE( elapsed, expected );
-    CHECK_LT( elapsed, expected * 1.05 );
-  }
-};
 
 namespace {
 
