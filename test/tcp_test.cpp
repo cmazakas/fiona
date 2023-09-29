@@ -280,6 +280,10 @@ TEST_CASE( "tcp echo" ) {
       CHECK( !num_written.has_error() );
       CHECK( num_written.value() == octets.size() );
       num_bytes += octets.size();
+
+      // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
+      //   throw "lmao";
+      // }
     }
 
     ++anum_runs;
@@ -326,18 +330,29 @@ TEST_CASE( "tcp echo" ) {
   };
 
   std::thread t1( [&params, &client, port, msg] {
-    fiona::io_context ioc( params );
-    ioc.register_buffer_sequence( 1024, 128, bgid );
+    try {
+      fiona::io_context ioc( params );
+      ioc.register_buffer_sequence( 1024, 128, bgid );
 
-    auto ex = ioc.get_executor();
-    for ( int i = 0; i < num_clients; ++i ) {
-      ioc.post( client( ex, port, msg ) );
+      auto ex = ioc.get_executor();
+      for ( int i = 0; i < num_clients; ++i ) {
+        ioc.post( client( ex, port, msg ) );
+      }
+      ioc.run();
+
+    } catch ( std::exception const& ex ) {
+      std::cout << "exception caught in client thread:\n"
+                << ex.what() << std::endl;
     }
-    ioc.run();
   } );
 
   ioc.post( server( ex, std::move( acceptor ), msg ) );
-  ioc.run();
+  try {
+    ioc.run();
+  } catch ( ... ) {
+    t1.join();
+    throw;
+  }
 
   t1.join();
 
