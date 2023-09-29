@@ -399,6 +399,7 @@ private:
         }
 
         default:
+          BOOST_ASSERT( false );
           throw;
         }
       }
