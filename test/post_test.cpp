@@ -73,3 +73,20 @@ TEST_CASE( "awaiting a sibling coro" ) {
   // 1 for each child, 2x + parent coro
   CHECK( num_runs == 2 * 2 + 1 );
 }
+
+TEST_CASE( "ignoring exceptions" ) {
+  num_runs = 0;
+  fiona::io_context ioc;
+
+  auto ex = ioc.get_executor();
+  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
+    auto h = ex.post( throw_exception( ex ) );
+    (void)h;
+    ++num_runs;
+    co_return;
+  } )( ex ) );
+
+  duration_guard dg( sleep_dur );
+  CHECK_THROWS( ioc.run() );
+  CHECK( num_runs == 2 );
+}
