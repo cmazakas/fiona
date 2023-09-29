@@ -19,6 +19,7 @@ struct error_code : public std::error_code {
   }
 
   static error_code from_errno( int e ) {
+    BOOST_ASSERT( e != 0 );
     return { std::make_error_code( static_cast<std::errc>( e ) ) };
   }
 };
