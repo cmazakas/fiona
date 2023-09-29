@@ -167,6 +167,13 @@ struct promise_variant {
     rt_ = result_type::error;
   }
 
+  bool has_error() const noexcept { return rt_ == result_type::error; }
+
+  std::exception_ptr get_error() const {
+    BOOST_ASSERT( rt_ == result_type::error );
+    return s_.exception_;
+  }
+
   T& result() & {
     if ( rt_ == result_type::error ) {
       std::rethrow_exception( s_.exception_ );
@@ -195,6 +202,13 @@ struct promise_variant<void> {
   void set_error() {
     exception_ = std::exception_ptr( std::current_exception() );
     rt_ = result_type::error;
+  }
+
+  bool has_error() const noexcept { return rt_ == result_type::error; }
+
+  std::exception_ptr get_error() const {
+    BOOST_ASSERT( rt_ == result_type::error );
+    return exception_;
   }
 
   void result() {
@@ -231,6 +245,7 @@ private:
       if ( continuation ) {
         return continuation;
       }
+
       return std::noop_coroutine();
     }
 
@@ -252,6 +267,14 @@ public:
   boost::intrusive_ptr<internal_state<T>> get_state() const noexcept {
     return ps_;
   }
+
+  void unhandled_exception() {
+    if ( this->ps_->use_count() > 1 ) {
+      this->ps_->variant_.set_error();
+    } else {
+      std::rethrow_exception( std::current_exception() );
+    }
+  }
 };
 
 template <class T>
@@ -264,8 +287,6 @@ struct internal_promise : public internal_promise_base<T> {
     return internal_task(
         std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
-
-  void unhandled_exception() { this->ps_->variant_.set_error(); }
 
   template <class Expr>
   void return_value( Expr&& expr ) {
@@ -284,7 +305,6 @@ struct internal_promise<void> : public internal_promise_base<void> {
         std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
-  void unhandled_exception() { ps_->variant_.set_error(); }
   void return_void() {}
 };
 
@@ -295,6 +315,7 @@ struct io_context_frame {
   std::vector<buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
   std::deque<std::coroutine_handle<>> run_queue_;
+  std::exception_ptr exception_ptr_;
 
   io_context_frame( io_context_params const& io_ctx_params );
   ~io_context_frame();
@@ -328,6 +349,12 @@ namespace detail {
 struct executor_access_policy {
   static inline io_uring* ring( executor ex ) noexcept {
     return &ex.framep_->io_ring_;
+  }
+
+  static void unhandled_exception( executor ex, std::exception_ptr ep ) {
+    if ( !ex.framep_->exception_ptr_ ) {
+      ex.framep_->exception_ptr_ = ep;
+    }
   }
 
   static inline int get_available_fd( executor ex ) {
@@ -374,7 +401,20 @@ struct executor_access_policy {
 
 template <class T>
 struct post_awaitable {
+  executor ex_;
   boost::intrusive_ptr<detail::internal_state<T>> ps_;
+  bool was_awaited_ = false;
+
+  post_awaitable( executor ex,
+                  boost::intrusive_ptr<detail::internal_state<T>> ps )
+      : ex_( ex ), ps_( ps ) {}
+
+  ~post_awaitable() {
+    if ( ps_->variant_.has_error() && !was_awaited_ ) {
+      detail::executor_access_policy::unhandled_exception(
+          ex_, ps_->variant_.get_error() );
+    }
+  }
 
   bool await_ready() const noexcept { return false; }
 
@@ -387,7 +427,10 @@ struct post_awaitable {
     return !task_ended;
   }
 
-  T await_resume() { return this->ps_->variant_.result(); }
+  T await_resume() {
+    was_awaited_ = true;
+    return std::move( this->ps_->variant_.result() );
+  }
 };
 
 template <class T>
@@ -401,7 +444,7 @@ executor::post( task<T> t ) {
   BOOST_ASSERT( b );
   framep_->run_queue_.push_back( *it );
 
-  return { internal_task.h_.promise().get_state() };
+  return { *this, internal_task.h_.promise().get_state() };
 }
 
 template <class T>

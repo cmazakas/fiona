@@ -191,6 +191,10 @@ io_context::run() {
 
   guard g{ tasks, ring };
   while ( !tasks.empty() ) {
+    if ( framep_->exception_ptr_ ) {
+      std::rethrow_exception( framep_->exception_ptr_ );
+    }
+
     auto& run_queue = framep_->run_queue_;
     while ( !run_queue.empty() ) {
       auto h = run_queue.front();
@@ -211,6 +215,10 @@ io_context::run() {
     for ( ; guard.count < num_ready; ) {
       on_cqe( cqes[guard.count++] );
     }
+  }
+
+  if ( framep_->exception_ptr_ ) {
+    std::rethrow_exception( framep_->exception_ptr_ );
   }
 }
 
