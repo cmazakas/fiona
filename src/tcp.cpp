@@ -43,11 +43,18 @@ stream::operator=( stream&& rhs ) noexcept {
 
 void
 stream::recv_awaitable::frame::await_process_cqe( io_uring_cqe* cqe ) {
-  if ( ( cqe->res >= 0 ) && ( cqe->flags & IORING_CQE_F_BUFFER ) ) {
-    std::uint16_t bid = cqe->flags >> 16;
-    auto buf = br_.get_buffer( bid );
-    buffers_.push_back( borrowed_buffer( br_.get(), buf.data(), buf.size(),
-                                         br_.size(), bid, cqe->res ) );
+  if ( cqe->res >= 0 ) {
+    if ( cqe->flags & IORING_CQE_F_BUFFER ) {
+      std::uint16_t bid = cqe->flags >> 16;
+      auto buf = br_.get_buffer( bid );
+      buffers_.push_back( borrowed_buffer( br_.get(), buf.data(), buf.size(),
+                                           br_.size(), bid, cqe->res ) );
+    } else {
+      // tcp connection hard-closed by peer
+      BOOST_ASSERT( cqe->res == 0 );
+      buffers_.push_back( borrowed_buffer() );
+      initiated_ = false;
+    }
   } else {
     buffers_.push_back( fiona::error_code::from_errno( -cqe->res ) );
   }
