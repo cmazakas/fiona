@@ -4,6 +4,7 @@
 #include <fiona/io_context.hpp>
 #include <fiona/sleep.hpp>
 
+#include <memory>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -23,6 +24,14 @@ make_string( fiona::executor ex ) {
   co_await fiona::sleep_for( ex, sleep_dur );
   co_return std::string( "hello world! this should hopefully break sbo and "
                          "force a dynamic allocation" );
+}
+
+fiona::task<std::unique_ptr<int>>
+make_int_pointer( fiona::executor ex ) {
+  ++num_runs;
+  co_await fiona::sleep_for( ex, sleep_dur );
+  auto p = std::make_unique<int>( 1337 );
+  co_return std::move( p );
 }
 
 fiona::task<int>
@@ -89,4 +98,31 @@ TEST_CASE( "ignoring exceptions" ) {
   duration_guard dg( sleep_dur );
   CHECK_THROWS( ioc.run() );
   CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "posting a move-only type" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
+    duration_guard dg( sleep_dur );
+    auto h = ex.post( make_int_pointer( ex ) );
+
+    {
+      auto p = co_await make_int_pointer( ex );
+      CHECK( *p == 1337 );
+    }
+
+    {
+      auto p = co_await h;
+      CHECK( *p == 1337 );
+    }
+
+    ++num_runs;
+    co_return;
+  } )( ex ) );
+
+  ioc.run();
+  CHECK( num_runs == 3 );
 }
