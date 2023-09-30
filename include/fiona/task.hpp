@@ -26,7 +26,7 @@ private:
 
     decltype( auto ) await_resume() {
       BOOST_ASSERT( h_ );
-      return h_.promise().result();
+      return std::move( h_.promise() ).result();
     }
   };
 
