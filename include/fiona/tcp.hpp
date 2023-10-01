@@ -92,8 +92,8 @@ private:
 
       frame( __kernel_timespec ts, io_uring* ring, int fd, void const* buf,
              unsigned nbytes )
-          : ts_{ ts }, ring_( ring ), buf_( buf ), nbytes_{ nbytes },
-            fd_{ fd } {}
+          : ts_{ ts }, ring_( ring ),
+            buf_( buf ), nbytes_{ nbytes }, fd_{ fd } {}
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         res_ = cqe->res;
@@ -299,7 +299,7 @@ public:
     }
   }
 
-  acceptor( fiona::executor ex, std::uint32_t ipv4_addr, std::uint16_t port )
+  acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port )
       : ex_( ex ) {
 
     memset( &addr_storage_, 0, sizeof( addr_storage_ ) );
@@ -319,7 +319,7 @@ public:
     memset( &addr, 0, sizeof( addr ) );
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
-    addr.sin_addr.s_addr = ntohl( ipv4_addr );
+    addr.sin_addr.s_addr = ntohl( ipv4_addr.s_addr );
 
     if ( -1 ==
          bind( fd, reinterpret_cast<sockaddr*>( &addr ), sizeof( addr ) ) ) {
@@ -512,21 +512,21 @@ public:
   client( client&& rhs ) noexcept = default;
   client& operator=( client&& rhs ) noexcept = default;
 
-  static connect_awaitable async_connect( executor ex, std::uint32_t ipv4_addr,
+  static connect_awaitable async_connect( executor ex, in_addr ipv4_addr,
                                           std::uint16_t port ) {
     return async_connect( ex, ipv4_addr, port, std::chrono::seconds( 3 ) );
   }
 
   template <class Rep, class Period>
   static connect_awaitable
-  async_connect( executor ex, std::uint32_t ipv4_addr, std::uint16_t port,
+  async_connect( executor ex, in_addr ipv4_addr, std::uint16_t port,
                  std::chrono::duration<Rep, Period> d ) {
     auto ts = fiona::detail::duration_to_timespec( d );
 
     sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
-    addr.sin_addr.s_addr = htonl( ipv4_addr );
+    addr.sin_addr.s_addr = htonl( ipv4_addr.s_addr );
     return { addr, ts, ex };
   }
 };

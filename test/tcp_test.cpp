@@ -17,7 +17,7 @@ CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
   return ex.message();
 }
 
-constexpr std::uint32_t localhost = 0x7f000001;
+constexpr in_addr localhost = in_addr{ .s_addr = 0x7f000001 };
 
 static int num_runs = 0;
 
@@ -219,7 +219,8 @@ TEST_CASE( "client connect timeout" ) {
     // 192.0.2.0/24
     // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
     auto maybe_ec = co_await fiona::tcp::client::async_connect(
-        ex, 0xc0'00'02'00, 3301, std::chrono::seconds( 2 ) );
+        ex, in_addr{ .s_addr = 0xc0'00'02'00 }, 3301,
+        std::chrono::seconds( 2 ) );
     auto ec = maybe_ec.error();
 
     CHECK( ec );
