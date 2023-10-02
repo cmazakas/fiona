@@ -1,6 +1,6 @@
 #include "helpers.hpp"
 
-#include <fiona/sleep.hpp>
+#include <fiona/time.hpp>
 
 #include <fiona/io_context.hpp>
 

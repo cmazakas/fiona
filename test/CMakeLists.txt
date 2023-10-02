@@ -11,7 +11,7 @@ endfunction()
 
 self_include_test(error)
 self_include_test(io_context)
-self_include_test(sleep)
+self_include_test(time)
 self_include_test(task)
 self_include_test(tcp)
 self_include_test(borrowed_buffer)

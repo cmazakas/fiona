@@ -2,8 +2,8 @@
 
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
-#include <fiona/sleep.hpp>
 #include <fiona/tcp.hpp>
+#include <fiona/time.hpp>
 
 #include <algorithm>
 #include <atomic>
