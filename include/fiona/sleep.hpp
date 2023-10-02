@@ -24,6 +24,8 @@ private:
     __kernel_timespec ts;
     std::coroutine_handle<> h = nullptr;
     std::error_code ec;
+    bool initiated_ = false;
+    bool done_ = false;
 
     frame( io_uring* ring_, __kernel_timespec ts_ )
         : ring( ring_ ), ts{ ts_ } {}
@@ -31,6 +33,7 @@ private:
     virtual ~frame() {}
 
     void await_process_cqe( io_uring_cqe* cqe ) {
+      done_ = true;
       auto e = -cqe->res;
       if ( e != 0 && e != ETIME ) {
         ec = std::make_error_code( static_cast<std::errc>( e ) );
@@ -48,9 +51,24 @@ public:
                    std::chrono::duration<Rep, Period> const& d )
       : p_( new frame( ring_, fiona::detail::duration_to_timespec( d ) ) ) {}
 
+  ~timer_awaitable() {
+    auto& self = *p_;
+    if ( self.initiated_ && !self.done_ ) {
+      auto ring = self.ring;
+      auto sqe = fiona::detail::get_sqe( ring );
+      io_uring_prep_cancel( sqe, p_.get(), 0 );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      io_uring_sqe_set_data( sqe, nullptr );
+      io_uring_submit( ring );
+    }
+  }
+
   bool await_ready() { return false; }
   void await_suspend( std::coroutine_handle<> h_ ) {
     auto& self = *p_;
+    if ( self.initiated_ ) {
+      return;
+    }
 
     self.h = h_;
 
@@ -59,6 +77,8 @@ public:
 
     io_uring_prep_timeout( sqe, &self.ts, 0, 0 );
     io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+
+    self.initiated_ = true;
   }
 
   error_code await_resume() {
