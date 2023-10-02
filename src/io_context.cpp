@@ -9,9 +9,8 @@
 
 namespace fiona {
 
-buf_ring::
-buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
-          std::uint16_t bgid )
+buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
+                    std::uint16_t bgid )
     : bufs_( num_bufs ), ring_( ring ), bgid_{ bgid } {
 
   struct mmap_guard {
@@ -65,8 +64,7 @@ buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
   guard.mapped = nullptr;
 }
 
-buf_ring::~
-buf_ring() {
+buf_ring::~buf_ring() {
   if ( buf_ring_ ) {
     BOOST_ASSERT( ring_ );
     io_uring_unregister_buf_ring( ring_, bgid_ );
@@ -74,8 +72,7 @@ buf_ring() {
   }
 }
 
-buf_ring::
-buf_ring( buf_ring&& rhs ) noexcept {
+buf_ring::buf_ring( buf_ring&& rhs ) noexcept {
   bufs_ = std::move( rhs.bufs_ );
   ring_ = rhs.ring_;
   buf_ring_ = rhs.buf_ring_;
@@ -224,8 +221,7 @@ io_context::run() {
 
 namespace detail {
 
-io_context_frame::
-io_context_frame( io_context_params const& io_ctx_params )
+io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
     : params_( io_ctx_params ) {
 
   int ret = -1;
@@ -263,8 +259,7 @@ io_context_frame( io_context_params const& io_ctx_params )
   }
 }
 
-io_context_frame::~
-io_context_frame() {
+io_context_frame::~io_context_frame() {
   auto ring = &io_ring_;
   io_uring_queue_exit( ring );
 }
