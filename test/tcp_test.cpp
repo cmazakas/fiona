@@ -1,10 +1,9 @@
+#include "helpers.hpp"
+
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/sleep.hpp>
 #include <fiona/tcp.hpp>
-
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_translate_exception.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -12,10 +11,6 @@
 #include <random>
 #include <string_view>
 #include <thread>
-
-CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
-  return ex.message();
-}
 
 constexpr in_addr localhost = in_addr{ .s_addr = 0x7f000001 };
 

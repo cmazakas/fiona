@@ -1,7 +1,10 @@
 #ifndef FIONA_TEST_HELPERS_HPP
 #define FIONA_TEST_HELPERS_HPP
 
+#include <fiona/error.hpp>
+
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_translate_exception.hpp>
 
 #include <chrono>
 
@@ -27,5 +30,9 @@ struct duration_guard {
     CHECK_LT( elapsed, expected * 1.05 );
   }
 };
+
+CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
+  return ex.message();
+}
 
 #endif // FIONA_TEST_HELPERS_HPP

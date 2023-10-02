@@ -7,13 +7,6 @@
 #include <memory>
 #include <string>
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_translate_exception.hpp>
-
-CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
-  return ex.message();
-}
-
 static int num_runs = 0;
 
 inline constexpr std::chrono::milliseconds sleep_dur( 25 );
