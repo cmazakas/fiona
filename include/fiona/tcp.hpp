@@ -345,15 +345,62 @@ public:
     }
   }
 
+  acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port )
+      : ex_( ex ) {
+    addr_storage_ = {};
+
+    int fd = socket( AF_INET6, SOCK_STREAM, 0 );
+    if ( fd == -1 ) {
+      fiona::detail::throw_errno_as_error_code( errno );
+    }
+
+    int enable = 1;
+    if ( -1 == setsockopt( fd, SOL_SOCKET, SO_REUSEADDR, &enable,
+                           sizeof( enable ) ) ) {
+      fiona::detail::throw_errno_as_error_code( errno );
+    }
+
+    sockaddr_in6 addr = {};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons( port );
+    addr.sin6_addr = ipv6_addr;
+
+    if ( -1 ==
+         bind( fd, reinterpret_cast<sockaddr*>( &addr ), sizeof( addr ) ) ) {
+      fiona::detail::throw_errno_as_error_code( errno );
+    }
+
+    constexpr int backlog = 5000;
+    if ( -1 == listen( fd, backlog ) ) {
+      fiona::detail::throw_errno_as_error_code( errno );
+    }
+
+    fd_ = fd;
+    is_ipv4_ = false;
+    if ( port == 0 ) {
+      socklen_t addrlen = sizeof( sockaddr_in6 );
+      if ( -1 == getsockname( fd_,
+                              reinterpret_cast<sockaddr*>( &addr_storage_ ),
+                              &addrlen ) ) {
+        fiona::detail::throw_errno_as_error_code( errno );
+      }
+    } else {
+      memcpy( &addr_storage_, &addr, sizeof( addr ) );
+    }
+  }
+
   accept_awaitable async_accept() {
     return { ex_, detail::executor_access_policy::ring( ex_ ), fd_ };
   }
 
   std::uint16_t port() {
-    // current limitation because of wsl2's lack of ipv6
-    BOOST_ASSERT( is_ipv4_ );
-    auto paddr = reinterpret_cast<sockaddr_in const*>( &addr_storage_ );
-    return ntohs( paddr->sin_port );
+    if ( is_ipv4_ ) {
+      auto paddr = reinterpret_cast<sockaddr_in const*>( &addr_storage_ );
+      return ntohs( paddr->sin_port );
+    }
+
+    auto paddr = reinterpret_cast<sockaddr_in6 const*>( &addr_storage_ );
+    return ntohs( paddr->sin6_port );
   }
 };
 
@@ -375,6 +422,7 @@ private:
       state s_ = state::uninit;
       bool initiated_ = false;
       bool done_ = false;
+      bool is_ipv4_ = true;
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         res_ = cqe->res;
@@ -418,6 +466,11 @@ private:
           : ts_{ ts }, ex_( ex ) {
         memcpy( &addr_, &ipv4_addr, sizeof( ipv4_addr ) );
       }
+
+      frame( sockaddr_in6 ipv6_addr, __kernel_timespec ts, executor ex )
+          : ts_{ ts }, ex_( ex ) {
+        memcpy( &addr_, &ipv6_addr, sizeof( ipv6_addr ) );
+      }
     };
 
     boost::intrusive_ptr<frame> p_;
@@ -425,6 +478,12 @@ private:
     connect_awaitable( sockaddr_in ipv4_addr, __kernel_timespec ts,
                        executor ex )
         : p_( new frame( ipv4_addr, ts, ex ) ) {}
+
+    connect_awaitable( sockaddr_in6 ipv6_addr, __kernel_timespec ts,
+                       executor ex )
+        : p_( new frame( ipv6_addr, ts, ex ) ) {
+      p_->is_ipv4_ = false;
+    }
 
   public:
     ~connect_awaitable() {
@@ -464,8 +523,8 @@ private:
 
         self.fd_ = file_idx;
 
-        io_uring_prep_socket_direct( sqe, AF_INET, SOCK_STREAM, 0, self.fd_,
-                                     0 );
+        auto af = ( self.is_ipv4_ ? AF_INET : AF_INET6 );
+        io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, self.fd_, 0 );
         io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
         io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
       }
@@ -517,6 +576,11 @@ public:
     return async_connect( ex, ipv4_addr, port, std::chrono::seconds( 3 ) );
   }
 
+  static connect_awaitable async_connect( executor ex, in6_addr ipv6_addr,
+                                          std::uint16_t port ) {
+    return async_connect( ex, ipv6_addr, port, std::chrono::seconds( 3 ) );
+  }
+
   template <class Rep, class Period>
   static connect_awaitable
   async_connect( executor ex, in_addr ipv4_addr, std::uint16_t port,
@@ -527,6 +591,19 @@ public:
     addr.sin_family = AF_INET;
     addr.sin_port = htons( port );
     addr.sin_addr.s_addr = htonl( ipv4_addr.s_addr );
+    return { addr, ts, ex };
+  }
+
+  template <class Rep, class Period>
+  static connect_awaitable
+  async_connect( executor ex, in6_addr ipv6_addr, std::uint16_t port,
+                 std::chrono::duration<Rep, Period> d ) {
+    auto ts = fiona::detail::duration_to_timespec( d );
+
+    sockaddr_in6 addr = {};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons( port );
+    addr.sin6_addr = ipv6_addr;
     return { addr, ts, ex };
   }
 };
