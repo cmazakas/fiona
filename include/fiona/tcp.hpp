@@ -267,6 +267,11 @@ public:
     }
   }
 
+  acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port,
+            int backlog );
+  acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port,
+            int backlog );
+
   acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port );
   acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port );
 

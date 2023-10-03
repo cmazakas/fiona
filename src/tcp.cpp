@@ -187,6 +187,10 @@ acceptor::operator=( acceptor&& rhs ) noexcept {
 }
 
 acceptor::acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port )
+    : acceptor( ex, ipv4_addr, port, 5000 ) {}
+
+acceptor::acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port,
+                    int backlog )
     : ex_( ex ) {
 
   memset( &addr_storage_, 0, sizeof( addr_storage_ ) );
@@ -213,7 +217,6 @@ acceptor::acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port )
     fiona::detail::throw_errno_as_error_code( errno );
   }
 
-  constexpr int backlog = 5000;
   if ( -1 == listen( fd, backlog ) ) {
     fiona::detail::throw_errno_as_error_code( errno );
   }
@@ -232,6 +235,10 @@ acceptor::acceptor( fiona::executor ex, in_addr ipv4_addr, std::uint16_t port )
 }
 
 acceptor::acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port )
+    : acceptor( ex, ipv6_addr, port, 5000 ) {}
+
+acceptor::acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port,
+                    int backlog )
     : ex_( ex ) {
   addr_storage_ = {};
 
@@ -256,7 +263,6 @@ acceptor::acceptor( fiona::executor ex, in6_addr ipv6_addr, std::uint16_t port )
     fiona::detail::throw_errno_as_error_code( errno );
   }
 
-  constexpr int backlog = 5000;
   if ( -1 == listen( fd, backlog ) ) {
     fiona::detail::throw_errno_as_error_code( errno );
   }
