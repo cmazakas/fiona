@@ -37,11 +37,11 @@ TEST_CASE( "ipv6 sanity check" ) {
 
     auto rx = stream.async_recv( 0 );
 
-    auto buf = co_await rx;
+    auto mbuf = co_await rx;
+    auto& buf = mbuf.value();
 
-    auto octets = buf.value().readable_bytes();
-    auto str = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() - 1 );
+    auto octets = buf.readable_bytes();
+    auto str = buf.as_str();
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
 
@@ -65,8 +65,8 @@ TEST_CASE( "ipv6 sanity check" ) {
     co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
 
     char const msg[] = "hello, world!";
-    auto result = co_await client.async_write( msg, std::size( msg ) );
-    CHECK( result.value() == std::size( msg ) );
+    auto result = co_await client.async_write( msg, std::size( msg ) - 1 );
+    CHECK( result.value() == std::size( msg ) - 1 );
 
     auto rx = client.async_recv( 0 );
     auto mbuf = co_await rx;
@@ -76,8 +76,7 @@ TEST_CASE( "ipv6 sanity check" ) {
     auto& buf = mbuf.value();
 
     auto octets = buf.readable_bytes();
-    auto str = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() - 1 );
+    auto str = buf.as_str();
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
 

@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 #include <liburing.h>
 
 namespace fiona {
+
 struct borrowed_buffer {
 private:
   io_uring_buf_ring* br_ = nullptr;
@@ -29,9 +31,9 @@ public:
         num_bufs_{ num_bufs }, bid_{ bid } {}
 
   borrowed_buffer( borrowed_buffer&& rhs ) noexcept
-      : br_( rhs.br_ ), addr_( rhs.addr_ ), len_{ rhs.len_ },
-        num_read_{ rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
-        bid_{ rhs.bid_ } {
+      : br_( rhs.br_ ),
+        addr_( rhs.addr_ ), len_{ rhs.len_ }, num_read_{ rhs.num_read_ },
+        num_bufs_{ rhs.num_bufs_ }, bid_{ rhs.bid_ } {
     rhs.br_ = nullptr;
     rhs.addr_ = nullptr;
     rhs.len_ = 0;
@@ -77,6 +79,10 @@ public:
 
   std::span<unsigned char> readable_bytes() const noexcept {
     return { static_cast<unsigned char*>( addr_ ), num_read_ };
+  }
+
+  std::string_view as_str() const noexcept {
+    return { static_cast<char*>( addr_ ), num_read_ };
   }
 };
 } // namespace fiona
