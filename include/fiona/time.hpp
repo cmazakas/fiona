@@ -1,5 +1,5 @@
-#ifndef FIONA_SLEEP_HPP
-#define FIONA_SLEEP_HPP
+#ifndef FIONA_TIME_HPP
+#define FIONA_TIME_HPP
 
 #include <fiona/detail/awaitable_base.hpp>
 #include <fiona/detail/get_sqe.hpp>
@@ -95,4 +95,4 @@ sleep_for( fiona::executor ex, std::chrono::duration<Rep, Period> d ) {
 
 } // namespace fiona
 
-#endif // FIONA_SLEEP_HPP
+#endif // FIONA_TIME_HPP
