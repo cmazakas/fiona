@@ -389,52 +389,7 @@ private:
       return self.done_;
     }
 
-    void await_suspend( std::coroutine_handle<> h ) {
-      auto& self = *p_;
-      if ( self.initiated_ ) {
-        return;
-      }
-
-      BOOST_ASSERT( !self.done_ );
-
-      auto ring = detail::executor_access_policy::ring( self.ex_ );
-      // socket() -> connect() + timeout
-      //
-      detail::reserve_sqes( ring, 3 );
-
-      {
-        auto sqe = fiona::detail::get_sqe( ring );
-        auto file_idx =
-            detail::executor_access_policy::get_available_fd( self.ex_ );
-
-        self.fd_ = file_idx;
-
-        auto af = ( self.is_ipv4_ ? AF_INET : AF_INET6 );
-        io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, self.fd_, 0 );
-        io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
-      }
-
-      {
-        auto sqe = fiona::detail::get_sqe( ring );
-        io_uring_prep_connect( sqe, self.fd_,
-                               reinterpret_cast<sockaddr const*>( &self.addr_ ),
-                               sizeof( self.addr_ ) );
-        io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
-        io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-      }
-
-      {
-        auto sqe = fiona::detail::get_sqe( ring );
-
-        io_uring_prep_link_timeout( sqe, &self.ts_, 0 );
-        io_uring_sqe_set_data( sqe, nullptr );
-        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-      }
-
-      self.h_ = h;
-      self.initiated_ = true;
-    }
+    void await_suspend( std::coroutine_handle<> h );
 
     result<client> await_resume() {
       auto& self = *p_;
