@@ -41,9 +41,55 @@ stream::operator=( stream&& rhs ) noexcept {
 }
 
 void
+stream::recv_awaitable::frame::schedule_recv() {
+  auto ring = detail::executor_access_policy::ring( ex_ );
+
+  detail::reserve_sqes( ring, 2 );
+
+  {
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_recv_multishot( sqe, fd_, nullptr, 0, 0 );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_BUFFER_SELECT |
+                                     IOSQE_FIXED_FILE );
+    io_uring_sqe_set_data( sqe, this );
+    intrusive_ptr_add_ref( this );
+    sqe->buf_group = bgid_;
+  }
+
+  {
+    auto ts = ts_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_link_timeout( sqe, &ts, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+  }
+
+  initiated_ = true;
+}
+
+void
 stream::recv_awaitable::frame::await_process_cqe( io_uring_cqe* cqe ) {
+  bool const canceled_by_deadline_timer =
+      ( cqe->res == -ECANCELED && !canceled_ );
+
+  if ( canceled_by_deadline_timer ) {
+    BOOST_ASSERT( initiated_ );
+    auto now = clock_type::now();
+
+    auto diff = now - last_activity_;
+    auto max_diff = std::chrono::seconds{ ts_.tv_sec } +
+                    std::chrono::nanoseconds{ ts_.tv_nsec };
+
+    if ( diff < max_diff ) {
+      schedule_recv();
+      return;
+    }
+  }
+
   if ( cqe->res >= 0 ) {
     if ( cqe->flags & IORING_CQE_F_BUFFER ) {
+      last_activity_ = clock_type::now();
+
       std::uint16_t bid = cqe->flags >> 16;
       auto buf = br_.get_buffer( bid );
       buffers_.push_back( borrowed_buffer( br_.get(), buf.data(), buf.size(),
@@ -70,6 +116,7 @@ stream::recv_awaitable::frame::await_process_cqe( io_uring_cqe* cqe ) {
 stream::recv_awaitable::~recv_awaitable() {
   auto& self = *p_;
   if ( self.initiated_ ) {
+    self.canceled_ = true;
     auto ring = detail::executor_access_policy::ring( self.ex_ );
     auto sqe = fiona::detail::get_sqe( ring );
     io_uring_prep_cancel( sqe, p_.get(), 0 );
@@ -87,28 +134,7 @@ stream::recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
     return;
   }
 
-  auto ring = detail::executor_access_policy::ring( self.ex_ );
-
-  detail::reserve_sqes( ring, 2 );
-
-  {
-    auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_BUFFER_SELECT |
-                                     IOSQE_FIXED_FILE );
-    io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-    sqe->buf_group = self.bgid_;
-  }
-
-  {
-    auto ts = self.ts_;
-    auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_link_timeout( sqe, &ts, 0 );
-    io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-  }
-
-  self.initiated_ = true;
+  self.schedule_recv();
 }
 
 result<borrowed_buffer>

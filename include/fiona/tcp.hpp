@@ -21,6 +21,8 @@
 #include <netinet/ip.h>
 #include <sys/socket.h>
 
+#include <chrono>
+
 namespace fiona {
 namespace tcp {
 
@@ -30,8 +32,12 @@ private:
     friend struct stream;
 
   private:
+    using clock_type = std::chrono::steady_clock;
+    using timepoint_type = std::chrono::time_point<clock_type>;
+
     struct frame final : public fiona::detail::awaitable_base {
       std::deque<result<borrowed_buffer>> buffers_;
+      timepoint_type last_activity_ = clock_type::now();
       __kernel_timespec ts_;
       executor ex_;
       std::coroutine_handle<> h_;
@@ -40,12 +46,15 @@ private:
       int res_ = 0;
       std::uint16_t bgid_ = 0;
       bool initiated_ = false;
+      bool canceled_ = false;
 
       frame( __kernel_timespec ts, executor ex, fiona::buf_ring& br, int fd,
              std::uint16_t bgid )
           : ts_{ ts }, ex_{ ex }, br_{ br }, fd_{ fd }, bgid_{ bgid } {}
 
       virtual ~frame() {}
+
+      void schedule_recv();
 
       void await_process_cqe( io_uring_cqe* cqe );
 
