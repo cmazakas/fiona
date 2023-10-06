@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(fiona LANGUAGES CXX)
 
-if (CMAKE_CXX_VERSION LESS "20")
+if (CXX_STANDARD LESS "20")
   message(FATAL_ERROR "fiona is a C++20 library")
 endif()
 
