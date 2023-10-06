@@ -88,11 +88,25 @@ stream::recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
   }
 
   auto ring = detail::executor_access_policy::ring( self.ex_ );
-  auto sqe = fiona::detail::get_sqe( ring );
-  io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
-  io_uring_sqe_set_flags( sqe, IOSQE_BUFFER_SELECT | IOSQE_FIXED_FILE );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
-  sqe->buf_group = self.bgid_;
+
+  detail::reserve_sqes( ring, 2 );
+
+  {
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_recv_multishot( sqe, self.fd_, nullptr, 0, 0 );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_BUFFER_SELECT |
+                                     IOSQE_FIXED_FILE );
+    io_uring_sqe_set_data( sqe, boost::intrusive_ptr( p_ ).detach() );
+    sqe->buf_group = self.bgid_;
+  }
+
+  {
+    auto ts = self.ts_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_link_timeout( sqe, &ts, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+  }
 
   self.initiated_ = true;
 }

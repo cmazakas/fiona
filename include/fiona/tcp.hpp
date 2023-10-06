@@ -21,8 +21,6 @@
 #include <netinet/ip.h>
 #include <sys/socket.h>
 
-#include <thread>
-
 namespace fiona {
 namespace tcp {
 
@@ -34,6 +32,7 @@ private:
   private:
     struct frame final : public fiona::detail::awaitable_base {
       std::deque<result<borrowed_buffer>> buffers_;
+      __kernel_timespec ts_;
       executor ex_;
       std::coroutine_handle<> h_;
       fiona::buf_ring& br_;
@@ -42,8 +41,10 @@ private:
       std::uint16_t bgid_ = 0;
       bool initiated_ = false;
 
-      frame( executor ex, fiona::buf_ring& br, int fd, std::uint16_t bgid )
-          : ex_( ex ), br_( br ), fd_{ fd }, bgid_{ bgid } {}
+      frame( __kernel_timespec ts, executor ex, fiona::buf_ring& br, int fd,
+             std::uint16_t bgid )
+          : ts_{ ts }, ex_{ ex }, br_{ br }, fd_{ fd }, bgid_{ bgid } {}
+
       virtual ~frame() {}
 
       void await_process_cqe( io_uring_cqe* cqe );
@@ -55,9 +56,9 @@ private:
       }
     };
 
-    recv_awaitable( executor ex, fiona::buf_ring& br, int fd,
-                    std::uint16_t bgid )
-        : p_( new frame( ex, br, fd, bgid ) ) {}
+    recv_awaitable( __kernel_timespec ts, executor ex, fiona::buf_ring& br,
+                    int fd, std::uint16_t bgid )
+        : p_( new frame( ts, ex, br, fd, bgid ) ) {}
 
     boost::intrusive_ptr<frame> p_;
 
@@ -92,8 +93,8 @@ private:
 
       frame( __kernel_timespec ts, io_uring* ring, int fd, void const* buf,
              unsigned nbytes )
-          : ts_{ ts }, ring_( ring ),
-            buf_( buf ), nbytes_{ nbytes }, fd_{ fd } {}
+          : ts_{ ts }, ring_( ring ), buf_( buf ), nbytes_{ nbytes },
+            fd_{ fd } {}
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         res_ = cqe->res;
@@ -127,7 +128,7 @@ private:
 
 protected:
   fiona::executor ex_;
-  __kernel_timespec ts_;
+  __kernel_timespec ts_ = __kernel_timespec{ .tv_sec = 3, .tv_nsec = 0 };
   int fd_ = -1;
 
 public:
@@ -136,7 +137,7 @@ public:
   stream( stream const& ) = delete;
   stream& operator=( stream const& ) = delete;
 
-  stream( fiona::executor ex, int fd ) : ex_( ex ), ts_{}, fd_{ fd } {}
+  stream( fiona::executor ex, int fd ) : ex_( ex ), fd_{ fd } {}
 
   stream( stream&& rhs ) noexcept
       : ex_( std::move( rhs.ex_ ) ), ts_{ rhs.ts_ }, fd_{ rhs.fd_ } {
@@ -164,7 +165,7 @@ public:
     if ( !pgroup ) {
       fiona::detail::throw_errno_as_error_code( EINVAL );
     }
-    return recv_awaitable( ex_, *pgroup, fd_, bgid );
+    return recv_awaitable( ts_, ex_, *pgroup, fd_, bgid );
   }
 };
 

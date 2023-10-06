@@ -258,12 +258,15 @@ TEST_CASE( "tcp echo" ) {
 
   auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void> {
+    stream.timeout( std::chrono::seconds( 5 ) );
+
     std::size_t num_bytes = 0;
 
     auto rx = stream.async_recv( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto borrowed_buf = co_await rx;
+      CHECK( borrowed_buf.has_value() );
 
       auto octets = borrowed_buf.value().readable_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
@@ -299,10 +302,13 @@ TEST_CASE( "tcp echo" ) {
 
   auto client = []( fiona::executor ex, std::uint16_t port,
                     std::string_view msg ) -> fiona::task<void> {
-    auto maybe_client = co_await fiona::tcp::client::async_connect(
+    auto mclient = co_await fiona::tcp::client::async_connect(
         ex, localhost, port, std::chrono::seconds( 3 ) );
 
-    auto& client = maybe_client.value();
+    CHECK( mclient.has_value() );
+
+    auto& client = mclient.value();
+    client.timeout( std::chrono::seconds( 5 ) );
 
     std::size_t num_bytes = 0;
 
