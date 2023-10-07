@@ -481,6 +481,12 @@ public:
   void run();
 };
 
+template <class T>
+post_awaitable<T>
+post( executor ex, task<T> t ) {
+  return ex.post( std::move( t ) );
+}
+
 } // namespace fiona
 
 #endif // FIONA_IO_CONTEXT_HPP

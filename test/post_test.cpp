@@ -46,18 +46,18 @@ TEST_CASE( "awaiting a sibling coro" ) {
     {
       duration_guard dg( 2 * sleep_dur );
 
-      auto str = co_await ex.post( make_string( ex ) );
+      auto str = co_await fiona::post( ex, make_string( ex ) );
 
       CHECK( str == "hello world! this should hopefully break sbo and "
                     "force a dynamic allocation" );
 
-      CHECK_THROWS( co_await ex.post( throw_exception( ex ) ) );
+      CHECK_THROWS( co_await fiona::post( ex, throw_exception( ex ) ) );
     }
 
     {
       duration_guard dg( sleep_dur );
-      auto h1 = ex.post( make_string( ex ) );
-      auto h2 = ex.post( throw_exception( ex ) );
+      auto h1 = fiona::post( ex, make_string( ex ) );
+      auto h2 = fiona::post( ex, throw_exception( ex ) );
 
       auto str = co_await h1;
       CHECK_THROWS( co_await h2 );
@@ -81,12 +81,12 @@ TEST_CASE( "ignoring exceptions" ) {
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
-    auto h = ex.post( throw_exception( ex ) );
-    (void)h;
-    ++num_runs;
-    co_return;
-  } )( ex ) );
+  fiona::post( ex, ( []( fiona::executor ex ) -> fiona::task<void> {
+                 auto h = fiona::post( ex, throw_exception( ex ) );
+                 (void)h;
+                 ++num_runs;
+                 co_return;
+               } )( ex ) );
 
   duration_guard dg( sleep_dur );
   CHECK_THROWS( ioc.run() );
@@ -98,23 +98,23 @@ TEST_CASE( "posting a move-only type" ) {
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
-    duration_guard dg( sleep_dur );
-    auto h = ex.post( make_int_pointer( ex ) );
+  fiona::post( ex, ( []( fiona::executor ex ) -> fiona::task<void> {
+                 duration_guard dg( sleep_dur );
+                 auto h = fiona::post( ex, make_int_pointer( ex ) );
 
-    {
-      auto p = co_await make_int_pointer( ex );
-      CHECK( *p == 1337 );
-    }
+                 {
+                   auto p = co_await make_int_pointer( ex );
+                   CHECK( *p == 1337 );
+                 }
 
-    {
-      auto p = co_await h;
-      CHECK( *p == 1337 );
-    }
+                 {
+                   auto p = co_await h;
+                   CHECK( *p == 1337 );
+                 }
 
-    ++num_runs;
-    co_return;
-  } )( ex ) );
+                 ++num_runs;
+                 co_return;
+               } )( ex ) );
 
   ioc.run();
   CHECK( num_runs == 3 );
