@@ -119,3 +119,25 @@ TEST_CASE( "posting a move-only type" ) {
   ioc.run();
   CHECK( num_runs == 3 );
 }
+
+TEST_CASE( "void returning function" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
+    auto f = []( fiona::executor ex ) -> fiona::task<void> {
+      co_await fiona::sleep_for( ex, std::chrono::milliseconds( 500 ) );
+      ++num_runs;
+    };
+    co_await fiona::post( ex, f( ex ) );
+
+    ++num_runs;
+    co_return;
+  } )( ex ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}

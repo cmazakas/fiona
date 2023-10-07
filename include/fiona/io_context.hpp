@@ -429,7 +429,7 @@ struct post_awaitable {
 
   T await_resume() {
     was_awaited_ = true;
-    return std::move( this->ps_->variant_.result() );
+    return std::move( this->ps_->variant_ ).result();
   }
 };
 
