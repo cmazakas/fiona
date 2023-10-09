@@ -42,7 +42,7 @@ TEST_CASE( "awaiting a sibling coro" ) {
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ioc.post( ( []( fiona::executor ex ) -> fiona::task<void> {
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
     {
       duration_guard dg( 2 * sleep_dur );
 
@@ -68,7 +68,7 @@ TEST_CASE( "awaiting a sibling coro" ) {
 
     ++num_runs;
     co_return;
-  } )( ex ) );
+  }( ex ) );
 
   ioc.run();
 
@@ -81,12 +81,12 @@ TEST_CASE( "ignoring exceptions" ) {
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  fiona::post( ex, ( []( fiona::executor ex ) -> fiona::task<void> {
-                 auto h = fiona::post( ex, throw_exception( ex ) );
-                 (void)h;
-                 ++num_runs;
-                 co_return;
-               } )( ex ) );
+  fiona::post( ex, []( fiona::executor ex ) -> fiona::task<void> {
+    auto h = fiona::post( ex, throw_exception( ex ) );
+    (void)h;
+    ++num_runs;
+    co_return;
+  }( ex ) );
 
   duration_guard dg( sleep_dur );
   CHECK_THROWS( ioc.run() );
@@ -98,23 +98,23 @@ TEST_CASE( "posting a move-only type" ) {
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  fiona::post( ex, ( []( fiona::executor ex ) -> fiona::task<void> {
-                 duration_guard dg( sleep_dur );
-                 auto h = fiona::post( ex, make_int_pointer( ex ) );
+  fiona::post( ex, []( fiona::executor ex ) -> fiona::task<void> {
+    duration_guard dg( sleep_dur );
+    auto h = fiona::post( ex, make_int_pointer( ex ) );
 
-                 {
-                   auto p = co_await make_int_pointer( ex );
-                   CHECK( *p == 1337 );
-                 }
+    {
+      auto p = co_await make_int_pointer( ex );
+      CHECK( *p == 1337 );
+    }
 
-                 {
-                   auto p = co_await h;
-                   CHECK( *p == 1337 );
-                 }
+    {
+      auto p = co_await h;
+      CHECK( *p == 1337 );
+    }
 
-                 ++num_runs;
-                 co_return;
-               } )( ex ) );
+    ++num_runs;
+    co_return;
+  }( ex ) );
 
   ioc.run();
   CHECK( num_runs == 3 );
@@ -126,16 +126,15 @@ TEST_CASE( "void returning function" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ex.post( ( []( fiona::executor ex ) -> fiona::task<void> {
-    auto f = []( fiona::executor ex ) -> fiona::task<void> {
+  ex.post( []( fiona::executor ex ) -> fiona::task<void> {
+    co_await fiona::post( ex, []( fiona::executor ex ) -> fiona::task<void> {
       co_await fiona::sleep_for( ex, std::chrono::milliseconds( 500 ) );
       ++num_runs;
-    };
-    co_await fiona::post( ex, f( ex ) );
+    }( ex ) );
 
     ++num_runs;
     co_return;
-  } )( ex ) );
+  }( ex ) );
 
   ioc.run();
 

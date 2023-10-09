@@ -2,3 +2,4 @@ AlwaysBreakAfterReturnType: TopLevel
 PointerAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
 SpacesInParentheses: true
+LambdaBodyIndentation: OuterScope
