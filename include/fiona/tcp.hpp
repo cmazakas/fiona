@@ -48,6 +48,9 @@ private:
       bool initiated_ = false;
       bool canceled_ = false;
 
+      frame() = delete;
+      frame( frame&& ) = delete;
+      frame( frame const& ) = delete;
       frame( __kernel_timespec ts, executor ex, fiona::buf_ring& br, int fd,
              std::uint16_t bgid )
           : ts_{ ts }, ex_{ ex }, br_{ br }, fd_{ fd }, bgid_{ bgid } {}
@@ -100,6 +103,9 @@ private:
 
       virtual ~frame() {}
 
+      frame() = delete;
+      frame( frame&& ) = delete;
+      frame( frame const& ) = delete;
       frame( __kernel_timespec ts, io_uring* ring, int fd, void const* buf,
              unsigned nbytes )
           : ts_{ ts }, ring_( ring ), buf_( buf ), nbytes_{ nbytes },
@@ -196,6 +202,9 @@ private:
       bool initiated_ = false;
       bool done_ = false;
 
+      frame() = delete;
+      frame( frame&& ) = delete;
+      frame( frame const& ) = delete;
       frame( executor ex, io_uring* ring, int fd )
           : ex_( ex ), ring_( ring ), fd_{ fd } {}
 
@@ -319,6 +328,10 @@ private:
       bool initiated_ = false;
       bool done_ = false;
       bool is_ipv4_ = true;
+
+      frame() = delete;
+      frame( frame&& ) = delete;
+      frame( frame const& ) = delete;
 
       void await_process_cqe( io_uring_cqe* cqe ) {
         res_ = cqe->res;
