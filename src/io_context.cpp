@@ -1,11 +1,13 @@
 #include <fiona/io_context.hpp>
 
 #include <fiona/detail/awaitable_base.hpp>
+#include <fiona/detail/get_sqe.hpp>
 #include <fiona/error.hpp>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <sys/mman.h>
+#include <unistd.h>
 
 namespace fiona {
 
@@ -187,35 +189,41 @@ io_context::run() {
   auto& tasks = framep_->tasks_;
 
   guard g{ tasks, ring };
-  while ( !tasks.empty() ) {
+
+  {
+    auto pipe_awaiter =
+        detail::executor_access_policy::get_pipe_awaitable( ex );
+
+    while ( !tasks.empty() ) {
+      if ( framep_->exception_ptr_ ) {
+        std::rethrow_exception( framep_->exception_ptr_ );
+      }
+
+      auto& run_queue = framep_->run_queue_;
+      while ( !run_queue.empty() ) {
+        auto h = run_queue.front();
+        h.resume();
+        run_queue.pop_front();
+      }
+
+      if ( tasks.empty() ) {
+        break;
+      }
+
+      io_uring_submit_and_wait( ring, 1 );
+
+      auto num_ready = io_uring_cq_ready( ring );
+      io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
+
+      advance_guard guard = { .ring = ring, .count = 0 };
+      for ( ; guard.count < num_ready; ) {
+        on_cqe( cqes[guard.count++] );
+      }
+    }
+
     if ( framep_->exception_ptr_ ) {
       std::rethrow_exception( framep_->exception_ptr_ );
     }
-
-    auto& run_queue = framep_->run_queue_;
-    while ( !run_queue.empty() ) {
-      auto h = run_queue.front();
-      h.resume();
-      run_queue.pop_front();
-    }
-
-    if ( tasks.empty() ) {
-      break;
-    }
-
-    io_uring_submit_and_wait( ring, 1 );
-
-    auto num_ready = io_uring_cq_ready( ring );
-    io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
-
-    advance_guard guard = { .ring = ring, .count = 0 };
-    for ( ; guard.count < num_ready; ) {
-      on_cqe( cqes[guard.count++] );
-    }
-  }
-
-  if ( framep_->exception_ptr_ ) {
-    std::rethrow_exception( framep_->exception_ptr_ );
   }
 }
 
@@ -226,6 +234,11 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
 
   int ret = -1;
   auto ring = &io_ring_;
+
+  ret = pipe( pipefd_ );
+  if ( ret == -1 ) {
+    detail::throw_errno_as_error_code( errno );
+  }
 
   io_uring_params params = {};
   params.cq_entries = io_ctx_params.cq_entries;

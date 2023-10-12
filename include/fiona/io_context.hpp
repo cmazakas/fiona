@@ -1,7 +1,11 @@
 #ifndef FIONA_IO_CONTEXT_HPP
 #define FIONA_IO_CONTEXT_HPP
 
+#include <fiona/error.hpp>
 #include <fiona/task.hpp>
+
+#include <fiona/detail/awaitable_base.hpp>
+#include <fiona/detail/get_sqe.hpp>
 
 #include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
@@ -18,6 +22,7 @@
 #include <deque>
 #include <exception>
 #include <iostream>
+#include <mutex>
 #include <span>
 
 #include <liburing.h>
@@ -65,10 +70,28 @@ struct key_equal {
   }
 };
 
+struct pipe_waker {
+  std::mutex& m_;
+  int fd_ = -1;
+  std::coroutine_handle<> h_;
+
+  void wake() const {
+    char buffer[sizeof( void* )] = {};
+    void* ptr = h_.address();
+    std::memcpy( buffer, &ptr, sizeof( buffer ) );
+
+    std::lock_guard guard( m_ );
+    write( fd_, buffer, sizeof( buffer ) );
+  }
+};
+
 namespace detail {
+
+struct pipe_awaitable;
+
 using task_set_type =
     boost::unordered_flat_set<std::coroutine_handle<>, hasher, key_equal>;
-}
+} // namespace detail
 
 struct buf_ring {
 private:
@@ -310,12 +333,14 @@ struct internal_promise<void> : public internal_promise_base<void> {
 
 struct io_context_frame {
   io_uring io_ring_;
+  std::mutex m_;
   task_set_type tasks_;
   io_context_params params_;
   std::vector<buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
   std::deque<std::coroutine_handle<>> run_queue_;
   std::exception_ptr exception_ptr_;
+  int pipefd_[2] = { -1, -1 };
 
   io_context_frame( io_context_params const& io_ctx_params );
   ~io_context_frame();
@@ -342,6 +367,8 @@ public:
 
   template <class T>
   post_awaitable<T> post( task<T> t );
+
+  inline pipe_waker make_waker( std::coroutine_handle<> h );
 };
 
 namespace detail {
@@ -394,6 +421,12 @@ struct executor_access_policy {
       }
     }
     return nullptr;
+  }
+
+  static inline pipe_awaitable get_pipe_awaitable( executor ex );
+
+  static inline pipe_waker get_waker( executor ex, std::coroutine_handle<> h ) {
+    return { ex.framep_->m_, ex.framep_->pipefd_[1], h };
   }
 };
 
@@ -485,6 +518,85 @@ template <class T>
 post_awaitable<T>
 post( executor ex, task<T> t ) {
   return ex.post( std::move( t ) );
+}
+
+namespace detail {
+
+struct pipe_awaitable {
+  struct frame : public detail::awaitable_base {
+    executor ex_;
+    char buffer_[sizeof( std::coroutine_handle<> )] = {};
+    int fd_ = -1;
+
+    frame( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
+
+    std::coroutine_handle<> h_ = nullptr;
+
+    void init() {
+      auto ring = detail::executor_access_policy::ring( ex_ );
+      detail::reserve_sqes( ring, 1 );
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_read( sqe, fd_, buffer_, sizeof( buffer_ ), 0 );
+      io_uring_sqe_set_data( sqe, this );
+      intrusive_ptr_add_ref( this );
+    }
+
+    void await_process_cqe( io_uring_cqe* cqe ) {
+      if ( cqe->res != sizeof( void* ) ) {
+        BOOST_ASSERT( cqe->res < 0 );
+        detail::throw_errno_as_error_code( -cqe->res );
+      }
+
+      void* addr = nullptr;
+      std::memcpy( &addr, buffer_, sizeof( addr ) );
+
+      h_ = std::coroutine_handle<>::from_address( addr );
+
+      {
+        auto ring = detail::executor_access_policy::ring( ex_ );
+        detail::reserve_sqes( ring, 1 );
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_read( sqe, fd_, buffer_, sizeof( buffer_ ), 0 );
+        io_uring_sqe_set_data( sqe, this );
+        intrusive_ptr_add_ref( this );
+      }
+    }
+
+    std::coroutine_handle<> handle() noexcept {
+      BOOST_ASSERT( h_ );
+      return h_;
+    }
+  };
+
+  boost::intrusive_ptr<frame> p_;
+
+  pipe_awaitable( executor ex, int fd ) : p_( new frame( ex, fd ) ) {
+    p_->init();
+  }
+
+  ~pipe_awaitable() { cancel(); }
+
+  void cancel() {
+    auto& self = *p_;
+    auto ring = detail::executor_access_policy::ring( self.ex_ );
+    detail::reserve_sqes( ring, 1 );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_prep_cancel( sqe, p_.get(), 0 );
+    io_uring_submit( ring );
+  }
+};
+
+pipe_awaitable
+executor_access_policy::get_pipe_awaitable( executor ex ) {
+  return detail::pipe_awaitable( ex, ex.framep_->pipefd_[0] );
+}
+
+} // namespace detail
+
+pipe_waker
+executor::make_waker( std::coroutine_handle<> h ) {
+  return detail::executor_access_policy::get_waker( *this, h );
 }
 
 } // namespace fiona
