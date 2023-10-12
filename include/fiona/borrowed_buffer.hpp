@@ -31,7 +31,7 @@ public:
         num_bufs_{ num_bufs }, bid_{ bid } {}
 
   borrowed_buffer( borrowed_buffer&& rhs ) noexcept
-      : br_( rhs.br_ ), addr_( rhs.addr_ ), len_{ rhs.len_ },
+      : br_{ rhs.br_ }, addr_{ rhs.addr_ }, len_{ rhs.len_ },
         num_read_{ rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
         bid_{ rhs.bid_ } {
     rhs.br_ = nullptr;
