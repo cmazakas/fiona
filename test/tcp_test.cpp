@@ -389,24 +389,40 @@ TEST_CASE( "fd reuse" ) {
     std::vector<fiona::tcp::stream> sessions;
 
     while ( num_accepted < total_connections ) {
-      auto stream = co_await acceptor.async_accept();
+      auto mstream = co_await acceptor.async_accept();
       ++num_accepted;
 
-      auto r = stream.value().async_recv( 0 );
-      auto buf = co_await r;
+      REQUIRE( mstream.has_value() );
+      auto& stream = mstream.value();
 
-      auto octets = buf.value().readable_bytes();
+      stream.timeout( std::chrono::seconds( 3 ) );
+
+      auto r = stream.async_recv( 0 );
+      auto mbuf = co_await r;
+
+      CHECK( mbuf.has_value() );
+      if ( mbuf.has_error() ) {
+        co_return;
+      }
+
+      auto& buf = mbuf.value();
+      auto octets = buf.readable_bytes();
+      CHECK( !octets.empty() );
+      if ( octets.empty() ) {
+        co_return;
+      }
+
       auto str = std::string_view(
           reinterpret_cast<char const*>( octets.data() ), octets.size() - 1 );
       CHECK( octets.size() > 0 );
       CHECK( str == "hello, world!" );
 
       auto n_result =
-          co_await stream.value().async_write( octets.data(), octets.size() );
+          co_await stream.async_write( octets.data(), octets.size() );
 
       CHECK( n_result.value() == octets.size() );
 
-      sessions.push_back( std::move( stream.value() ) );
+      sessions.push_back( std::move( stream ) );
       if ( sessions.size() == num_files ) {
         std::shuffle( sessions.begin(), sessions.end(), g );
         sessions.clear();
@@ -424,10 +440,10 @@ TEST_CASE( "fd reuse" ) {
     std::vector<fiona::tcp::client> sessions;
 
     for ( std::uint32_t i = 0; i < total_connections; ++i ) {
-      auto maybe_client =
+      auto mclient =
           co_await fiona::tcp::client::async_connect( ex, localhost, port );
 
-      auto& client = maybe_client.value();
+      auto& client = mclient.value();
 
       char const msg[] = "hello, world!";
       auto result = co_await client.async_write( msg, std::size( msg ) );
