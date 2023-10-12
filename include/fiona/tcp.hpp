@@ -47,6 +47,7 @@ private:
       std::uint16_t bgid_ = 0;
       bool initiated_ = false;
       bool canceled_ = false;
+      bool was_rescheduled_ = false;
 
       frame() = delete;
       frame( frame&& ) = delete;
@@ -62,6 +63,11 @@ private:
       void await_process_cqe( io_uring_cqe* cqe );
 
       std::coroutine_handle<> handle() noexcept {
+        if ( was_rescheduled_ ) {
+          was_rescheduled_ = false;
+          return nullptr;
+        }
+
         auto h = h_;
         h_ = nullptr;
         return h;
@@ -79,7 +85,8 @@ private:
 
     bool await_ready() noexcept {
       auto& self = *p_;
-      return !self.buffers_.empty();
+      auto is_ready = !self.buffers_.empty();
+      return is_ready;
     }
 
     void await_suspend( std::coroutine_handle<> h );

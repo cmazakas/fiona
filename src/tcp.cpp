@@ -82,6 +82,7 @@ stream::recv_awaitable::frame::await_process_cqe( io_uring_cqe* cqe ) {
 
     if ( diff < max_diff ) {
       schedule_recv();
+      was_rescheduled_ = true;
       return;
     }
   }
