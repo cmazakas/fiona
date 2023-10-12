@@ -47,6 +47,8 @@ TEST_CASE( "recv timeout" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
+    duration_guard dg( client_sleep_dur );
+
     auto mclient =
         co_await fiona::tcp::client::async_connect( ex, localhost, port );
 
