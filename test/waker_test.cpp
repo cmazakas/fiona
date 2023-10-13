@@ -8,8 +8,10 @@
 static int num_runs = 0;
 
 struct custom_awaitable {
-  fiona::executor ex;
+  std::vector<int> nums;
   std::thread t;
+  fiona::executor ex;
+  std::mutex m;
 
   custom_awaitable( fiona::executor ex_ ) : ex{ ex_ } {}
   ~custom_awaitable() { t.join(); }
@@ -19,14 +21,21 @@ struct custom_awaitable {
   void await_suspend( std::coroutine_handle<> h ) {
     auto waker = ex.make_waker( h );
 
-    t = std::thread( [waker] {
+    t = std::thread( [this, waker]() mutable {
       std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
+      {
+        std::lock_guard lg{ m };
+        nums = std::vector{ 1, 2, 3, 4 };
+      }
       ++num_runs;
       waker.wake();
     } );
   }
 
-  void await_resume() {}
+  std::vector<int> await_resume() {
+    std::lock_guard lg{ m };
+    return std::move( nums );
+  }
 };
 
 TEST_CASE( "waiting a simple future" ) {
@@ -36,7 +45,8 @@ TEST_CASE( "waiting a simple future" ) {
   fiona::io_context ioc;
   ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
     duration_guard dg( std::chrono::milliseconds( 500 ) );
-    co_await custom_awaitable( ex );
+    auto nums = co_await custom_awaitable( ex );
+    CHECK( nums == std::vector{ 1, 2, 3, 4 } );
     ++num_runs;
     co_return;
   }( ioc.get_executor() ) );
