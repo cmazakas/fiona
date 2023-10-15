@@ -9,6 +9,58 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+namespace {
+
+struct cqe_guard {
+  io_uring* ring;
+  io_uring_cqe* cqe;
+
+  ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
+};
+
+struct guard {
+  fiona::detail::task_set_type& tasks;
+  io_uring* ring;
+
+  ~guard() {
+    for ( auto const& h : tasks ) {
+      h.destroy();
+    }
+    tasks.clear();
+
+    boost::unordered_flat_set<void*> blacklist;
+
+    io_uring_cqe* cqe = nullptr;
+    while ( 0 == io_uring_peek_cqe( ring, &cqe ) ) {
+      auto guard = cqe_guard( ring, cqe );
+      auto p = io_uring_cqe_get_data( cqe );
+
+      if ( p == nullptr ) {
+        continue;
+      }
+
+      if ( blacklist.find( p ) != blacklist.end() ) {
+        // when destructing, we can have N CQEs associated with an awaitable
+        // because of multishot ops
+        // our normal I/O loop handles this case fine, but during cleanup
+        // like this we need to be aware that multiple CQEs can share the
+        // same user_data
+        continue;
+      }
+
+      auto q = boost::intrusive_ptr(
+          static_cast<fiona::detail::awaitable_base*>( p ), false );
+
+      if ( q->use_count() == 1 ) {
+        blacklist.insert( p );
+      }
+
+      (void)q;
+    }
+  }
+};
+} // namespace
+
 namespace fiona {
 
 buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
@@ -106,62 +158,25 @@ buf_ring::operator=( buf_ring&& rhs ) noexcept {
   return *this;
 }
 
+io_context::~io_context() {
+  {
+    auto ex = get_executor();
+    auto ring = detail::executor_access_policy::ring( ex );
+    auto& tasks = framep_->tasks_;
+
+    guard g{ tasks, ring };
+  }
+  framep_ = nullptr;
+}
+
 void
 io_context::run() {
-  struct cqe_guard {
-    io_uring* ring;
-    io_uring_cqe* cqe;
-
-    ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
-  };
-
   struct advance_guard {
     io_uring* ring = nullptr;
     unsigned count = 0;
     ~advance_guard() {
       if ( ring ) {
         io_uring_cq_advance( ring, count );
-      }
-    }
-  };
-
-  struct guard {
-    detail::task_set_type& tasks;
-    io_uring* ring;
-
-    ~guard() {
-      for ( auto const& h : tasks ) {
-        h.destroy();
-      }
-
-      boost::unordered_flat_set<void*> blacklist;
-
-      io_uring_cqe* cqe = nullptr;
-      while ( 0 == io_uring_peek_cqe( ring, &cqe ) ) {
-        auto guard = cqe_guard( ring, cqe );
-        auto p = io_uring_cqe_get_data( cqe );
-
-        if ( p == nullptr ) {
-          continue;
-        }
-
-        if ( blacklist.find( p ) != blacklist.end() ) {
-          // when destructing, we can have N CQEs associated with an awaitable
-          // because of multishot ops
-          // our normal I/O loop handles this case fine, but during cleanup
-          // like this we need to be aware that multiple CQEs can share the
-          // same user_data
-          continue;
-        }
-
-        auto q = boost::intrusive_ptr(
-            static_cast<detail::awaitable_base*>( p ), false );
-
-        if ( q->use_count() == 1 ) {
-          blacklist.insert( p );
-        }
-
-        (void)q;
       }
     }
   };

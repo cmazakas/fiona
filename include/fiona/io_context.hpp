@@ -496,6 +496,8 @@ public:
       : framep_(
             boost::make_local_shared<detail::io_context_frame>( params ) ) {}
 
+  ~io_context();
+
   executor get_executor() const noexcept { return executor{ framep_ }; }
   io_context_params params() const noexcept { return framep_->params_; }
 
