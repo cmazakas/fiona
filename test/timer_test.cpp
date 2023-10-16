@@ -96,10 +96,6 @@ recursion_test( fiona::executor ex, int n ) {
     co_return;
   }
 
-  std::chrono::microseconds d( 500 );
-  auto ec = co_await sleep_for( ex, d );
-  CHECK( !ec );
-
   co_await recursion_test( ex, n - 1 );
 }
 
@@ -186,7 +182,7 @@ TEST_CASE( "recursion test" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   for ( int i = 0; i < 10; ++i ) {
-    ioc.post( recursion_test( ex, 2000 ) );
+    ioc.post( recursion_test( ex, 1'000'000 ) );
   }
   ioc.run();
   CHECK_EQ( num_runs, 10 );

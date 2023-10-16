@@ -140,3 +140,26 @@ TEST_CASE( "void returning function" ) {
 
   CHECK( num_runs == 2 );
 }
+
+fiona::task<void>
+empty_task() {
+  co_return;
+}
+
+fiona::task<void>
+symmetric_transfer_test() {
+  for ( int i = 0; i < 1'000'000; ++i ) {
+    co_await empty_task();
+  }
+  ++num_runs;
+  co_return;
+}
+
+TEST_CASE( "symmetric transfer" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  ioc.post( symmetric_transfer_test() );
+  ioc.run();
+  CHECK( num_runs == 1 );
+}
