@@ -81,7 +81,7 @@ buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
   posix_memalign_guard guard;
 
   std::size_t n = sizeof( io_uring_buf ) * bufs_.size();
-  int pagesize = getpagesize();
+  std::size_t pagesize = sysconf( _SC_PAGESIZE );
   ret = posix_memalign( &guard.p, pagesize, n );
   if ( ret != 0 ) {
     throw std::bad_alloc();
