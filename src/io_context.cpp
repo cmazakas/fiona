@@ -6,7 +6,7 @@
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
-#include <sys/mman.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 namespace {
@@ -67,32 +67,31 @@ buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
                     std::uint16_t bgid )
     : bufs_( num_bufs ), ring_( ring ), bgid_{ bgid } {
 
-  struct mmap_guard {
-    void* mapped = nullptr;
-    std::size_t n = 0;
-    ~mmap_guard() {
-      if ( mapped ) {
-        munmap( mapped, n );
+  struct posix_memalign_guard {
+    void* p = nullptr;
+    ~posix_memalign_guard() {
+      if ( p ) {
+        free( p );
       }
     }
   };
 
+  int ret = -1;
+
+  posix_memalign_guard guard;
+
   std::size_t n = sizeof( io_uring_buf ) * bufs_.size();
-
-  void* mapped = mmap( nullptr, n, PROT_READ | PROT_WRITE,
-                       MAP_ANONYMOUS | MAP_PRIVATE, 0, 0 );
-
-  if ( mapped == MAP_FAILED ) {
+  int pagesize = getpagesize();
+  ret = posix_memalign( &guard.p, pagesize, n );
+  if ( ret != 0 ) {
     throw std::bad_alloc();
   }
-
-  mmap_guard guard{ .mapped = mapped, .n = n };
 
   for ( auto& buf : bufs_ ) {
     buf.resize( buf_size );
   }
 
-  buf_ring_ = static_cast<io_uring_buf_ring*>( mapped );
+  buf_ring_ = static_cast<io_uring_buf_ring*>( guard.p );
   io_uring_buf_ring_init( buf_ring_ );
 
   io_uring_buf_reg reg = {
@@ -103,7 +102,7 @@ buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
       .resv = { 0 },
   };
 
-  auto ret = io_uring_register_buf_ring( ring_, &reg, 0 );
+  ret = io_uring_register_buf_ring( ring_, &reg, 0 );
   if ( ret != 0 ) {
     fiona::detail::throw_errno_as_error_code( -ret );
   }
@@ -115,14 +114,14 @@ buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
   }
   io_uring_buf_ring_advance( buf_ring_, bufs_.size() );
 
-  guard.mapped = nullptr;
+  guard.p = nullptr;
 }
 
 buf_ring::~buf_ring() {
   if ( buf_ring_ ) {
     BOOST_ASSERT( ring_ );
     io_uring_unregister_buf_ring( ring_, bgid_ );
-    munmap( buf_ring_, sizeof( io_uring_buf ) * bufs_.size() );
+    free( buf_ring_ );
   }
 }
 
@@ -143,7 +142,7 @@ buf_ring::operator=( buf_ring&& rhs ) noexcept {
     if ( buf_ring_ ) {
       BOOST_ASSERT( ring_ );
       io_uring_unregister_buf_ring( ring_, bgid_ );
-      munmap( buf_ring_, sizeof( io_uring_buf ) * bufs_.size() );
+      free( buf_ring_ );
     }
 
     bufs_ = std::move( rhs.bufs_ );
