@@ -40,30 +40,33 @@ struct hasher {
 
   template <class Promise>
   std::size_t operator()( std::coroutine_handle<Promise> h ) const noexcept {
-    boost::hash<void*> hasher;
-    return hasher( h.address() );
+    return ( *this )( h.address() );
   }
 
-  template <class T>
-  std::size_t operator()( T const& t ) const noexcept {
-    boost::hash<T> hasher;
-    return hasher( t );
+  std::size_t operator()( void* p ) const noexcept {
+    boost::hash<void*> hasher;
+    return hasher( p );
   }
 };
 
 struct key_equal {
   using is_transparent = void;
 
-  template <class T, class U>
-  bool operator()( T const& t, U const& u ) const {
-    return t == u;
+  template <class Promise1, class Promise2>
+  bool operator()( std::coroutine_handle<Promise1> const h1,
+                   std::coroutine_handle<Promise2> const h2 ) const noexcept {
+    return h1.address() == h2.address();
   }
 
-  bool operator()( std::coroutine_handle<> h, void* p ) const noexcept {
+  template <class Promise>
+  bool operator()( std::coroutine_handle<Promise> const h,
+                   void* p ) const noexcept {
     return h.address() == p;
   }
 
-  bool operator()( void* p, std::coroutine_handle<> h ) const noexcept {
+  template <class Promise>
+  bool operator()( void* p,
+                   std::coroutine_handle<Promise> const h ) const noexcept {
     return h.address() == p;
   }
 };
