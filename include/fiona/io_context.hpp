@@ -11,10 +11,7 @@
 #include <boost/container_hash/hash.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
-#include <boost/smart_ptr/local_shared_ptr.hpp>
-#include <boost/smart_ptr/make_local_shared.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
-#include <boost/unordered/unordered_node_set.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -22,6 +19,7 @@
 #include <deque>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <span>
 
@@ -71,6 +69,7 @@ struct key_equal {
 };
 
 struct pipe_waker {
+  std::weak_ptr<void> p_;
   std::mutex& m_;
   int fd_ = -1;
   std::coroutine_handle<> h_;
@@ -80,8 +79,18 @@ struct pipe_waker {
     void* ptr = h_.address();
     std::memcpy( buffer, &ptr, sizeof( buffer ) );
 
+    auto p = p_.lock();
+    if ( !p ) {
+      detail::throw_errno_as_error_code( EINVAL );
+    }
+
     std::lock_guard guard( m_ );
-    write( fd_, buffer, sizeof( buffer ) );
+
+    int ret = -1;
+    ret = write( fd_, buffer, sizeof( buffer ) );
+    if ( ret == -1 ) {
+      detail::throw_errno_as_error_code( errno );
+    }
   }
 };
 
@@ -359,10 +368,10 @@ struct executor {
 private:
   friend struct detail::executor_access_policy;
 
-  boost::local_shared_ptr<detail::io_context_frame> framep_;
+  std::shared_ptr<detail::io_context_frame> framep_;
 
 public:
-  executor( boost::local_shared_ptr<detail::io_context_frame> framep ) noexcept
+  executor( std::shared_ptr<detail::io_context_frame> framep ) noexcept
       : framep_( std::move( framep ) ) {}
 
   template <class T>
@@ -426,7 +435,7 @@ struct executor_access_policy {
   static inline pipe_awaitable get_pipe_awaitable( executor ex );
 
   static inline pipe_waker get_waker( executor ex, std::coroutine_handle<> h ) {
-    return { ex.framep_->m_, ex.framep_->pipefd_[1], h };
+    return { ex.framep_, ex.framep_->m_, ex.framep_->pipefd_[1], h };
   }
 };
 
@@ -489,12 +498,11 @@ scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
 
 struct io_context {
 private:
-  boost::local_shared_ptr<detail::io_context_frame> framep_;
+  std::shared_ptr<detail::io_context_frame> framep_;
 
 public:
   io_context( io_context_params const& params = {} )
-      : framep_(
-            boost::make_local_shared<detail::io_context_frame>( params ) ) {}
+      : framep_( std::make_shared<detail::io_context_frame>( params ) ) {}
 
   ~io_context();
 

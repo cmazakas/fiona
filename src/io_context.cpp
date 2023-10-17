@@ -287,6 +287,9 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
 }
 
 io_context_frame::~io_context_frame() {
+  close( pipefd_[0] );
+  close( pipefd_[1] );
+
   auto ring = &io_ring_;
   io_uring_queue_exit( ring );
 }
