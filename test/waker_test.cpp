@@ -2,10 +2,11 @@
 
 #include <fiona/io_context.hpp>
 
+#include <atomic>
 #include <thread>
 #include <vector>
 
-static int num_runs = 0;
+static std::atomic_int num_runs = 0;
 
 struct custom_awaitable {
   std::shared_ptr<std::vector<int>> nums;
@@ -40,6 +41,7 @@ struct custom_awaitable {
         *nums = std::vector{ 1, 2, 3, 4 };
       }
       ++num_runs;
+
       try {
         waker.wake();
       } catch ( fiona::error_code const& ec ) {
