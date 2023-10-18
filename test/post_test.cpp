@@ -36,7 +36,7 @@ throw_exception( fiona::executor ex ) {
   co_return 1337;
 }
 
-TEST_CASE( "awaiting a sibling coro" ) {
+TEST_CASE( "post_test - awaiting a sibling coro" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -76,7 +76,7 @@ TEST_CASE( "awaiting a sibling coro" ) {
   CHECK( num_runs == 2 * 2 + 1 );
 }
 
-TEST_CASE( "ignoring exceptions" ) {
+TEST_CASE( "post_test - ignoring exceptions" ) {
   num_runs = 0;
   fiona::io_context ioc;
 
@@ -93,7 +93,7 @@ TEST_CASE( "ignoring exceptions" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "posting a move-only type" ) {
+TEST_CASE( "post_test - posting a move-only type" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -120,7 +120,7 @@ TEST_CASE( "posting a move-only type" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "void returning function" ) {
+TEST_CASE( "post_test - void returning function" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -155,7 +155,7 @@ symmetric_transfer_test() {
   co_return;
 }
 
-TEST_CASE( "symmetric transfer" ) {
+TEST_CASE( "post_test - symmetric transfer" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
