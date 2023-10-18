@@ -4,10 +4,12 @@
 #include <fiona/io_context.hpp>
 #include <fiona/time.hpp>
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 
-static int num_runs = 0;
+static std::atomic_int num_runs = 0;
 
 inline constexpr std::chrono::milliseconds sleep_dur( 25 );
 
@@ -162,4 +164,37 @@ TEST_CASE( "post_test - symmetric transfer" ) {
   ioc.post( symmetric_transfer_test() );
   ioc.run();
   CHECK( num_runs == 1 );
+}
+
+TEST_CASE( "post_test - destruction on a separate thread" ) {
+  num_runs = 0;
+
+  std::thread t;
+
+  {
+    fiona::io_context ioc;
+    auto ex = ioc.get_executor();
+
+    ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+      auto ec =
+          co_await fiona::sleep_for( ex, std::chrono::milliseconds( 250 ) );
+      CHECK( !ec );
+      ++num_runs;
+      co_return;
+    }( ex ) );
+
+    ioc.run();
+
+    t = std::thread( [&ioc] {
+      auto ex = ioc.get_executor();
+      (void)ex;
+      std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
+      ++num_runs;
+    } );
+
+    std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
+  }
+
+  t.join();
+  CHECK( num_runs == 2 );
 }
