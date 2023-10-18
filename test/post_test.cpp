@@ -4,6 +4,8 @@
 #include <fiona/io_context.hpp>
 #include <fiona/time.hpp>
 
+#include <boost/config.hpp>
+
 #include <atomic>
 #include <memory>
 #include <string>
@@ -143,6 +145,8 @@ TEST_CASE( "post_test - void returning function" ) {
   CHECK( num_runs == 2 );
 }
 
+#if defined( RUN_SYMMETRIC_TRANSFER_TESTS )
+
 fiona::task<void>
 empty_task() {
   co_return;
@@ -165,6 +169,8 @@ TEST_CASE( "post_test - symmetric transfer" ) {
   ioc.run();
   CHECK( num_runs == 1 );
 }
+
+#endif
 
 TEST_CASE( "post_test - destruction on a separate thread" ) {
   num_runs = 0;

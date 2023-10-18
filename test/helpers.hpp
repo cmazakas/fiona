@@ -3,6 +3,8 @@
 
 #include <fiona/error.hpp>
 
+#include <boost/config.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_translate_exception.hpp>
 
@@ -34,5 +36,19 @@ struct duration_guard {
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
   return ex.message();
 }
+
+#if defined( BOOST_GCC )
+
+#if !defined( __SANITIZE_ADDRESS__ ) && defined( __OPTIMIZE__ )
+// don't want to run the symmetric transfer tests under:
+// gcc -O0 -fsanitize=address
+//
+// see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100897
+#define RUN_SYMMETRIC_TRANSFER_TESTS
+#endif
+
+#else
+#define RUN_SYMMETRIC_TRANSFER_TESTS
+#endif
 
 #endif // FIONA_TEST_HELPERS_HPP
