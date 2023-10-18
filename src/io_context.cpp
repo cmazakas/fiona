@@ -161,11 +161,11 @@ io_context::~io_context() {
   {
     auto ex = get_executor();
     auto ring = detail::executor_access_policy::ring( ex );
-    auto& tasks = framep_->tasks_;
+    auto& tasks = pframe_->tasks_;
 
     guard g{ tasks, ring };
   }
-  framep_ = nullptr;
+  pframe_ = nullptr;
 }
 
 void
@@ -199,8 +199,8 @@ io_context::run() {
 
   auto ex = get_executor();
   auto ring = detail::executor_access_policy::ring( ex );
-  auto cqes = std::vector<io_uring_cqe*>( framep_->params_.cq_entries );
-  auto& tasks = framep_->tasks_;
+  auto cqes = std::vector<io_uring_cqe*>( pframe_->params_.cq_entries );
+  auto& tasks = pframe_->tasks_;
 
   guard g{ tasks, ring };
 
@@ -209,11 +209,11 @@ io_context::run() {
         detail::executor_access_policy::get_pipe_awaitable( ex );
 
     while ( !tasks.empty() ) {
-      if ( framep_->exception_ptr_ ) {
-        std::rethrow_exception( framep_->exception_ptr_ );
+      if ( pframe_->exception_ptr_ ) {
+        std::rethrow_exception( pframe_->exception_ptr_ );
       }
 
-      auto& run_queue = framep_->run_queue_;
+      auto& run_queue = pframe_->run_queue_;
       while ( !run_queue.empty() ) {
         auto h = run_queue.front();
         h.resume();
@@ -235,8 +235,8 @@ io_context::run() {
       }
     }
 
-    if ( framep_->exception_ptr_ ) {
-      std::rethrow_exception( framep_->exception_ptr_ );
+    if ( pframe_->exception_ptr_ ) {
+      std::rethrow_exception( pframe_->exception_ptr_ );
     }
   }
 }

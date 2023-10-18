@@ -371,11 +371,11 @@ struct executor {
 private:
   friend struct detail::executor_access_policy;
 
-  std::shared_ptr<detail::io_context_frame> framep_;
+  std::shared_ptr<detail::io_context_frame> pframe_;
 
 public:
-  executor( std::shared_ptr<detail::io_context_frame> framep ) noexcept
-      : framep_( std::move( framep ) ) {}
+  executor( std::shared_ptr<detail::io_context_frame> pframe ) noexcept
+      : pframe_( std::move( pframe ) ) {}
 
   template <class T>
   post_awaitable<T> post( task<T> t );
@@ -387,17 +387,17 @@ namespace detail {
 
 struct executor_access_policy {
   static inline io_uring* ring( executor ex ) noexcept {
-    return &ex.framep_->io_ring_;
+    return &ex.pframe_->io_ring_;
   }
 
   static void unhandled_exception( executor ex, std::exception_ptr ep ) {
-    if ( !ex.framep_->exception_ptr_ ) {
-      ex.framep_->exception_ptr_ = ep;
+    if ( !ex.pframe_->exception_ptr_ ) {
+      ex.pframe_->exception_ptr_ = ep;
     }
   }
 
   static inline int get_available_fd( executor ex ) {
-    auto& fds = ex.framep_->fds_;
+    auto& fds = ex.pframe_->fds_;
     if ( fds.empty() ) {
       return -1;
     }
@@ -407,7 +407,7 @@ struct executor_access_policy {
 
     BOOST_ASSERT( fd >= 0 );
     BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
-                  ex.framep_->params_.num_files );
+                  ex.pframe_->params_.num_files );
     return fd;
   }
 
@@ -417,9 +417,9 @@ struct executor_access_policy {
     }
 
     BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
-                  ex.framep_->params_.num_files );
+                  ex.pframe_->params_.num_files );
 
-    auto& fds = ex.framep_->fds_;
+    auto& fds = ex.pframe_->fds_;
     auto itb = fds.insert( fd );
     (void)itb;
     BOOST_ASSERT( itb.second );
@@ -427,7 +427,7 @@ struct executor_access_policy {
 
   static inline buf_ring* get_buffer_group( executor ex,
                                             std::size_t bgid ) noexcept {
-    for ( auto& bg : ex.framep_->buf_rings_ ) {
+    for ( auto& bg : ex.pframe_->buf_rings_ ) {
       if ( bgid == bg.bgid() ) {
         return &bg;
       }
@@ -438,7 +438,7 @@ struct executor_access_policy {
   static inline pipe_awaitable get_pipe_awaitable( executor ex );
 
   static inline pipe_waker get_waker( executor ex, std::coroutine_handle<> h ) {
-    return { ex.framep_, ex.framep_->m_, ex.framep_->pipefd_[1], h };
+    return { ex.pframe_, ex.pframe_->m_, ex.pframe_->pipefd_[1], h };
   }
 };
 
@@ -483,11 +483,11 @@ post_awaitable<T>
 executor::post( task<T> t ) {
   auto ring = detail::executor_access_policy::ring( *this );
 
-  auto internal_task = scheduler( framep_->tasks_, ring, std::move( t ) );
-  auto [it, b] = framep_->tasks_.insert( internal_task.h_ );
+  auto internal_task = scheduler( pframe_->tasks_, ring, std::move( t ) );
+  auto [it, b] = pframe_->tasks_.insert( internal_task.h_ );
 
   BOOST_ASSERT( b );
-  framep_->run_queue_.push_back( *it );
+  pframe_->run_queue_.push_back( *it );
 
   return { *this, internal_task.h_.promise().get_state() };
 }
@@ -501,16 +501,16 @@ scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
 
 struct io_context {
 private:
-  std::shared_ptr<detail::io_context_frame> framep_;
+  std::shared_ptr<detail::io_context_frame> pframe_;
 
 public:
   io_context( io_context_params const& params = {} )
-      : framep_( std::make_shared<detail::io_context_frame>( params ) ) {}
+      : pframe_( std::make_shared<detail::io_context_frame>( params ) ) {}
 
   ~io_context();
 
-  executor get_executor() const noexcept { return executor{ framep_ }; }
-  io_context_params params() const noexcept { return framep_->params_; }
+  executor get_executor() const noexcept { return executor{ pframe_ }; }
+  io_context_params params() const noexcept { return pframe_->params_; }
 
   void post( task<void> t ) {
     auto ex = get_executor();
@@ -519,9 +519,9 @@ public:
 
   void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size,
                                  std::uint16_t buffer_group_id ) {
-    auto ring = &framep_->io_ring_;
+    auto ring = &pframe_->io_ring_;
     auto br = buf_ring( ring, num_bufs, buf_size, buffer_group_id );
-    framep_->buf_rings_.push_back( std::move( br ) );
+    pframe_->buf_rings_.push_back( std::move( br ) );
   }
 
   void run();
@@ -602,7 +602,7 @@ struct pipe_awaitable {
 
 pipe_awaitable
 executor_access_policy::get_pipe_awaitable( executor ex ) {
-  return detail::pipe_awaitable( ex, ex.framep_->pipefd_[0] );
+  return detail::pipe_awaitable( ex, ex.pframe_->pipefd_[0] );
 }
 
 } // namespace detail
