@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(fiona LANGUAGES CXX)
 
-if (CXX_STANDARD LESS "20")
-  message(FATAL_ERROR "fiona is a C++20 library")
+if (${CMAKE_CXX_STANDARD} LESS "20")
+  message(FATAL_ERROR "fiona is a C++20 library; current CMAKE_CXX_STANDARD is: ${CMAKE_CXX_STANDARD}")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")

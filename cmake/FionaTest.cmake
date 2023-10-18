@@ -1,4 +1,4 @@
-find_package(Boost 1.82 REQUIRED )
+find_package(Boost 1.82 REQUIRED)
 find_package(Catch2 3.0 REQUIRED)
 
 include(Catch)
