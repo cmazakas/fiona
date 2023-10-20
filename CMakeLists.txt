@@ -10,8 +10,24 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(liburing 2.5 REQUIRED)
 find_package(Boost 1.82 REQUIRED)
 
-file(GLOB_RECURSE fiona_headers CONFIGURE_DEPENDS "include/*/*.hpp")
-file(GLOB_RECURSE fiona_sources CONFIGURE_DEPENDS "src/**.cpp")
+set(fiona_headers
+
+  include/fiona/error.hpp
+  include/fiona/borrowed_buffer.hpp
+  include/fiona/io_context.hpp
+  # include/fiona/tcp.hpp
+  include/fiona/task.hpp
+  include/fiona/time.hpp
+  include/fiona/detail/get_sqe.hpp
+  include/fiona/detail/awaitable_base.hpp
+  include/fiona/detail/time.hpp
+)
+
+set(fiona_sources
+
+  src/io_context.cpp
+  # src/tcp.cpp
+)
 
 add_library(fiona ${fiona_sources})
 

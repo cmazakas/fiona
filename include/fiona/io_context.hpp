@@ -540,6 +540,7 @@ struct pipe_awaitable {
     executor ex_;
     char buffer_[sizeof( std::coroutine_handle<> )] = {};
     int fd_ = -1;
+    int count_ = 0;
 
     frame( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
@@ -554,7 +555,7 @@ struct pipe_awaitable {
       intrusive_ptr_add_ref( this );
     }
 
-    void await_process_cqe( io_uring_cqe* cqe ) {
+    void await_process_cqe( io_uring_cqe* cqe ) override {
       if ( cqe->res != sizeof( void* ) ) {
         BOOST_ASSERT( cqe->res < 0 );
         detail::throw_errno_as_error_code( -cqe->res );
@@ -575,10 +576,20 @@ struct pipe_awaitable {
       }
     }
 
-    std::coroutine_handle<> handle() noexcept {
+    std::coroutine_handle<> handle() noexcept override {
       BOOST_ASSERT( h_ );
       return h_;
     }
+
+    void inc_ref() noexcept override { ++count_; }
+    void dec_ref() noexcept override {
+      --count_;
+      if ( count_ == 0 ) {
+        delete this;
+      }
+    }
+
+    int use_count() const noexcept override { return count_; }
   };
 
   boost::intrusive_ptr<frame> p_;

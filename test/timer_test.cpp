@@ -26,11 +26,11 @@ namespace {
 
 template <class Rep, class Period>
 fiona::task<void>
-sleep_coro( fiona::executor ex, std::chrono::duration<Rep, Period> d ) {
+sleep_coro( fiona::timer& timer, std::chrono::duration<Rep, Period> d ) {
   {
     duration_guard guard( d );
-    auto ec = co_await sleep_for( ex, d );
-    CHECK( !ec );
+    auto r = co_await timer.async_wait( d );
+    CHECK( r.has_value() );
   }
 
   ++num_runs;
@@ -39,17 +39,19 @@ sleep_coro( fiona::executor ex, std::chrono::duration<Rep, Period> d ) {
 
 fiona::task<void>
 nested_sleep_coro( fiona::executor ex ) {
+  auto timer = fiona::timer( ex );
+
   {
     auto d = get_sleep_duration();
     duration_guard guard( d );
-    auto ec = co_await sleep_for( ex, d );
-    CHECK( !ec );
+    auto r = co_await timer.async_wait( d );
+    CHECK( r );
   }
 
   {
     auto d = get_sleep_duration();
     duration_guard guard( d );
-    co_await sleep_coro( ex, d );
+    co_await sleep_coro( timer, d );
   }
 
   ++num_runs;
@@ -58,17 +60,18 @@ nested_sleep_coro( fiona::executor ex ) {
 
 fiona::task<void>
 nested_sleep_coro_late_return( fiona::executor ex ) {
+  auto timer = fiona::timer( ex );
   {
     auto d = get_sleep_duration();
     duration_guard guard( d );
-    co_await sleep_coro( ex, d );
+    co_await sleep_coro( timer, d );
   }
 
   {
     auto d = get_sleep_duration();
     duration_guard guard( d );
-    auto ec = co_await sleep_for( ex, d );
-    CHECK( !ec );
+    auto r = co_await timer.async_wait( d );
+    CHECK( r );
   }
 
   ++num_runs;
@@ -120,16 +123,17 @@ return_value_test() {
 
 } // namespace
 
-TEST_CASE( "single sleep" ) {
+TEST_CASE( "timer_test - single sleep" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post( sleep_coro( ex, get_sleep_duration() ) );
+  auto timer = fiona::timer( ex );
+  ioc.post( sleep_coro( timer, get_sleep_duration() ) );
   ioc.run();
   CHECK_EQ( num_runs, 1 );
 }
 
-TEST_CASE( "nested coroutine invocation" ) {
+TEST_CASE( "timer_test - nested coroutine invocation" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -138,7 +142,7 @@ TEST_CASE( "nested coroutine invocation" ) {
   CHECK_EQ( num_runs, 2 );
 }
 
-TEST_CASE( "nested coroutine invocation (part 2)" ) {
+TEST_CASE( "timer_test - nested coroutine invocation (part 2)" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -147,7 +151,7 @@ TEST_CASE( "nested coroutine invocation (part 2)" ) {
   CHECK_EQ( num_runs, 2 );
 }
 
-TEST_CASE( "empty coroutine" ) {
+TEST_CASE( "timer_test - empty coroutine" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -156,11 +160,12 @@ TEST_CASE( "empty coroutine" ) {
   CHECK_EQ( num_runs, 1 );
 }
 
-TEST_CASE( "multiple concurrent tasks" ) {
+TEST_CASE( "timer_test - multiple concurrent tasks" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post( sleep_coro( ex, get_sleep_duration() ) );
+  auto timer = fiona::timer( ex );
+  ioc.post( sleep_coro( timer, get_sleep_duration() ) );
   ioc.post( nested_sleep_coro( ex ) );
   ioc.post( nested_sleep_coro_late_return( ex ) );
   ioc.post( empty_coroutine( ex ) );
@@ -168,7 +173,7 @@ TEST_CASE( "multiple concurrent tasks" ) {
   CHECK_EQ( num_runs, 1 + 2 + 2 + 1 );
 }
 
-TEST_CASE( "nested post() invocation" ) {
+TEST_CASE( "timer_test - nested post() invocation" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -177,7 +182,7 @@ TEST_CASE( "nested post() invocation" ) {
   CHECK_EQ( num_runs, 1 + 2 + 2 );
 }
 
-TEST_CASE( "recursion test" ) {
+TEST_CASE( "timer_test - recursion test" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
@@ -188,24 +193,55 @@ TEST_CASE( "recursion test" ) {
   CHECK_EQ( num_runs, 10 );
 }
 
-TEST_CASE( "mild stress test" ) {
+TEST_CASE( "timer_test - mild stress test" ) {
   num_runs = 0;
   fiona::io_context_params params;
   params.sq_entries = 4096;
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
+
+  std::vector<fiona::timer> timers;
+  timers.reserve( 1000 );
+
   for ( int i = 0; i < 1000; ++i ) {
-    ioc.post( sleep_coro( ex, get_sleep_duration() ) );
+    auto timer = fiona::timer( ex );
+    timers.push_back( std::move( timer ) );
+    ioc.post( sleep_coro( timers.back(), get_sleep_duration() ) );
   }
   ioc.run();
   CHECK_EQ( num_runs, 1000 );
 }
 
-TEST_CASE( "coroutine return test" ) {
+TEST_CASE( "timer_test - coroutine return test" ) {
   num_runs = 0;
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
   ioc.post( return_value_test() );
   ioc.run();
   CHECK_EQ( num_runs, 1 );
+}
+
+TEST_CASE( "timer_test - reusable timer" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  auto timer_op = []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::timer timer( ex );
+    for ( int i = 0; i < 10; ++i ) {
+      auto d = get_sleep_duration();
+      duration_guard dg( d );
+      auto r = co_await timer.async_wait( d );
+      CHECK( r.has_value() );
+    }
+    ++num_runs;
+  };
+
+  for ( int i = 0; i < 1000; ++i ) {
+    ioc.post( timer_op( ex ) );
+  }
+
+  ioc.run();
+  CHECK_EQ( num_runs, 1000 );
 }

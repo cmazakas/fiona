@@ -18,7 +18,9 @@ inline constexpr std::chrono::milliseconds sleep_dur( 25 );
 fiona::task<std::string>
 make_string( fiona::executor ex ) {
   ++num_runs;
-  co_await fiona::sleep_for( ex, sleep_dur );
+  fiona::timer timer( ex );
+  auto r = co_await timer.async_wait( sleep_dur );
+  CHECK( r.has_value() );
   co_return std::string( "hello world! this should hopefully break sbo and "
                          "force a dynamic allocation" );
 }
@@ -26,7 +28,10 @@ make_string( fiona::executor ex ) {
 fiona::task<std::unique_ptr<int>>
 make_int_pointer( fiona::executor ex ) {
   ++num_runs;
-  co_await fiona::sleep_for( ex, sleep_dur );
+  fiona::timer timer( ex );
+  auto r = co_await timer.async_wait( sleep_dur );
+  CHECK( r.has_value() );
+
   auto p = std::make_unique<int>( 1337 );
   co_return std::move( p );
 }
@@ -34,7 +39,10 @@ make_int_pointer( fiona::executor ex ) {
 fiona::task<int>
 throw_exception( fiona::executor ex ) {
   ++num_runs;
-  co_await fiona::sleep_for( ex, sleep_dur );
+  fiona::timer timer( ex );
+  auto r = co_await timer.async_wait( sleep_dur );
+  CHECK( r.has_value() );
+
   throw "random error";
 
   co_return 1337;
@@ -132,7 +140,10 @@ TEST_CASE( "post_test - void returning function" ) {
 
   ex.post( []( fiona::executor ex ) -> fiona::task<void> {
     co_await fiona::post( ex, []( fiona::executor ex ) -> fiona::task<void> {
-      co_await fiona::sleep_for( ex, std::chrono::milliseconds( 500 ) );
+      fiona::timer timer( ex );
+      auto r = co_await timer.async_wait( std::chrono::milliseconds( 500 ) );
+      CHECK( r.has_value() );
+
       ++num_runs;
     }( ex ) );
 
@@ -182,9 +193,10 @@ TEST_CASE( "post_test - destruction on a separate thread" ) {
     auto ex = ioc.get_executor();
 
     ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
-      auto ec =
-          co_await fiona::sleep_for( ex, std::chrono::milliseconds( 250 ) );
-      CHECK( !ec );
+      fiona::timer timer( ex );
+      auto r = co_await timer.async_wait( std::chrono::milliseconds( 250 ) );
+      CHECK( r.has_value() );
+
       ++num_runs;
       co_return;
     }( ex ) );
