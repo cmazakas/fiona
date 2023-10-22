@@ -230,7 +230,7 @@ TEST_CASE( "timer_test - reusable timer" ) {
   auto timer_op = []( fiona::executor ex ) -> fiona::task<void> {
     fiona::timer timer( ex );
     for ( int i = 0; i < 10; ++i ) {
-      auto d = get_sleep_duration();
+      auto d = get_sleep_duration() / 2;
       duration_guard dg( d );
       auto r = co_await timer.async_wait( d );
       CHECK( r.has_value() );
@@ -244,4 +244,31 @@ TEST_CASE( "timer_test - reusable timer" ) {
 
   ioc.run();
   CHECK_EQ( num_runs, 1000 );
+}
+
+TEST_CASE( "timer_test - async cancellation" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::timer timer( ex );
+
+    auto h = fiona::post( ex, []( fiona::timer& timer ) -> fiona::task<void> {
+      fiona::timer t2( timer.get_executor() );
+      co_await t2.async_wait( std::chrono::milliseconds( 250 ) );
+      auto r = co_await timer.async_cancel();
+      CHECK( r.has_value() );
+      ++num_runs;
+    }( timer ) );
+
+    auto r = co_await timer.async_wait( std::chrono::milliseconds( 1000 ) );
+    CHECK( r.has_error() );
+    CHECK( r.error() == fiona::error_code::from_errno( ECANCELED ) );
+    co_await h;
+    ++num_runs;
+  }( ioc.get_executor() ) );
+
+  ioc.run();
+  CHECK( num_runs == 2 );
 }
