@@ -181,7 +181,16 @@ timer_cancel_awaitable::timer_cancel_awaitable(
     boost::intrusive_ptr<timer_impl> ptimer )
     : ptimer_{ ptimer } {}
 
-timer_cancel_awaitable::~timer_cancel_awaitable() {}
+timer_cancel_awaitable::~timer_cancel_awaitable() {
+  auto& frame = this->ptimer_->cf_;
+  if ( frame.initiated_ && frame.done_ ) {
+    auto ring = detail::executor_access_policy::ring( frame.ex_ );
+    auto sqe = detail::get_sqe( ring );
+    io_uring_prep_cancel( sqe, &frame, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_submit( ring );
+  }
+}
 
 bool
 timer_cancel_awaitable::await_ready() const {
