@@ -84,8 +84,8 @@ private:
   cancel_frame cf_;
   int count_ = 0;
 
-  friend inline void intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
-  friend inline void intrusive_ptr_release( timer_impl* ptimer ) noexcept;
+  friend void intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
+  friend void intrusive_ptr_release( timer_impl* ptimer ) noexcept;
 
 public:
   timer_impl( executor ex );
