@@ -26,6 +26,7 @@ set(fiona_headers
 set(fiona_sources
 
   src/io_context.cpp
+  src/time.cpp
   # src/tcp.cpp
 )
 
