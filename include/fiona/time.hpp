@@ -1,15 +1,20 @@
 #ifndef FIONA_TIME_HPP
 #define FIONA_TIME_HPP
 
-#include <fiona/error.hpp>
-#include <fiona/io_context.hpp>
+#include <fiona/error.hpp>      // for result, error_code
+#include <fiona/io_context.hpp> // for executor
 
-#include <fiona/detail/awaitable_base.hpp>
-#include <fiona/detail/time.hpp>
+#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
+#include <fiona/detail/time.hpp>           // for duration_to_timespec
 
-#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
 
-#include <liburing.h>
+#include <coroutine> // for coroutine_handle
+
+#include <bits/chrono.h>      // for duration
+#include <linux/time_types.h> // for __kernel_timespec
+
+struct io_uring_cqe;
 
 namespace fiona {
 
