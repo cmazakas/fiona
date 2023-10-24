@@ -1,8 +1,9 @@
 #include <fiona/error.hpp>      // for error_code, throw_errno...
 #include <fiona/io_context.hpp> // for executor, executor_acce...
-#include <fiona/time.hpp>       // for timer_impl, timer_cance...
+#include <fiona/time.hpp>       // for timer_cancel_awaitable
 
-#include <fiona/detail/get_sqe.hpp> // for get_sqe
+#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
+#include <fiona/detail/get_sqe.hpp>        // for get_sqe
 
 #include <boost/assert.hpp>                  // for BOOST_ASSERT
 #include <boost/config/detail/suffix.hpp>    // for BOOST_NOINLINE, BOOST_N...
@@ -17,14 +18,91 @@
 #include <liburing/io_uring.h> // for io_uring_cqe
 #include <linux/time_types.h>  // for __kernel_timespec
 
+namespace fiona {
+
 namespace {
 BOOST_NOINLINE BOOST_NORETURN inline void
 throw_busy() {
-  fiona::detail::throw_errno_as_error_code( EBUSY );
+  detail::throw_errno_as_error_code( EBUSY );
 }
 } // namespace
 
-namespace fiona {
+namespace detail {
+struct timer_impl {
+private:
+  friend struct fiona::timer_awaitable;
+  friend struct fiona::timer_cancel_awaitable;
+  friend struct fiona::timer;
+
+  struct timeout_frame final : public detail::awaitable_base {
+    error_code ec_;
+    __kernel_timespec ts_ = { .tv_sec = 0, .tv_nsec = 0 };
+    executor ex_;
+    timer_impl* ptimer_ = nullptr;
+    std::coroutine_handle<> h_;
+    bool initiated_ = false;
+    bool done_ = false;
+
+    timeout_frame( executor ex, timer_impl* ptimer );
+    ~timeout_frame();
+
+    void reset();
+
+    void await_process_cqe( io_uring_cqe* cqe ) override;
+
+    std::coroutine_handle<> handle() noexcept override;
+
+    void inc_ref() noexcept override;
+    void dec_ref() noexcept override;
+    int use_count() const noexcept override;
+  };
+
+  struct cancel_frame : public detail::awaitable_base {
+    error_code ec_;
+    executor ex_;
+    timer_impl* ptimer_ = nullptr;
+    std::coroutine_handle<> h_ = nullptr;
+    bool initiated_ = false;
+    bool done_ = false;
+
+    cancel_frame( executor ex, timer_impl* ptimer );
+
+    ~cancel_frame();
+
+    void reset();
+
+    void await_process_cqe( io_uring_cqe* cqe ) override;
+
+    std::coroutine_handle<> handle() noexcept override;
+
+    void inc_ref() noexcept override;
+    void dec_ref() noexcept override;
+    int use_count() const noexcept override;
+  };
+
+  timeout_frame tf_;
+  cancel_frame cf_;
+  int count_ = 0;
+
+  friend inline void intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
+  friend inline void intrusive_ptr_release( timer_impl* ptimer ) noexcept;
+
+public:
+  timer_impl( executor ex );
+};
+
+void
+intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept {
+  ++ptimer->count_;
+}
+
+void
+intrusive_ptr_release( timer_impl* ptimer ) noexcept {
+  --ptimer->count_;
+  if ( ptimer->count_ == 0 ) {
+    delete ptimer;
+  }
+}
 
 timer_impl::timeout_frame::timeout_frame( executor ex, timer_impl* ptimer )
     : ex_{ ex }, ptimer_{ ptimer } {}
@@ -121,9 +199,10 @@ timer_impl::cancel_frame::use_count() const noexcept {
 }
 
 timer_impl::timer_impl( executor ex ) : tf_{ ex, this }, cf_{ ex, this } {}
+} // namespace detail
 
-timer_awaitable::timer_awaitable( boost::intrusive_ptr<timer_impl> ptimer,
-                                  __kernel_timespec ts )
+timer_awaitable::timer_awaitable(
+    boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts )
     : ptimer_{ ptimer } {
   ptimer_->tf_.ts_ = ts;
 }
@@ -178,7 +257,7 @@ timer_awaitable::await_resume() {
 }
 
 timer_cancel_awaitable::timer_cancel_awaitable(
-    boost::intrusive_ptr<timer_impl> ptimer )
+    boost::intrusive_ptr<detail::timer_impl> ptimer )
     : ptimer_{ ptimer } {}
 
 timer_cancel_awaitable::~timer_cancel_awaitable() {
@@ -232,7 +311,7 @@ timer_cancel_awaitable::await_resume() {
   return {};
 }
 
-timer::timer( executor ex ) : ptimer_{ new timer_impl( ex ) } {}
+timer::timer( executor ex ) : ptimer_{ new detail::timer_impl( ex ) } {}
 
 timer_cancel_awaitable
 timer::async_cancel() {
