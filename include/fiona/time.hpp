@@ -95,6 +95,12 @@ private:
 
     ~cancel_frame() {}
 
+    void reset() {
+      initiated_ = false;
+      done_ = false;
+      ec_ = {};
+    }
+
     void await_process_cqe( io_uring_cqe* cqe ) override {
       done_ = true;
       if ( cqe->res < 0 ) {
@@ -212,21 +218,20 @@ private:
       : ptimer_{ ptimer } {}
 
 public:
-  ~timer_cancel_awaitable() {
-    auto& frame = ptimer_->cf_;
-    if ( frame.initiated_ && !frame.done_ ) {
-      auto ring = detail::executor_access_policy::ring( frame.ex_ );
+  ~timer_cancel_awaitable() {}
 
-      auto sqe = detail::get_sqe( ring );
-      io_uring_prep_cancel( sqe, &frame, 0 );
-      io_uring_sqe_set_data( sqe, nullptr );
-      io_uring_submit( ring );
+  bool await_ready() const {
+    if ( ptimer_->cf_.initiated_ ) {
+      detail::throw_busy();
     }
+    return false;
   }
 
-  bool await_ready() const { return false; }
-
   void await_suspend( std::coroutine_handle<> h ) {
+    if ( ptimer_->cf_.initiated_ ) {
+      detail::throw_busy();
+    }
+
     auto& frame = ptimer_->cf_;
 
     auto ring = detail::executor_access_policy::ring( frame.ex_ );
@@ -240,7 +245,12 @@ public:
 
   result<void> await_resume() {
     auto& f = ptimer_->cf_;
+    if ( !f.initiated_ || !f.done_ ) {
+      detail::throw_busy();
+    }
+
     auto ec = std::move( f.ec_ );
+    f.reset();
     if ( ec ) {
       return { ec };
     }

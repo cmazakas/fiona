@@ -272,3 +272,26 @@ TEST_CASE( "timer_test - async cancellation" ) {
   ioc.run();
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "timer_test - cancellation canceled on drop" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::timer timer( ex );
+    ++num_runs;
+    auto r = co_await timer.async_cancel();
+    (void)r;
+    CHECK( false );
+  }( ioc.get_executor() ) );
+
+  ioc.post( []() -> fiona::task<void> {
+    ++num_runs;
+    throw 1234;
+    co_return;
+  }() );
+
+  CHECK_THROWS( ioc.run() );
+  CHECK( num_runs == 2 );
+}
