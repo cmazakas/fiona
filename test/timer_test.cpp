@@ -182,6 +182,8 @@ TEST_CASE( "timer_test - nested post() invocation" ) {
   CHECK_EQ( num_runs, 1 + 2 + 2 );
 }
 
+#if defined( RUN_SYMMETRIC_TRANSFER_TESTS )
+
 TEST_CASE( "timer_test - recursion test" ) {
   num_runs = 0;
   fiona::io_context ioc;
@@ -192,6 +194,8 @@ TEST_CASE( "timer_test - recursion test" ) {
   ioc.run();
   CHECK_EQ( num_runs, 10 );
 }
+
+#endif
 
 TEST_CASE( "timer_test - mild stress test" ) {
   num_runs = 0;
