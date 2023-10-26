@@ -265,31 +265,15 @@ template <class T>
 struct internal_promise_base {
 private:
   struct final_awaitable {
-    task_set_type& tasks;
-    std::exception_ptr& pexception_ptr_;
-    boost::intrusive_ptr<internal_state<T>> ps_ = nullptr;
-
-    final_awaitable() = delete;
-    final_awaitable( task_set_type& tasks_, std::exception_ptr& pexception_ptr,
-                     boost::intrusive_ptr<internal_state<T>> ps )
-        : tasks{ tasks_ }, pexception_ptr_{ pexception_ptr }, ps_{ ps } {}
-    ~final_awaitable() = default;
-
     bool await_ready() const noexcept { return false; }
 
+    template <class Promise>
     std::coroutine_handle<>
-    await_suspend( std::coroutine_handle<> h ) noexcept {
-      auto continuation = ps_->continuation_;
+    await_suspend( std::coroutine_handle<Promise> h ) noexcept {
+      auto& tasks = h.promise().tasks_;
+      auto ps = h.promise().ps_;
 
-      auto p =
-          ( ps_->variant_.has_error() ? ps_->variant_.get_error() : nullptr );
-
-      auto use_count = ps_->use_count();
-
-      if ( !continuation && use_count < 3 && p ) {
-        pexception_ptr_ = p;
-      }
-
+      auto continuation = ps->continuation_;
       auto cnt = tasks.erase( h.address() );
       (void)cnt;
       BOOST_ASSERT( cnt == 1 );
@@ -307,34 +291,34 @@ private:
 
 protected:
   task_set_type& tasks_;
-  std::exception_ptr& pexception_ptr_;
   boost::intrusive_ptr<internal_state<T>> ps_ = nullptr;
 
 public:
   internal_promise_base() = delete;
-  internal_promise_base( task_set_type& tasks,
-                         std::exception_ptr& pexception_ptr )
-      : tasks_{ tasks }, pexception_ptr_{ pexception_ptr },
-        ps_{ new internal_state<T>() } {}
+  internal_promise_base( task_set_type& tasks )
+      : tasks_{ tasks }, ps_{ new internal_state<T>() } {}
 
   std::suspend_always initial_suspend() { return {}; }
-  final_awaitable final_suspend() noexcept {
-    return { tasks_, pexception_ptr_, ps_ };
-  }
+  final_awaitable final_suspend() noexcept { return {}; }
 
   boost::intrusive_ptr<internal_state<T>> get_state() const noexcept {
     return ps_;
   }
 
-  void unhandled_exception() { this->ps_->variant_.set_error(); }
+  void unhandled_exception() {
+    if ( this->ps_->use_count() > 1 ) {
+      this->ps_->variant_.set_error();
+    } else {
+      throw;
+    }
+  }
 };
 
 template <class T>
 struct internal_promise : public internal_promise_base<T> {
   template <class... Args>
-  internal_promise( task_set_type& tasks, std::exception_ptr& pexception_ptr,
-                    Args&&... )
-      : internal_promise_base<T>( tasks, pexception_ptr ) {}
+  internal_promise( task_set_type& tasks, Args&&... )
+      : internal_promise_base<T>( tasks ) {}
 
   internal_task<T> get_return_object() {
     return internal_task(
@@ -350,9 +334,8 @@ struct internal_promise : public internal_promise_base<T> {
 template <>
 struct internal_promise<void> : public internal_promise_base<void> {
   template <class... Args>
-  internal_promise( task_set_type& tasks, std::exception_ptr& pexception_ptr,
-                    Args&&... )
-      : internal_promise_base( tasks, pexception_ptr ) {}
+  internal_promise( task_set_type& tasks, Args&&... )
+      : internal_promise_base( tasks ) {}
 
   internal_task<void> get_return_object() {
     return internal_task(
@@ -502,8 +485,7 @@ post_awaitable<T>
 executor::post( task<T> t ) {
   auto ring = detail::executor_access_policy::ring( *this );
 
-  auto internal_task = scheduler( pframe_->tasks_, pframe_->exception_ptr_,
-                                  ring, std::move( t ) );
+  auto internal_task = scheduler( pframe_->tasks_, ring, std::move( t ) );
   auto [it, b] = pframe_->tasks_.insert( internal_task.h_ );
 
   BOOST_ASSERT( b );
@@ -514,8 +496,7 @@ executor::post( task<T> t ) {
 
 template <class T>
 detail::internal_task<T>
-scheduler( detail::task_set_type& /* tasks */,
-           std::exception_ptr& /* pexception_ptr */, io_uring* /* ring */,
+scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
            task<T> t ) {
   co_return co_await t;
 }
