@@ -15,6 +15,8 @@ struct cqe_guard {
   io_uring* ring;
   io_uring_cqe* cqe;
 
+  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ )
+      : ring{ ring_ }, cqe{ cqe_ } {}
   ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
 };
 
@@ -218,6 +220,11 @@ io_context::run() {
         auto h = run_queue.front();
         h.resume();
         run_queue.pop_front();
+        if ( pframe_->exception_ptr_ ) {
+          auto p = pframe_->exception_ptr_;
+
+          std::rethrow_exception( pframe_->exception_ptr_ );
+        }
       }
 
       if ( tasks.empty() ) {
@@ -232,6 +239,11 @@ io_context::run() {
       advance_guard guard = { .ring = ring, .count = 0 };
       for ( ; guard.count < num_ready; ) {
         on_cqe( cqes[guard.count++] );
+        if ( pframe_->exception_ptr_ ) {
+          auto p = pframe_->exception_ptr_;
+
+          std::rethrow_exception( pframe_->exception_ptr_ );
+        }
       }
     }
 
