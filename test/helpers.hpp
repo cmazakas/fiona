@@ -10,9 +10,14 @@
 
 #include <chrono>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+
 #define CHECK_GE( T, U ) CHECK( T >= U )
 #define CHECK_EQ( T, U ) CHECK( T == U )
 #define CHECK_LT( T, U ) CHECK( T < U )
+
+static in_addr const localhost_ipv4 = { .s_addr = htonl( 0x7f000001 ) };
 
 template <class Rep, class Period>
 struct duration_guard {

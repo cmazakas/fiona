@@ -16,6 +16,7 @@ set(fiona_headers
   include/fiona/borrowed_buffer.hpp
   include/fiona/io_context.hpp
   # include/fiona/tcp.hpp
+  include/fiona/tcpv2.hpp
   include/fiona/task.hpp
   include/fiona/time.hpp
   include/fiona/detail/get_sqe.hpp
@@ -28,6 +29,7 @@ set(fiona_sources
   src/io_context.cpp
   src/time.cpp
   # src/tcp.cpp
+  src/tcpv2.cpp
 )
 
 add_library(fiona ${fiona_sources})
