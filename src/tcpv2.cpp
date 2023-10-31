@@ -3,6 +3,9 @@
 
 #include <fiona/detail/awaitable_base.hpp>
 #include <fiona/detail/get_sqe.hpp>
+#include <fiona/detail/time.hpp>
+
+#include <chrono>
 
 #include <liburing.h>
 #include <netinet/in.h>
@@ -171,19 +174,17 @@ intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept {
 }
 
 struct stream_impl {
-private:
-  friend struct fiona::stream;
-
+  __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
   int fd_ = -1;
 
+  stream_impl( executor ex ) : ex_{ ex } {}
   stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
   friend void intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
   friend void intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
-public:
   ~stream_impl() {
     if ( fd_ >= 0 ) {
       auto ring = detail::executor_access_policy::ring( ex_ );
@@ -211,7 +212,92 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
   }
 }
 
-struct client_impl : public stream_impl {};
+struct client_impl : public stream_impl {
+  struct socket_frame final : public awaitable_base {
+    client_impl* pclient_ = nullptr;
+    std::coroutine_handle<> h_;
+    int res_ = 0;
+
+    socket_frame( client_impl* pclient ) : pclient_{ pclient } {}
+
+    virtual ~socket_frame() override {}
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      if ( cqe->res < 0 ) {
+        res_ = cqe->res;
+      }
+    }
+
+    std::coroutine_handle<> handle() noexcept override {
+      if ( res_ < 0 ) {
+        auto h = h_;
+        h_ = nullptr;
+        return h;
+      }
+      return nullptr;
+    }
+
+    void inc_ref() noexcept override { ++pclient_->count_; }
+    void dec_ref() noexcept override {
+      --pclient_->count_;
+      if ( pclient_->count_ == 0 ) {
+        delete pclient_;
+      }
+    }
+    int use_count() const noexcept override { return pclient_->count_; }
+  };
+
+  struct connect_frame : awaitable_base {
+    client_impl* pclient_ = nullptr;
+    int res_ = 0;
+    std::coroutine_handle<> h_;
+
+    connect_frame( client_impl* pclient ) : pclient_{ pclient } {}
+
+    virtual ~connect_frame() override {}
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      if ( cqe->res < 0 ) {
+        res_ = cqe->res;
+      }
+    }
+
+    std::coroutine_handle<> handle() noexcept override {
+      auto h = h_;
+      h_ = nullptr;
+      return h;
+    }
+
+    void inc_ref() noexcept override { ++pclient_->count_; }
+    void dec_ref() noexcept override {
+      --pclient_->count_;
+      if ( pclient_->count_ == 0 ) {
+        delete pclient_;
+      }
+    }
+    int use_count() const noexcept override { return pclient_->count_; }
+  };
+
+  sockaddr_storage addr_storage_ = {};
+  socket_frame socket_frame_{ this };
+  connect_frame connect_frame_{ this };
+
+  client_impl( executor ex ) : stream_impl{ ex } {}
+  ~client_impl() {}
+};
+
+void
+intrusive_ptr_add_ref( client_impl* pclient ) noexcept {
+  ++pclient->count_;
+}
+
+void
+intrusive_ptr_release( client_impl* pclient ) noexcept {
+  --pclient->count_;
+  if ( pclient->count_ == 0 ) {
+    delete pclient;
+  }
+}
 
 } // namespace detail
 
@@ -240,9 +326,6 @@ accept_awaitable
 acceptor::async_accept() {
   return { pacceptor_ };
 }
-
-stream::stream( executor ex, int fd )
-    : pstream_{ new detail::stream_impl{ ex, fd } } {}
 
 accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
@@ -283,6 +366,103 @@ accept_awaitable::await_resume() {
     return { error_code::from_errno( -peer_fd ) };
   }
   return { stream( ex, peer_fd ) };
+}
+
+stream::stream( executor ex, int fd )
+    : pstream_{ new detail::stream_impl{ ex, fd } } {}
+
+client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
+
+connect_awaitable
+client::async_connect( in_addr const ipv4_addr, std::uint16_t const port ) {
+  sockaddr_in const addr = { .sin_family = AF_INET,
+                             .sin_port = port,
+                             .sin_addr = ipv4_addr,
+                             .sin_zero = {} };
+
+  return async_connect( reinterpret_cast<sockaddr const*>( &addr ) );
+}
+
+connect_awaitable
+client::async_connect( sockaddr const* addr ) {
+  auto const is_ipv4 = ( addr->sa_family == AF_INET );
+
+  BOOST_ASSERT( is_ipv4 || ( addr->sa_family == AF_INET6 ) );
+
+  sockaddr_storage addr_storage = {};
+  std::memcpy( &addr_storage, addr,
+               is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
+  return { addr_storage, pclient_ };
+}
+
+connect_awaitable::connect_awaitable(
+    sockaddr_storage addr_storage,
+    boost::intrusive_ptr<detail::client_impl> pclient )
+    : addr_storage_{ addr_storage }, pclient_{ pclient } {}
+
+bool
+connect_awaitable::await_ready() const {
+  return false;
+}
+
+void
+connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto const* addr = &addr_storage_;
+  auto const is_ipv4 = ( addr->ss_family == AF_INET );
+  BOOST_ASSERT( is_ipv4 || addr->ss_family == AF_INET6 );
+
+  auto af = is_ipv4 ? AF_INET : AF_INET6;
+
+  auto ex = pclient_->ex_;
+  auto ring = detail::executor_access_policy::ring( ex );
+  auto const file_idx = detail::executor_access_policy::get_available_fd( ex );
+
+  pclient_->fd_ = file_idx;
+  pclient_->socket_frame_.h_ = h;
+  pclient_->connect_frame_.h_ = h;
+
+  detail::reserve_sqes( ring, 3 );
+
+  {
+    auto sqe = io_uring_get_sqe( ring );
+
+    io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, file_idx, 0 );
+    io_uring_sqe_set_data(
+        sqe, boost::intrusive_ptr( &pclient_->socket_frame_ ).detach() );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+  }
+
+  {
+    auto sqe = io_uring_get_sqe( ring );
+
+    io_uring_prep_connect(
+        sqe, file_idx, reinterpret_cast<sockaddr const*>( &addr_storage_ ),
+        ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) ) );
+    io_uring_sqe_set_data(
+        sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
+  }
+
+  {
+    auto ts = &pclient_->ts_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_link_timeout( sqe, ts, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+  }
+}
+
+result<void>
+connect_awaitable::await_resume() {
+  if ( pclient_->socket_frame_.res_ < 0 ) {
+    return { error_code::from_errno( -pclient_->socket_frame_.res_ ) };
+  }
+
+  if ( pclient_->connect_frame_.res_ < 0 ) {
+    return { error_code::from_errno( -pclient_->connect_frame_.res_ ) };
+  }
+
+  return {};
 }
 
 } // namespace fiona

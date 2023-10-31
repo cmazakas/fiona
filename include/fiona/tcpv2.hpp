@@ -32,6 +32,12 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
 struct client_impl;
 
+void
+intrusive_ptr_add_ref( client_impl* pclient ) noexcept;
+
+void
+intrusive_ptr_release( client_impl* pclient ) noexcept;
+
 } // namespace detail
 
 struct accept_awaitable;
@@ -70,9 +76,27 @@ private:
   stream( executor ex, int fd );
 };
 
+struct connect_awaitable;
+
 struct client {
 private:
-  boost::intrusive_ptr<detail::client_impl> pclient_;
+  boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
+
+  client( boost::intrusive_ptr<detail::client_impl> pclient );
+
+public:
+  client() = delete;
+  client( executor ex );
+
+  client( client const& ) = delete;
+  client& operator=( client const& ) = delete;
+
+  client( client&& ) = default;
+  client& operator=( client&& ) = default;
+
+  connect_awaitable async_connect( in_addr const ipv4_addr,
+                                   std::uint16_t const port );
+  connect_awaitable async_connect( sockaddr const* addr );
 };
 
 struct accept_awaitable {
@@ -91,6 +115,22 @@ public:
   bool await_ready() const;
   void await_suspend( std::coroutine_handle<> h ) noexcept;
   result<stream> await_resume();
+};
+
+struct connect_awaitable {
+private:
+  friend struct client;
+
+  sockaddr_storage addr_storage_ = {};
+  boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
+
+  connect_awaitable( sockaddr_storage addr_strorage,
+                     boost::intrusive_ptr<detail::client_impl> pclient );
+
+public:
+  bool await_ready() const;
+  void await_suspend( std::coroutine_handle<> h );
+  result<void> await_resume();
 };
 
 } // namespace fiona
