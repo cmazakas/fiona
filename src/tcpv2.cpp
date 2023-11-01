@@ -217,14 +217,19 @@ struct client_impl : public stream_impl {
     client_impl* pclient_ = nullptr;
     std::coroutine_handle<> h_;
     int res_ = 0;
+    bool initiated_ = false;
+    bool done_ = false;
 
     socket_frame( client_impl* pclient ) : pclient_{ pclient } {}
 
     virtual ~socket_frame() override {}
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
+      done_ = true;
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
+        executor_access_policy::release_fd( pclient_->ex_, pclient_->fd_ );
+        pclient_->fd_ = -1;
       }
     }
 
@@ -245,18 +250,28 @@ struct client_impl : public stream_impl {
       }
     }
     int use_count() const noexcept override { return pclient_->count_; }
+
+    void reset() {
+      h_ = nullptr;
+      res_ = 0;
+      initiated_ = false;
+      done_ = false;
+    }
   };
 
   struct connect_frame : awaitable_base {
     client_impl* pclient_ = nullptr;
-    int res_ = 0;
     std::coroutine_handle<> h_;
+    int res_ = 0;
+    bool initiated_ = false;
+    bool done_ = false;
 
     connect_frame( client_impl* pclient ) : pclient_{ pclient } {}
 
     virtual ~connect_frame() override {}
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
+      done_ = true;
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
       }
@@ -276,6 +291,13 @@ struct client_impl : public stream_impl {
       }
     }
     int use_count() const noexcept override { return pclient_->count_; }
+
+    void reset() {
+      h_ = nullptr;
+      res_ = 0;
+      initiated_ = false;
+      done_ = false;
+    }
   };
 
   sockaddr_storage addr_storage_ = {};
@@ -387,7 +409,9 @@ connect_awaitable
 client::async_connect( sockaddr const* addr ) {
   auto const is_ipv4 = ( addr->sa_family == AF_INET );
 
-  BOOST_ASSERT( is_ipv4 || ( addr->sa_family == AF_INET6 ) );
+  if ( !is_ipv4 && ( addr->sa_family != AF_INET6 ) ) {
+    detail::throw_errno_as_error_code( EINVAL );
+  }
 
   sockaddr_storage addr_storage = {};
   std::memcpy( &addr_storage, addr,
@@ -415,28 +439,37 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   auto ex = pclient_->ex_;
   auto ring = detail::executor_access_policy::ring( ex );
-  auto const file_idx = detail::executor_access_policy::get_available_fd( ex );
 
-  pclient_->fd_ = file_idx;
+  BOOST_ASSERT( !pclient_->socket_frame_.h_ );
+  BOOST_ASSERT( !pclient_->connect_frame_.h_ );
+
   pclient_->socket_frame_.h_ = h;
   pclient_->connect_frame_.h_ = h;
 
-  detail::reserve_sqes( ring, 3 );
+  if ( pclient_->fd_ == -1 ) {
+    auto const file_idx =
+        detail::executor_access_policy::get_available_fd( ex );
 
-  {
-    auto sqe = io_uring_get_sqe( ring );
+    pclient_->fd_ = file_idx;
+    detail::reserve_sqes( ring, 3 );
 
-    io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, file_idx, 0 );
-    io_uring_sqe_set_data(
-        sqe, boost::intrusive_ptr( &pclient_->socket_frame_ ).detach() );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+    {
+      auto sqe = io_uring_get_sqe( ring );
+
+      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, pclient_->fd_, 0 );
+      io_uring_sqe_set_data(
+          sqe, boost::intrusive_ptr( &pclient_->socket_frame_ ).detach() );
+      io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+    }
+  } else {
+    detail::reserve_sqes( ring, 2 );
   }
 
   {
     auto sqe = io_uring_get_sqe( ring );
 
     io_uring_prep_connect(
-        sqe, file_idx, reinterpret_cast<sockaddr const*>( &addr_storage_ ),
+        sqe, pclient_->fd_, reinterpret_cast<sockaddr const*>( &addr_storage_ ),
         ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) ) );
     io_uring_sqe_set_data(
         sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
@@ -454,12 +487,30 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
 result<void>
 connect_awaitable::await_resume() {
-  if ( pclient_->socket_frame_.res_ < 0 ) {
-    return { error_code::from_errno( -pclient_->socket_frame_.res_ ) };
+  struct reset_guard {
+    detail::client_impl::socket_frame& sframe;
+    detail::client_impl::connect_frame& cframe;
+
+    ~reset_guard() {
+      sframe.reset();
+      cframe.reset();
+    }
+  };
+
+  auto& socket_frame = pclient_->socket_frame_;
+  auto& connect_frame = pclient_->connect_frame_;
+
+  reset_guard rguard{ socket_frame, connect_frame };
+
+  if ( socket_frame.res_ < 0 ) {
+    BOOST_ASSERT( connect_frame.initiated_ );
+    BOOST_ASSERT( !connect_frame.done_ );
+    return { error_code::from_errno( -socket_frame.res_ ) };
   }
 
-  if ( pclient_->connect_frame_.res_ < 0 ) {
-    return { error_code::from_errno( -pclient_->connect_frame_.res_ ) };
+  if ( connect_frame.res_ < 0 ) {
+    BOOST_ASSERT( socket_frame.done_ );
+    return { error_code::from_errno( -connect_frame.res_ ) };
   }
 
   return {};
