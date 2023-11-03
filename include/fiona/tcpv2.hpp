@@ -64,6 +64,7 @@ public:
             int const backlog );
 
   std::uint16_t port() const noexcept;
+  executor get_executor() const noexcept;
 
   accept_awaitable async_accept();
 };
@@ -113,7 +114,7 @@ public:
   accept_awaitable( accept_awaitable&& ) = delete;
 
   bool await_ready() const;
-  void await_suspend( std::coroutine_handle<> h ) noexcept;
+  void await_suspend( std::coroutine_handle<> h );
   result<stream> await_resume();
 };
 
@@ -121,11 +122,9 @@ struct connect_awaitable {
 private:
   friend struct client;
 
-  sockaddr_storage addr_storage_ = {};
   boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
 
-  connect_awaitable( sockaddr_storage addr_strorage,
-                     boost::intrusive_ptr<detail::client_impl> pclient );
+  connect_awaitable( boost::intrusive_ptr<detail::client_impl> pclient );
 
 public:
   bool await_ready() const;

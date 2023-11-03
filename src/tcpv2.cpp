@@ -7,6 +7,7 @@
 
 #include <chrono>
 
+#include <arpa/inet.h>
 #include <liburing.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -24,6 +25,7 @@ namespace detail {
 
 struct acceptor_impl {
 private:
+  friend struct fiona::acceptor;
   friend struct fiona::accept_awaitable;
 
   struct accept_frame final : public awaitable_base {
@@ -36,6 +38,13 @@ private:
     accept_frame() = delete;
     accept_frame( acceptor_impl* pacceptor ) : pacceptor_{ pacceptor } {}
     ~accept_frame() = default;
+
+    void reset() {
+      h_ = nullptr;
+      peer_fd_ = -1;
+      initiated_ = false;
+      done_ = false;
+    }
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
       auto res = cqe->res;
@@ -275,6 +284,7 @@ struct client_impl : public stream_impl {
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
       }
+      intrusive_ptr_release( this );
     }
 
     std::coroutine_handle<> handle() noexcept override {
@@ -344,6 +354,11 @@ acceptor::port() const noexcept {
   return pacceptor_->port();
 }
 
+executor
+acceptor::get_executor() const noexcept {
+  return pacceptor_->ex_;
+}
+
 accept_awaitable
 acceptor::async_accept() {
   return { pacceptor_ };
@@ -359,7 +374,7 @@ accept_awaitable::await_ready() const {
 }
 
 void
-accept_awaitable::await_suspend( std::coroutine_handle<> h ) noexcept {
+accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ex = pacceptor_->ex_;
   auto fd = pacceptor_->fd_;
   auto& f = pacceptor_->accept_frame_;
@@ -384,6 +399,8 @@ accept_awaitable::await_resume() {
   auto ex = pacceptor_->ex_;
   auto& f = pacceptor_->accept_frame_;
   auto peer_fd = f.peer_fd_;
+
+  f.reset();
   if ( peer_fd < 0 ) {
     return { error_code::from_errno( -peer_fd ) };
   }
@@ -413,16 +430,14 @@ client::async_connect( sockaddr const* addr ) {
     detail::throw_errno_as_error_code( EINVAL );
   }
 
-  sockaddr_storage addr_storage = {};
-  std::memcpy( &addr_storage, addr,
+  std::memcpy( &pclient_->addr_storage_, addr,
                is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
-  return { addr_storage, pclient_ };
+  return { pclient_ };
 }
 
 connect_awaitable::connect_awaitable(
-    sockaddr_storage addr_storage,
     boost::intrusive_ptr<detail::client_impl> pclient )
-    : addr_storage_{ addr_storage }, pclient_{ pclient } {}
+    : pclient_{ pclient } {}
 
 bool
 connect_awaitable::await_ready() const {
@@ -431,7 +446,7 @@ connect_awaitable::await_ready() const {
 
 void
 connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
-  auto const* addr = &addr_storage_;
+  auto const* addr = &pclient_->addr_storage_;
   auto const is_ipv4 = ( addr->ss_family == AF_INET );
   BOOST_ASSERT( is_ipv4 || addr->ss_family == AF_INET6 );
 
@@ -440,40 +455,44 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ex = pclient_->ex_;
   auto ring = detail::executor_access_policy::ring( ex );
 
+  BOOST_ASSERT( !pclient_->socket_frame_.initiated_ );
+  BOOST_ASSERT( !pclient_->connect_frame_.initiated_ );
   BOOST_ASSERT( !pclient_->socket_frame_.h_ );
   BOOST_ASSERT( !pclient_->connect_frame_.h_ );
 
   pclient_->socket_frame_.h_ = h;
   pclient_->connect_frame_.h_ = h;
 
-  if ( pclient_->fd_ == -1 ) {
+  if ( pclient_->fd_ >= 0 ) {
+    detail::reserve_sqes( ring, 3 );
+  } else {
     auto const file_idx =
         detail::executor_access_policy::get_available_fd( ex );
 
     pclient_->fd_ = file_idx;
-    detail::reserve_sqes( ring, 3 );
+    detail::reserve_sqes( ring, 4 );
 
     {
       auto sqe = io_uring_get_sqe( ring );
-
-      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, 0, pclient_->fd_, 0 );
+      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP,
+                                   pclient_->fd_, 0 );
       io_uring_sqe_set_data(
           sqe, boost::intrusive_ptr( &pclient_->socket_frame_ ).detach() );
       io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
     }
-  } else {
-    detail::reserve_sqes( ring, 2 );
+
+    pclient_->socket_frame_.initiated_ = true;
   }
 
   {
+    auto addr = reinterpret_cast<sockaddr const*>( &pclient_->addr_storage_ );
+    auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
     auto sqe = io_uring_get_sqe( ring );
-
-    io_uring_prep_connect(
-        sqe, pclient_->fd_, reinterpret_cast<sockaddr const*>( &addr_storage_ ),
-        ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) ) );
+    io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
     io_uring_sqe_set_data(
         sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE |
+                                     IOSQE_CQE_SKIP_SUCCESS );
   }
 
   {
@@ -481,38 +500,47 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_link_timeout( sqe, ts, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_CQE_SKIP_SUCCESS );
   }
+
+  {
+    auto addr = reinterpret_cast<sockaddr const*>( &pclient_->addr_storage_ );
+    auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
+    io_uring_sqe_set_data(
+        sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
+    io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
+  }
+
+  pclient_->connect_frame_.initiated_ = true;
 }
 
 result<void>
 connect_awaitable::await_resume() {
-  struct reset_guard {
-    detail::client_impl::socket_frame& sframe;
-    detail::client_impl::connect_frame& cframe;
-
-    ~reset_guard() {
-      sframe.reset();
-      cframe.reset();
-    }
-  };
-
   auto& socket_frame = pclient_->socket_frame_;
   auto& connect_frame = pclient_->connect_frame_;
-
-  reset_guard rguard{ socket_frame, connect_frame };
 
   if ( socket_frame.res_ < 0 ) {
     BOOST_ASSERT( connect_frame.initiated_ );
     BOOST_ASSERT( !connect_frame.done_ );
-    return { error_code::from_errno( -socket_frame.res_ ) };
+    auto res = -socket_frame.res_;
+    socket_frame.reset();
+    connect_frame.reset();
+    return { error_code::from_errno( res ) };
   }
 
   if ( connect_frame.res_ < 0 ) {
-    BOOST_ASSERT( socket_frame.done_ );
-    return { error_code::from_errno( -connect_frame.res_ ) };
-  }
+    BOOST_ASSERT( ( !socket_frame.initiated_ && !socket_frame.done_ ) ||
+                  ( socket_frame.initiated_ && socket_frame.done_ ) );
 
+    auto res = -connect_frame.res_;
+    socket_frame.reset();
+    connect_frame.reset();
+    return { error_code::from_errno( res ) };
+  }
+  socket_frame.reset();
+  connect_frame.reset();
   return {};
 }
 
