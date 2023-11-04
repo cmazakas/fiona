@@ -8,7 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_translate_exception.hpp>
 
+#include <array>
 #include <chrono>
+#include <span>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -18,6 +20,13 @@
 #define CHECK_LT( T, U ) CHECK( T < U )
 
 static in_addr const localhost_ipv4 = { .s_addr = htonl( 0x7f000001 ) };
+
+in_addr
+bytes_to_ipv4( std::array<unsigned char, 4> octets ) {
+  std::uint32_t ipv4_addr = 0;
+  std::memcpy( &ipv4_addr, octets.data(), sizeof( ipv4_addr ) );
+  return in_addr{ .s_addr = htonl( ipv4_addr ) };
+}
 
 template <class Rep, class Period>
 struct duration_guard {
