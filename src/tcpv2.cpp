@@ -24,10 +24,6 @@ throw_busy() {
 namespace detail {
 
 struct acceptor_impl {
-private:
-  friend struct fiona::acceptor;
-  friend struct fiona::accept_awaitable;
-
   struct accept_frame final : public awaitable_base {
     acceptor_impl* pacceptor_ = nullptr;
     std::coroutine_handle<> h_;
@@ -78,9 +74,6 @@ private:
   int fd_ = -1;
   int count_ = 0;
   bool is_ipv4_ = true;
-
-  friend void intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
-  friend void intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
 
   acceptor_impl( executor ex, sockaddr const* addr, socklen_t const addrlen,
                  int const backlog )
@@ -182,6 +175,83 @@ intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept {
   }
 }
 
+} // namespace detail
+
+inline constexpr int const static default_backlog = 256;
+
+acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port )
+    : acceptor( ex, ipv4_addr, port, default_backlog ) {}
+
+acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port,
+                    int const backlog )
+    : pacceptor_{ new detail::acceptor_impl( ex, ipv4_addr, port, backlog ) } {}
+
+acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port )
+    : acceptor( ex, ipv6_addr, port, default_backlog ) {}
+
+acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
+                    int const backlog )
+    : pacceptor_{ new detail::acceptor_impl( ex, ipv6_addr, port, backlog ) } {}
+
+std::uint16_t
+acceptor::port() const noexcept {
+  return pacceptor_->port();
+}
+
+executor
+acceptor::get_executor() const noexcept {
+  return pacceptor_->ex_;
+}
+
+accept_awaitable
+acceptor::async_accept() {
+  return { pacceptor_ };
+}
+
+accept_awaitable::accept_awaitable(
+    boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
+    : pacceptor_{ pacceptor } {}
+
+bool
+accept_awaitable::await_ready() const {
+  return false;
+}
+
+void
+accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto ex = pacceptor_->ex_;
+  auto fd = pacceptor_->fd_;
+  auto& f = pacceptor_->accept_frame_;
+  if ( f.initiated_ ) {
+    throw_busy();
+  }
+
+  auto ring = detail::executor_access_policy::ring( ex );
+  auto file_idx = detail::executor_access_policy::get_available_fd( ex );
+  auto sqe = detail::get_sqe( ring );
+
+  io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0, file_idx );
+  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &f ).detach() );
+
+  f.peer_fd_ = file_idx;
+  f.initiated_ = true;
+  f.h_ = h;
+}
+
+result<stream>
+accept_awaitable::await_resume() {
+  auto ex = pacceptor_->ex_;
+  auto& f = pacceptor_->accept_frame_;
+  auto peer_fd = f.peer_fd_;
+
+  f.reset();
+  if ( peer_fd < 0 ) {
+    return { error_code::from_errno( -peer_fd ) };
+  }
+  return { stream( ex, peer_fd ) };
+}
+
+namespace detail {
 struct stream_impl {
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
@@ -190,9 +260,6 @@ struct stream_impl {
 
   stream_impl( executor ex ) : ex_{ ex } {}
   stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
-
-  friend void intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
-  friend void intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
   ~stream_impl() {
     if ( fd_ >= 0 ) {
@@ -220,7 +287,12 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
     delete pstream;
   }
 }
+} // namespace detail
 
+stream::stream( executor ex, int fd )
+    : pstream_{ new detail::stream_impl{ ex, fd } } {}
+
+namespace detail {
 struct client_impl : public stream_impl {
   struct socket_frame final : public awaitable_base {
     client_impl* pclient_ = nullptr;
@@ -330,87 +402,14 @@ intrusive_ptr_release( client_impl* pclient ) noexcept {
     delete pclient;
   }
 }
-
 } // namespace detail
 
-inline constexpr int const static default_backlog = 256;
-
-acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port )
-    : acceptor( ex, ipv4_addr, port, default_backlog ) {}
-
-acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port,
-                    int const backlog )
-    : pacceptor_{ new detail::acceptor_impl( ex, ipv4_addr, port, backlog ) } {}
-
-acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port )
-    : acceptor( ex, ipv6_addr, port, default_backlog ) {}
-
-acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
-                    int const backlog )
-    : pacceptor_{ new detail::acceptor_impl( ex, ipv6_addr, port, backlog ) } {}
-
-std::uint16_t
-acceptor::port() const noexcept {
-  return pacceptor_->port();
-}
-
-executor
-acceptor::get_executor() const noexcept {
-  return pacceptor_->ex_;
-}
-
-accept_awaitable
-acceptor::async_accept() {
-  return { pacceptor_ };
-}
-
-accept_awaitable::accept_awaitable(
-    boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
-    : pacceptor_{ pacceptor } {}
-
-bool
-accept_awaitable::await_ready() const {
-  return false;
-}
+client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
 
 void
-accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
-  auto ex = pacceptor_->ex_;
-  auto fd = pacceptor_->fd_;
-  auto& f = pacceptor_->accept_frame_;
-  if ( f.initiated_ ) {
-    throw_busy();
-  }
-
-  auto ring = detail::executor_access_policy::ring( ex );
-  auto file_idx = detail::executor_access_policy::get_available_fd( ex );
-  auto sqe = detail::get_sqe( ring );
-
-  io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0, file_idx );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &f ).detach() );
-
-  f.peer_fd_ = file_idx;
-  f.initiated_ = true;
-  f.h_ = h;
+client::timeout( __kernel_timespec ts ) {
+  pclient_->ts_ = ts;
 }
-
-result<stream>
-accept_awaitable::await_resume() {
-  auto ex = pacceptor_->ex_;
-  auto& f = pacceptor_->accept_frame_;
-  auto peer_fd = f.peer_fd_;
-
-  f.reset();
-  if ( peer_fd < 0 ) {
-    return { error_code::from_errno( -peer_fd ) };
-  }
-  return { stream( ex, peer_fd ) };
-}
-
-stream::stream( executor ex, int fd )
-    : pstream_{ new detail::stream_impl{ ex, fd } } {}
-
-client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
 
 connect_awaitable
 client::async_connect( in_addr const ipv4_addr, std::uint16_t const port ) {
@@ -441,6 +440,9 @@ connect_awaitable::connect_awaitable(
 
 bool
 connect_awaitable::await_ready() const {
+  if ( pclient_->socket_frame_.initiated_ ) {
+    throw_busy();
+  }
   return false;
 }
 

@@ -4,6 +4,8 @@
 #include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
 
+#include <fiona/detail/time.hpp>
+
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <coroutine>
@@ -85,6 +87,8 @@ private:
 
   client( boost::intrusive_ptr<detail::client_impl> pclient );
 
+  void timeout( __kernel_timespec ts );
+
 public:
   client() = delete;
   client( executor ex );
@@ -98,6 +102,12 @@ public:
   connect_awaitable async_connect( in_addr const ipv4_addr,
                                    std::uint16_t const port );
   connect_awaitable async_connect( sockaddr const* addr );
+
+  template <class Rep, class Period>
+  void timeout( std::chrono::duration<Rep, Period> const d ) {
+    auto ts = detail::duration_to_timespec( d );
+    timeout( ts );
+  }
 };
 
 struct accept_awaitable {
