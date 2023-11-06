@@ -137,6 +137,8 @@ private:
   connect_awaitable( boost::intrusive_ptr<detail::client_impl> pclient );
 
 public:
+  ~connect_awaitable();
+
   bool await_ready() const;
   void await_suspend( std::coroutine_handle<> h );
   result<void> await_resume();

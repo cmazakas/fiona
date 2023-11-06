@@ -356,7 +356,6 @@ struct client_impl : public stream_impl {
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
       }
-      intrusive_ptr_release( this );
     }
 
     std::coroutine_handle<> handle() noexcept override {
@@ -438,6 +437,29 @@ connect_awaitable::connect_awaitable(
     boost::intrusive_ptr<detail::client_impl> pclient )
     : pclient_{ pclient } {}
 
+connect_awaitable::~connect_awaitable() {
+  auto ex = pclient_->ex_;
+  auto& sf = pclient_->socket_frame_;
+  auto& cf = pclient_->connect_frame_;
+
+  auto ring = detail::executor_access_policy::ring( ex );
+  detail::reserve_sqes( ring, 2 );
+
+  if ( sf.initiated_ && !sf.done_ ) {
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel( sqe, &sf, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+  }
+
+  if ( cf.initiated_ && !cf.done_ ) {
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel( sqe, &cf, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+  }
+
+  io_uring_submit( ring );
+}
+
 bool
 connect_awaitable::await_ready() const {
   if ( pclient_->socket_frame_.initiated_ ) {
@@ -491,8 +513,7 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
-    io_uring_sqe_set_data(
-        sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
+    io_uring_sqe_set_data( sqe, &pclient_->connect_frame_ );
     io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE |
                                      IOSQE_CQE_SKIP_SUCCESS );
   }
