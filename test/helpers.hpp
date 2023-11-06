@@ -15,6 +15,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+using namespace std::chrono_literals;
+
 #define CHECK_GE( T, U ) CHECK( T >= U )
 #define CHECK_EQ( T, U ) CHECK( T == U )
 #define CHECK_LT( T, U ) CHECK( T < U )
@@ -53,7 +55,8 @@ CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
 
 #if defined( BOOST_GCC )
 
-#if !defined( __SANITIZE_ADDRESS__ ) && defined( __OPTIMIZE__ )
+#if !defined( __SANITIZE_ADDRESS__ ) && !defined( __SANITIZE_THREAD__ ) &&     \
+    defined( __OPTIMIZE__ )
 // don't want to run the symmetric transfer tests under:
 // gcc -O0 -fsanitize=address
 //
