@@ -2,3 +2,4 @@
 __build__/
 toolchain.cmake
 *.sh
+__ci_build__/
