@@ -273,3 +273,40 @@ TEST_CASE( "tcp2_test - socket creation failed" ) {
   ioc.run();
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "tcp2_test - connect cancellation" ) {
+  num_runs = 0;
+
+  // use one of the IP addresses from the test networks:
+  // 192.0.2.0/24
+  // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+  static auto const ipv4_addr = bytes_to_ipv4( { 192, 0, 2, 0 } );
+
+  fiona::io_context ioc;
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::client client( ex );
+    client.timeout( 10s );
+
+    auto h = fiona::post( ex, []( fiona::client& client ) -> fiona::task<void> {
+      fiona::timer timer( client.get_executor() );
+      co_await timer.async_wait( 2s );
+
+      auto mcancelled = co_await client.async_cancel();
+      CHECK( mcancelled.value() == 1 );
+      ++num_runs;
+      co_return;
+    }( client ) );
+
+    duration_guard dg( 2s );
+    auto mok = co_await client.async_connect( ipv4_addr, htons( 3300 ) );
+    CHECK( mok.error() == fiona::error_code::from_errno( ECANCELED ) );
+
+    co_await h;
+
+    ++num_runs;
+    co_return;
+  }( ioc.get_executor() ) );
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}

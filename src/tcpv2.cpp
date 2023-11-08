@@ -252,7 +252,44 @@ accept_awaitable::await_resume() {
 }
 
 namespace detail {
+
 struct stream_impl {
+  struct cancel_frame final : awaitable_base {
+    stream_impl* pstream_ = nullptr;
+    std::coroutine_handle<> h_ = nullptr;
+    int res_ = 0;
+    bool initiated_ = false;
+    bool done_ = false;
+
+    cancel_frame() = delete;
+    cancel_frame( stream_impl* pstream ) : pstream_{ pstream } {}
+    ~cancel_frame() override {}
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      done_ = true;
+      res_ = cqe->res;
+    }
+
+    std::coroutine_handle<> handle() noexcept override {
+      if ( h_ ) {
+        auto h = h_;
+        h_ = nullptr;
+        return h;
+      }
+      return nullptr;
+    }
+
+    void inc_ref() noexcept override { ++pstream_->count_; }
+    void dec_ref() noexcept override {
+      if ( --pstream_->count_ == 0 ) {
+        delete pstream_;
+      }
+    }
+
+    int use_count() const noexcept override { return pstream_->count_; }
+  };
+
+  cancel_frame cancel_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
@@ -291,6 +328,54 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
 
 stream::stream( executor ex, int fd )
     : pstream_{ new detail::stream_impl{ ex, fd } } {}
+
+stream_cancel_awaitable
+stream::async_cancel() {
+  return { pstream_ };
+}
+
+stream_cancel_awaitable::stream_cancel_awaitable(
+    boost::intrusive_ptr<detail::stream_impl> pstream )
+    : pstream_{ pstream } {}
+
+bool
+stream_cancel_awaitable::await_ready() const {
+  return pstream_->fd_ == -1;
+}
+
+void
+stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto ex = pstream_->ex_;
+  auto ring = detail::executor_access_policy::ring( ex );
+  auto fd = pstream_->fd_;
+  auto& cf = pstream_->cancel_frame_;
+
+  detail::reserve_sqes( ring, 1 );
+
+  BOOST_ASSERT( fd != -1 );
+
+  auto sqe = io_uring_get_sqe( ring );
+  io_uring_prep_cancel_fd(
+      sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
+  io_uring_sqe_set_data(
+      sqe, boost::intrusive_ptr( &pstream_->cancel_frame_ ).detach() );
+
+  cf.initiated_ = true;
+  cf.h_ = h;
+}
+
+result<int>
+stream_cancel_awaitable::await_resume() {
+  if ( pstream_->fd_ == -1 ) {
+    return { 0 };
+  }
+
+  if ( pstream_->cancel_frame_.res_ < 0 ) {
+    return { error_code::from_errno( -pstream_->cancel_frame_.res_ ) };
+  }
+
+  return { pstream_->cancel_frame_.res_ };
+}
 
 namespace detail {
 struct client_impl : public stream_impl {
@@ -408,6 +493,16 @@ client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
 void
 client::timeout( __kernel_timespec ts ) {
   pclient_->ts_ = ts;
+}
+
+executor
+client::get_executor() const noexcept {
+  return pclient_->ex_;
+}
+
+stream_cancel_awaitable
+client::async_cancel() {
+  return { pclient_ };
 }
 
 connect_awaitable
