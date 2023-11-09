@@ -212,6 +212,22 @@ accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
     : pacceptor_{ pacceptor } {}
 
+accept_awaitable::~accept_awaitable() {
+  auto& af = pacceptor_->accept_frame_;
+  if ( af.initiated_ && !af.done_ ) {
+    auto ex = pacceptor_->ex_;
+    auto ring = detail::executor_access_policy::ring( ex );
+
+    detail::reserve_sqes( ring, 1 );
+
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel( sqe, &af, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_submit( ring );
+  }
+}
+
 bool
 accept_awaitable::await_ready() const {
   return false;

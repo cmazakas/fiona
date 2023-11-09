@@ -146,6 +146,7 @@ public:
   accept_awaitable() = delete;
   accept_awaitable( accept_awaitable const& ) = delete;
   accept_awaitable( accept_awaitable&& ) = delete;
+  ~accept_awaitable();
 
   bool await_ready() const;
   void await_suspend( std::coroutine_handle<> h );
