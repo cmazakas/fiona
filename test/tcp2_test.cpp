@@ -238,9 +238,7 @@ TEST_CASE( "tcp2_test - socket creation failed" ) {
   ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
     std::vector<fiona::stream> streams;
     for ( int i = 0; i < 8; ++i ) {
-      std::cout << "going to accept new connection now\n";
       auto mstream = co_await acceptor.async_accept();
-      std::cout << "accepted new connection!!!!\n";
       streams.push_back( std::move( mstream.value() ) );
     }
 
@@ -283,7 +281,18 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
   static auto const ipv4_addr = bytes_to_ipv4( { 192, 0, 2, 0 } );
 
   fiona::io_context ioc;
-  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+
+  fiona::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+    ++num_runs;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
     fiona::client client( ex );
     client.timeout( 10s );
 
@@ -297,16 +306,21 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
       co_return;
     }( client ) );
 
-    duration_guard dg( 2s );
-    auto mok = co_await client.async_connect( ipv4_addr, htons( 3300 ) );
-    CHECK( mok.error() == fiona::error_code::from_errno( ECANCELED ) );
+    {
+      duration_guard dg( 2s );
+      auto mok = co_await client.async_connect( ipv4_addr, htons( 3300 ) );
+      CHECK( mok.error() == fiona::error_code::from_errno( ECANCELED ) );
+    }
 
     co_await h;
 
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
     ++num_runs;
     co_return;
-  }( ioc.get_executor() ) );
+  }( ioc.get_executor(), port ) );
   ioc.run();
 
-  CHECK( num_runs == 2 );
+  CHECK( num_runs == 3 );
 }

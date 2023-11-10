@@ -310,6 +310,7 @@ struct stream_impl {
   executor ex_;
   int count_ = 0;
   int fd_ = -1;
+  bool connected_ = false;
 
   stream_impl( executor ex ) : ex_{ ex } {}
   stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
@@ -456,6 +457,11 @@ struct client_impl : public stream_impl {
       done_ = true;
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
+        if ( cqe->res != -EISCONN ) {
+          pclient_->connected_ = false;
+        }
+      } else {
+        pclient_->connected_ = true;
       }
     }
 
@@ -598,13 +604,16 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   pclient_->socket_frame_.h_ = h;
   pclient_->connect_frame_.h_ = h;
 
-  if ( pclient_->fd_ >= 0 ) {
+  if ( pclient_->fd_ >= 0 && pclient_->connected_ ) {
     detail::reserve_sqes( ring, 3 );
   } else {
-    auto const file_idx =
-        detail::executor_access_policy::get_available_fd( ex );
+    if ( pclient_->fd_ == -1 ) {
+      auto const file_idx =
+          detail::executor_access_policy::get_available_fd( ex );
 
-    pclient_->fd_ = file_idx;
+      pclient_->fd_ = file_idx;
+    }
+
     detail::reserve_sqes( ring, 4 );
 
     {
