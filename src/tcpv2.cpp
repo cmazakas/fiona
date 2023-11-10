@@ -270,7 +270,7 @@ accept_awaitable::await_resume() {
 namespace detail {
 
 struct stream_impl {
-  struct cancel_frame final : awaitable_base {
+  struct cancel_frame : awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
     int res_ = 0;
@@ -280,6 +280,13 @@ struct stream_impl {
     cancel_frame() = delete;
     cancel_frame( stream_impl* pstream ) : pstream_{ pstream } {}
     ~cancel_frame() override {}
+
+    void reset() {
+      h_ = nullptr;
+      res_ = 0;
+      initiated_ = false;
+      done_ = false;
+    }
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
       done_ = true;
@@ -305,7 +312,24 @@ struct stream_impl {
     int use_count() const noexcept override { return pstream_->count_; }
   };
 
+  struct close_frame : public cancel_frame {
+    using cancel_frame::cancel_frame;
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      done_ = true;
+      res_ = cqe->res;
+      if ( res_ >= 0 ) {
+        auto ex = pstream_->ex_;
+        auto fd = pstream_->fd_;
+        detail::executor_access_policy::release_fd( ex, fd );
+        pstream_->fd_ = -1;
+        pstream_->connected_ = false;
+      }
+    }
+  };
+
   cancel_frame cancel_frame_{ this };
+  close_frame close_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
@@ -315,7 +339,7 @@ struct stream_impl {
   stream_impl( executor ex ) : ex_{ ex } {}
   stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
-  ~stream_impl() {
+  virtual ~stream_impl() {
     if ( fd_ >= 0 ) {
       auto ring = detail::executor_access_policy::ring( ex_ );
       auto sqe = fiona::detail::get_sqe( ring );
@@ -351,6 +375,48 @@ stream::async_cancel() {
   return { pstream_ };
 }
 
+stream_close_awaitable::stream_close_awaitable(
+    boost::intrusive_ptr<detail::stream_impl> pstream )
+    : pstream_{ pstream } {}
+
+stream_close_awaitable::~stream_close_awaitable() {}
+
+bool
+stream_close_awaitable::await_ready() const {
+  if ( pstream_->close_frame_.initiated_ ) {
+    throw_busy();
+  }
+  return false;
+}
+
+void
+stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto ex = pstream_->ex_;
+  auto ring = detail::executor_access_policy::ring( ex );
+
+  auto fd = pstream_->fd_;
+  auto sqe = io_uring_get_sqe( ring );
+  io_uring_prep_close_direct( sqe, fd );
+  io_uring_sqe_set_data(
+      sqe, boost::intrusive_ptr( &pstream_->close_frame_ ).detach() );
+
+  pstream_->close_frame_.initiated_ = true;
+  pstream_->close_frame_.h_ = h;
+}
+
+result<void>
+stream_close_awaitable::await_resume() {
+  auto& cf = pstream_->close_frame_;
+  auto res = cf.res_;
+  cf.reset();
+
+  if ( res == 0 ) {
+    return {};
+  }
+
+  return { error_code::from_errno( -res ) };
+}
+
 stream_cancel_awaitable::stream_cancel_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
     : pstream_{ pstream } {}
@@ -383,15 +449,20 @@ stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
 result<int>
 stream_cancel_awaitable::await_resume() {
-  if ( pstream_->fd_ == -1 ) {
+  auto fd = pstream_->fd_;
+  auto res = pstream_->cancel_frame_.res_;
+
+  pstream_->cancel_frame_.reset();
+
+  if ( fd == -1 ) {
     return { 0 };
   }
 
-  if ( pstream_->cancel_frame_.res_ < 0 ) {
-    return { error_code::from_errno( -pstream_->cancel_frame_.res_ ) };
+  if ( res < 0 ) {
+    return { error_code::from_errno( -res ) };
   }
 
-  return { pstream_->cancel_frame_.res_ };
+  return { res };
 }
 
 namespace detail {
@@ -520,6 +591,11 @@ client::timeout( __kernel_timespec ts ) {
 executor
 client::get_executor() const noexcept {
   return pclient_->ex_;
+}
+
+stream_close_awaitable
+client::async_close() {
+  return { pclient_ };
 }
 
 stream_cancel_awaitable

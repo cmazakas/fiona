@@ -71,6 +71,7 @@ public:
   accept_awaitable async_accept();
 };
 
+struct stream_close_awaitable;
 struct stream_cancel_awaitable;
 
 struct stream {
@@ -81,7 +82,25 @@ private:
   stream( executor ex, int fd );
 
 public:
+  stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
+};
+
+struct stream_close_awaitable {
+private:
+  friend struct stream;
+  friend struct client;
+
+  boost::intrusive_ptr<detail::stream_impl> pstream_;
+
+  stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
+
+public:
+  ~stream_close_awaitable();
+
+  bool await_ready() const;
+  void await_suspend( std::coroutine_handle<> h );
+  result<void> await_resume();
 };
 
 struct stream_cancel_awaitable {
@@ -131,6 +150,7 @@ public:
 
   executor get_executor() const noexcept;
 
+  stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
 };
 

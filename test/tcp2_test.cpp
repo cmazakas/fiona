@@ -324,3 +324,46 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
 
   CHECK( num_runs == 3 );
 }
+
+TEST_CASE( "tcp2_test - client reconnection" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+
+  fiona::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+    std::vector<fiona::stream> connected;
+
+    for ( int i = 0; i < 3; ++i ) {
+      auto mstream = co_await acceptor.async_accept();
+      connected.push_back( std::move( mstream.value() ) );
+    }
+
+    fiona::timer timer( acceptor.get_executor() );
+    co_await timer.async_wait( 500ms );
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::client client( ex );
+    for ( int i = 0; i < 3; ++i ) {
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      CHECK( mok.has_value() );
+
+      mok = co_await client.async_close();
+      CHECK( mok.has_value() );
+    }
+
+    ++num_runs;
+    co_return;
+  }( ioc.get_executor(), port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
