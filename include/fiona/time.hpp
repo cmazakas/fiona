@@ -65,8 +65,8 @@ private:
 public:
   timer( executor ex );
 
-  timer( timer const& ) = delete;
-  timer& operator=( timer const& ) = delete;
+  timer( timer const& ) = default;
+  timer& operator=( timer const& ) = default;
 
   timer( timer&& ) = default;
   timer& operator=( timer&& ) = default;

@@ -51,8 +51,8 @@ private:
 public:
   acceptor() = delete;
 
-  acceptor( acceptor const& ) = delete;
-  acceptor& operator=( acceptor const& ) = delete;
+  acceptor( acceptor const& ) = default;
+  acceptor& operator=( acceptor const& ) = default;
 
   acceptor( acceptor&& ) = default;
   acceptor& operator=( acceptor&& ) = default;
@@ -82,6 +82,14 @@ private:
   stream( executor ex, int fd );
 
 public:
+  stream() = delete;
+
+  stream( stream const& ) = default;
+  stream& operator=( stream const& ) = default;
+
+  stream( stream&& ) = default;
+  stream& operator=( stream&& ) = default;
+
   stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
 };
@@ -132,8 +140,8 @@ public:
   client() = delete;
   client( executor ex );
 
-  client( client const& ) = delete;
-  client& operator=( client const& ) = delete;
+  client( client const& ) = default;
+  client& operator=( client const& ) = default;
 
   client( client&& ) = default;
   client& operator=( client&& ) = default;

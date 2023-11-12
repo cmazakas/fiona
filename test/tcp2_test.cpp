@@ -202,7 +202,7 @@ TEST_CASE( "tcp2_test - double connect" ) {
 
     auto h = fiona::post(
         ex,
-        []( fiona::client& client, std::uint16_t port ) -> fiona::task<void> {
+        []( fiona::client client, std::uint16_t port ) -> fiona::task<void> {
           CHECK_THROWS(
               co_await client.async_connect( localhost_ipv4, htons( port ) ) );
 
@@ -296,7 +296,7 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
     fiona::client client( ex );
     client.timeout( 10s );
 
-    auto h = fiona::post( ex, []( fiona::client& client ) -> fiona::task<void> {
+    auto h = fiona::post( ex, []( fiona::client client ) -> fiona::task<void> {
       fiona::timer timer( client.get_executor() );
       co_await timer.async_wait( 2s );
 

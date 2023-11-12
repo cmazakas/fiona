@@ -258,7 +258,7 @@ TEST_CASE( "timer_test - async cancellation" ) {
   ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
     fiona::timer timer( ex );
 
-    auto h = fiona::post( ex, []( fiona::timer& timer ) -> fiona::task<void> {
+    auto h = fiona::post( ex, []( fiona::timer timer ) -> fiona::task<void> {
       fiona::timer t2( timer.get_executor() );
       co_await t2.async_wait( std::chrono::milliseconds( 250 ) );
       auto r = co_await timer.async_cancel();
