@@ -344,6 +344,11 @@ TEST_CASE( "tcp2_test - client reconnection" ) {
     fiona::timer timer( acceptor.get_executor() );
     co_await timer.async_wait( 500ms );
 
+    for ( auto& stream : connected ) {
+      auto m_ok = co_await stream.async_close();
+      CHECK( m_ok.has_value() );
+    }
+
     ++num_runs;
     co_return;
   }( std::move( acceptor ) ) );

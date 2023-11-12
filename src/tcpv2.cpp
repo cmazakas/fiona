@@ -370,6 +370,11 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
 stream::stream( executor ex, int fd )
     : pstream_{ new detail::stream_impl{ ex, fd } } {}
 
+stream_close_awaitable
+stream::async_close() {
+  return { pstream_ };
+}
+
 stream_cancel_awaitable
 stream::async_cancel() {
   return { pstream_ };
