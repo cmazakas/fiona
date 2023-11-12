@@ -14,6 +14,8 @@
 
 namespace fiona {
 
+namespace tcp {
+
 namespace detail {
 
 struct acceptor_impl;
@@ -65,6 +67,8 @@ public:
   acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
             int const backlog );
 
+  bool operator==( acceptor const& ) const = default;
+
   std::uint16_t port() const noexcept;
   executor get_executor() const noexcept;
 
@@ -89,6 +93,8 @@ public:
 
   stream( stream&& ) = default;
   stream& operator=( stream&& ) = default;
+
+  bool operator==( stream const& ) const = default;
 
   stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
@@ -146,13 +152,15 @@ public:
   client( client&& ) = default;
   client& operator=( client&& ) = default;
 
+  bool operator==( client const& ) const = default;
+
   connect_awaitable async_connect( in_addr const ipv4_addr,
                                    std::uint16_t const port );
   connect_awaitable async_connect( sockaddr const* addr );
 
   template <class Rep, class Period>
   void timeout( std::chrono::duration<Rep, Period> const d ) {
-    auto ts = detail::duration_to_timespec( d );
+    auto ts = fiona::detail::duration_to_timespec( d );
     timeout( ts );
   }
 
@@ -197,6 +205,7 @@ public:
   result<void> await_resume();
 };
 
+} // namespace tcp
 } // namespace fiona
 
 #endif // FIONA_TCP_HPP

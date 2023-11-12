@@ -12,11 +12,11 @@ TEST_CASE( "tcp2_test - acceptor" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  fiona::acceptor acceptor( ex, localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
@@ -25,7 +25,7 @@ TEST_CASE( "tcp2_test - acceptor" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
     CHECK( mok.has_value() );
     ++num_runs;
@@ -43,11 +43,11 @@ TEST_CASE( "tcp2_test - client already connected" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  fiona::acceptor acceptor( ex, localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
 
@@ -60,7 +60,7 @@ TEST_CASE( "tcp2_test - client already connected" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     {
       auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
       CHECK( mok.has_value() );
@@ -99,7 +99,7 @@ TEST_CASE( "tcp2_test - server not listening" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
     CHECK( mok.has_error() );
     CHECK( mok.error() == fiona::error_code::from_errno( ECONNREFUSED ) );
@@ -127,7 +127,7 @@ TEST_CASE( "tcp2_test - client connect timeout" ) {
   ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
     auto const timeout = std::chrono::milliseconds( 1000 );
 
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     client.timeout( timeout );
 
     duration_guard dg( timeout );
@@ -157,7 +157,7 @@ TEST_CASE( "tcp2_test - client connect interruption" ) {
   ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
     auto const timeout = std::chrono::milliseconds( 10'000 );
 
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     client.timeout( timeout );
 
     ++num_runs;
@@ -185,11 +185,11 @@ TEST_CASE( "tcp2_test - double connect" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  fiona::acceptor acceptor( ex, localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
@@ -198,16 +198,16 @@ TEST_CASE( "tcp2_test - double connect" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
 
-    auto h = fiona::post(
-        ex,
-        []( fiona::client client, std::uint16_t port ) -> fiona::task<void> {
-          CHECK_THROWS(
-              co_await client.async_connect( localhost_ipv4, htons( port ) ) );
+    auto h = fiona::post( ex,
+                          []( fiona::tcp::client client,
+                              std::uint16_t port ) -> fiona::task<void> {
+                            CHECK_THROWS( co_await client.async_connect(
+                                localhost_ipv4, htons( port ) ) );
 
-          ++num_runs;
-        }( client, port ) );
+                            ++num_runs;
+                          }( client, port ) );
 
     auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
     CHECK( mok.has_value() );
@@ -232,11 +232,11 @@ TEST_CASE( "tcp2_test - socket creation failed" ) {
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
 
-  fiona::acceptor acceptor( ex, localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
-    std::vector<fiona::stream> streams;
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    std::vector<fiona::tcp::stream> streams;
     for ( int i = 0; i < 8; ++i ) {
       auto mstream = co_await acceptor.async_accept();
       streams.push_back( std::move( mstream.value() ) );
@@ -251,9 +251,9 @@ TEST_CASE( "tcp2_test - socket creation failed" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    std::vector<fiona::client> clients;
+    std::vector<fiona::tcp::client> clients;
     for ( int i = 0; i < 10; ++i ) {
-      fiona::client client( ex );
+      fiona::tcp::client client( ex );
       auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
       if ( i < 8 ) {
         CHECK( mok.has_value() );
@@ -282,10 +282,10 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
 
   fiona::io_context ioc;
 
-  fiona::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
@@ -293,18 +293,19 @@ TEST_CASE( "tcp2_test - connect cancellation" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     client.timeout( 10s );
 
-    auto h = fiona::post( ex, []( fiona::client client ) -> fiona::task<void> {
-      fiona::timer timer( client.get_executor() );
-      co_await timer.async_wait( 2s );
+    auto h =
+        fiona::post( ex, []( fiona::tcp::client client ) -> fiona::task<void> {
+          fiona::timer timer( client.get_executor() );
+          co_await timer.async_wait( 2s );
 
-      auto mcancelled = co_await client.async_cancel();
-      CHECK( mcancelled.value() == 1 );
-      ++num_runs;
-      co_return;
-    }( client ) );
+          auto mcancelled = co_await client.async_cancel();
+          CHECK( mcancelled.value() == 1 );
+          ++num_runs;
+          co_return;
+        }( client ) );
 
     {
       duration_guard dg( 2s );
@@ -330,11 +331,11 @@ TEST_CASE( "tcp2_test - client reconnection" ) {
 
   fiona::io_context ioc;
 
-  fiona::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::acceptor acceptor ) -> fiona::task<void> {
-    std::vector<fiona::stream> connected;
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    std::vector<fiona::tcp::stream> connected;
 
     for ( int i = 0; i < 3; ++i ) {
       auto mstream = co_await acceptor.async_accept();
@@ -355,7 +356,7 @@ TEST_CASE( "tcp2_test - client reconnection" ) {
 
   ioc.post( []( fiona::executor ex,
                 std::uint16_t const port ) -> fiona::task<void> {
-    fiona::client client( ex );
+    fiona::tcp::client client( ex );
     for ( int i = 0; i < 3; ++i ) {
       auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
       CHECK( mok.has_value() );

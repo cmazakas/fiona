@@ -14,17 +14,18 @@
 
 namespace fiona {
 
+namespace tcp {
 namespace {
 BOOST_NOINLINE BOOST_NORETURN inline void
 throw_busy() {
-  detail::throw_errno_as_error_code( EBUSY );
+  fiona::detail::throw_errno_as_error_code( EBUSY );
 }
 } // namespace
 
 namespace detail {
 
 struct acceptor_impl {
-  struct accept_frame final : public awaitable_base {
+  struct accept_frame final : public fiona::detail::awaitable_base {
     acceptor_impl* pacceptor_ = nullptr;
     std::coroutine_handle<> h_;
     int peer_fd_ = -1;
@@ -45,7 +46,8 @@ struct acceptor_impl {
     void await_process_cqe( io_uring_cqe* cqe ) override {
       auto res = cqe->res;
       if ( res < 0 ) {
-        executor_access_policy::release_fd( pacceptor_->ex_, peer_fd_ );
+        fiona::detail::executor_access_policy::release_fd( pacceptor_->ex_,
+                                                           peer_fd_ );
         peer_fd_ = res;
       }
       done_ = true;
@@ -216,9 +218,9 @@ accept_awaitable::~accept_awaitable() {
   auto& af = pacceptor_->accept_frame_;
   if ( af.initiated_ && !af.done_ ) {
     auto ex = pacceptor_->ex_;
-    auto ring = detail::executor_access_policy::ring( ex );
+    auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-    detail::reserve_sqes( ring, 1 );
+    fiona::detail::reserve_sqes( ring, 1 );
 
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_cancel( sqe, &af, 0 );
@@ -242,9 +244,9 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
     throw_busy();
   }
 
-  auto ring = detail::executor_access_policy::ring( ex );
-  auto file_idx = detail::executor_access_policy::get_available_fd( ex );
-  auto sqe = detail::get_sqe( ring );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+  auto file_idx = fiona::detail::executor_access_policy::get_available_fd( ex );
+  auto sqe = fiona::detail::get_sqe( ring );
 
   io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0, file_idx );
   io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &f ).detach() );
@@ -270,7 +272,7 @@ accept_awaitable::await_resume() {
 namespace detail {
 
 struct stream_impl {
-  struct cancel_frame : awaitable_base {
+  struct cancel_frame : fiona::detail::awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
     int res_ = 0;
@@ -321,7 +323,7 @@ struct stream_impl {
       if ( res_ >= 0 ) {
         auto ex = pstream_->ex_;
         auto fd = pstream_->fd_;
-        detail::executor_access_policy::release_fd( ex, fd );
+        fiona::detail::executor_access_policy::release_fd( ex, fd );
         pstream_->fd_ = -1;
         pstream_->connected_ = false;
       }
@@ -341,14 +343,14 @@ struct stream_impl {
 
   virtual ~stream_impl() {
     if ( fd_ >= 0 ) {
-      auto ring = detail::executor_access_policy::ring( ex_ );
+      auto ring = fiona::detail::executor_access_policy::ring( ex_ );
       auto sqe = fiona::detail::get_sqe( ring );
       io_uring_prep_close_direct( sqe, fd_ );
       io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       io_uring_sqe_set_data( sqe, nullptr );
       io_uring_submit( ring );
 
-      detail::executor_access_policy::release_fd( ex_, fd_ );
+      fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
     }
   }
 };
@@ -397,7 +399,7 @@ stream_close_awaitable::await_ready() const {
 void
 stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ex = pstream_->ex_;
-  auto ring = detail::executor_access_policy::ring( ex );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   auto fd = pstream_->fd_;
   auto sqe = io_uring_get_sqe( ring );
@@ -434,11 +436,11 @@ stream_cancel_awaitable::await_ready() const {
 void
 stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ex = pstream_->ex_;
-  auto ring = detail::executor_access_policy::ring( ex );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto fd = pstream_->fd_;
   auto& cf = pstream_->cancel_frame_;
 
-  detail::reserve_sqes( ring, 1 );
+  fiona::detail::reserve_sqes( ring, 1 );
 
   BOOST_ASSERT( fd != -1 );
 
@@ -472,7 +474,7 @@ stream_cancel_awaitable::await_resume() {
 
 namespace detail {
 struct client_impl : public stream_impl {
-  struct socket_frame final : public awaitable_base {
+  struct socket_frame final : public fiona::detail::awaitable_base {
     client_impl* pclient_ = nullptr;
     std::coroutine_handle<> h_;
     int res_ = 0;
@@ -487,7 +489,8 @@ struct client_impl : public stream_impl {
       done_ = true;
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
-        executor_access_policy::release_fd( pclient_->ex_, pclient_->fd_ );
+        fiona::detail::executor_access_policy::release_fd( pclient_->ex_,
+                                                           pclient_->fd_ );
         pclient_->fd_ = -1;
       }
     }
@@ -518,7 +521,7 @@ struct client_impl : public stream_impl {
     }
   };
 
-  struct connect_frame : awaitable_base {
+  struct connect_frame : fiona::detail::awaitable_base {
     client_impl* pclient_ = nullptr;
     std::coroutine_handle<> h_;
     int res_ = 0;
@@ -623,7 +626,7 @@ client::async_connect( sockaddr const* addr ) {
   auto const is_ipv4 = ( addr->sa_family == AF_INET );
 
   if ( !is_ipv4 && ( addr->sa_family != AF_INET6 ) ) {
-    detail::throw_errno_as_error_code( EINVAL );
+    fiona::detail::throw_errno_as_error_code( EINVAL );
   }
 
   std::memcpy( &pclient_->addr_storage_, addr,
@@ -640,8 +643,8 @@ connect_awaitable::~connect_awaitable() {
   auto& sf = pclient_->socket_frame_;
   auto& cf = pclient_->connect_frame_;
 
-  auto ring = detail::executor_access_policy::ring( ex );
-  detail::reserve_sqes( ring, 2 );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+  fiona::detail::reserve_sqes( ring, 2 );
 
   if ( sf.initiated_ && !sf.done_ ) {
     auto sqe = io_uring_get_sqe( ring );
@@ -675,7 +678,7 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto af = is_ipv4 ? AF_INET : AF_INET6;
 
   auto ex = pclient_->ex_;
-  auto ring = detail::executor_access_policy::ring( ex );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   BOOST_ASSERT( !pclient_->socket_frame_.initiated_ );
   BOOST_ASSERT( !pclient_->connect_frame_.initiated_ );
@@ -686,16 +689,16 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   pclient_->connect_frame_.h_ = h;
 
   if ( pclient_->fd_ >= 0 && pclient_->connected_ ) {
-    detail::reserve_sqes( ring, 3 );
+    fiona::detail::reserve_sqes( ring, 3 );
   } else {
     if ( pclient_->fd_ == -1 ) {
       auto const file_idx =
-          detail::executor_access_policy::get_available_fd( ex );
+          fiona::detail::executor_access_policy::get_available_fd( ex );
 
       pclient_->fd_ = file_idx;
     }
 
-    detail::reserve_sqes( ring, 4 );
+    fiona::detail::reserve_sqes( ring, 4 );
 
     {
       auto sqe = io_uring_get_sqe( ring );
@@ -768,4 +771,5 @@ connect_awaitable::await_resume() {
   return {};
 }
 
+} // namespace tcp
 } // namespace fiona
