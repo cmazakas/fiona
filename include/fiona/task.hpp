@@ -1,15 +1,19 @@
 #ifndef FIONA_TASK_HPP
 #define FIONA_TASK_HPP
 
-#include <boost/assert.hpp>
+#include <coroutine> // for coroutine_handle, suspend_always
+#include <exception> // for exception_ptr, rethrow_exception, curren...
+#include <new>       // for operator new
+#include <utility>   // for addressof, move, forward
 
-#include <coroutine>
-#include <exception>
+#include <boost/assert.hpp> // for BOOST_ASSERT
 
 namespace fiona {
-
 template <class T>
 struct promise;
+} // namespace fiona
+
+namespace fiona {
 
 template <class T>
 struct task {

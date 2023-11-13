@@ -1,16 +1,26 @@
-#include <fiona/io_context.hpp>
-#include <fiona/tcpv2.hpp>
+#include <fiona/error.hpp>      // for throw_errno_as_error_code
+#include <fiona/io_context.hpp> // for executor, executor_acce...
+#include <fiona/tcpv2.hpp>      // for connect_awaitable, stre...
 
-#include <fiona/detail/awaitable_base.hpp>
-#include <fiona/detail/get_sqe.hpp>
-#include <fiona/detail/time.hpp>
+#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
+#include <fiona/detail/get_sqe.hpp>        // for reserve_sqes, get_sqe
 
-#include <chrono>
+#include <boost/assert.hpp>                  // for BOOST_ASSERT
+#include <boost/config/detail/suffix.hpp>    // for BOOST_NOINLINE, BOOST_N...
+#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
 
-#include <arpa/inet.h>
-#include <liburing.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include <coroutine> // for coroutine_handle
+#include <cstdint>   // for uint16_t
+
+#include <arpa/inet.h>         // for ntohs
+#include <cstring>             // for memcpy
+#include <errno.h>             // for errno, EBUSY, EINVAL
+#include <liburing.h>          // for io_uring_sqe_set_data
+#include <liburing/io_uring.h> // for io_uring_cqe, IOSQE_CQE...
+#include <linux/time_types.h>  // for __kernel_timespec
+#include <netinet/in.h>        // for sockaddr_in, sockaddr_in6
+#include <sys/socket.h>        // for AF_INET, AF_INET6, sock...
+#include <unistd.h>            // for close
 
 namespace fiona {
 

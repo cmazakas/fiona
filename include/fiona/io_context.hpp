@@ -1,29 +1,57 @@
 #ifndef FIONA_IO_CONTEXT_HPP
 #define FIONA_IO_CONTEXT_HPP
 
-#include <fiona/error.hpp>
-#include <fiona/task.hpp>
+#include <fiona/error.hpp> // for throw_errno_as_...
+#include <fiona/task.hpp>  // for task
 
-#include <fiona/detail/awaitable_base.hpp>
-#include <fiona/detail/get_sqe.hpp>
+#include <fiona/detail/awaitable_base.hpp> // for intrusive_ptr_a...
+#include <fiona/detail/get_sqe.hpp>        // for reserve_sqes
 
-#include <boost/assert.hpp>
-#include <boost/container_hash/hash.hpp>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-#include <boost/smart_ptr/intrusive_ref_counter.hpp>
-#include <boost/unordered/unordered_flat_set.hpp>
+#include <boost/assert.hpp>                          // for BOOST_ASSERT
+#include <boost/container_hash/hash.hpp>             // for hash
+#include <boost/smart_ptr/intrusive_ptr.hpp>         // for intrusive_ptr
+#include <boost/smart_ptr/intrusive_ref_counter.hpp> // for intrusive_ptr_r...
+#include <boost/unordered/detail/foa/table.hpp>      // for table_iterator
+#include <boost/unordered/unordered_flat_set.hpp>    // for unordered_flat_set
 
-#include <coroutine>
-#include <cstddef>
-#include <cstdint>
-#include <deque>
-#include <exception>
-#include <iostream>
-#include <memory>
-#include <mutex>
-#include <span>
+#include <algorithm> // for copy
+#include <coroutine> // for coroutine_handle
+#include <cstdint>   // for uint32_t, uint16_t
+#include <cstring>   // for size_t, memcpy
+#include <deque>     // for deque
+#include <exception> // for exception_ptr
+#include <memory>    // for shared_ptr, __s...
+#include <mutex>     // for mutex, lock_guard
+#include <span>      // for span
+#include <utility>   // for move, addressof
+#include <vector>    // for vector
 
-#include <liburing.h>
+#include <errno.h>             // for EINVAL, errno
+#include <liburing.h>          // for io_uring_get_sqe
+#include <liburing/io_uring.h> // for io_uring_cqe
+#include <unistd.h>            // for write
+
+namespace fiona {
+namespace detail {
+struct executor_access_policy;
+}
+} // namespace fiona
+namespace fiona {
+namespace detail {
+struct pipe_awaitable;
+}
+} // namespace fiona
+namespace fiona {
+namespace detail {
+template <class T>
+struct internal_promise;
+}
+} // namespace fiona
+
+namespace fiona {
+template <class T>
+struct post_awaitable;
+} // namespace fiona
 
 namespace fiona {
 

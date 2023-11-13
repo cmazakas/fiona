@@ -1,24 +1,24 @@
 #ifndef FIONA_TCP_HPP
 #define FIONA_TCP_HPP
 
-#include <fiona/error.hpp>
-#include <fiona/io_context.hpp>
+#include <fiona/error.hpp>      // for result
+#include <fiona/io_context.hpp> // for executor
 
-#include <fiona/detail/time.hpp>
+#include <fiona/detail/time.hpp> // for duration_to_timespec
 
-#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
 
-#include <coroutine>
-
-#include <netinet/in.h>
+#include <chrono>    // for duration
+#include <coroutine> // for coroutine_handle
+#include <cstdint>   // for uint16_t
 
 namespace fiona {
-
 namespace tcp {
 
 namespace detail {
-
 struct acceptor_impl;
+struct client_impl;
+struct stream_impl;
 
 void
 intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
@@ -26,15 +26,11 @@ intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
 void
 intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
 
-struct stream_impl;
-
 void
 intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 
 void
 intrusive_ptr_release( stream_impl* pstream ) noexcept;
-
-struct client_impl;
 
 void
 intrusive_ptr_add_ref( client_impl* pclient ) noexcept;
@@ -45,6 +41,19 @@ intrusive_ptr_release( client_impl* pclient ) noexcept;
 } // namespace detail
 
 struct accept_awaitable;
+struct connect_awaitable;
+struct stream_cancel_awaitable;
+struct stream_close_awaitable;
+} // namespace tcp
+} // namespace fiona
+
+struct __kernel_timespec;
+struct in6_addr;
+struct in_addr;
+struct sockaddr;
+
+namespace fiona {
+namespace tcp {
 
 struct acceptor {
 private:
@@ -74,9 +83,6 @@ public:
 
   accept_awaitable async_accept();
 };
-
-struct stream_close_awaitable;
-struct stream_cancel_awaitable;
 
 struct stream {
 private:
@@ -131,8 +137,6 @@ public:
   void await_suspend( std::coroutine_handle<> h );
   result<int> await_resume();
 };
-
-struct connect_awaitable;
 
 struct client {
 private:

@@ -11,10 +11,7 @@
 #include <chrono>    // for duration
 #include <coroutine> // for coroutine_handle
 
-#include <linux/time_types.h> // for __kernel_timespec
-
 namespace fiona {
-
 namespace detail {
 struct timer_impl;
 
@@ -24,6 +21,11 @@ intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
 void
 intrusive_ptr_release( timer_impl* ptimer ) noexcept;
 } // namespace detail
+} // namespace fiona
+
+struct __kernel_timespec;
+
+namespace fiona {
 
 struct timer_awaitable {
 private:

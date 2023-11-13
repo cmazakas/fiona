@@ -1,12 +1,13 @@
 #ifndef FIONA_ERROR_HPP
 #define FIONA_ERROR_HPP
 
+#include <boost/assert.hpp> // for BOOST_ASSERT
 #include <boost/config.hpp>
-#include <boost/system/result.hpp>
+#include <boost/system/result.hpp> // for result
 
-#include <cstring>
-#include <iostream>
-#include <system_error>
+#include <cstring>      // for strerror
+#include <iostream>     // for operator<<, basic_ostream:...
+#include <system_error> // for make_error_code, operator<<
 
 namespace fiona {
 
