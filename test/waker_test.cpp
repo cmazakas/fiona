@@ -76,7 +76,7 @@ TEST_CASE( "waker_test - waiting a simple future" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "waker_test - pipe_waker outlives the io_context" ) {
+TEST_CASE( "waker_test - waker outlives the io_context" ) {
   num_runs = 0;
 
   {

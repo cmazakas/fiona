@@ -32,25 +32,19 @@
 #include <unistd.h>            // for write
 
 namespace fiona {
-namespace detail {
-struct executor_access_policy;
-}
-} // namespace fiona
-namespace fiona {
-namespace detail {
-struct pipe_awaitable;
-}
-} // namespace fiona
-namespace fiona {
-namespace detail {
-template <class T>
-struct internal_promise;
-}
-} // namespace fiona
 
-namespace fiona {
 template <class T>
 struct post_awaitable;
+
+namespace detail {
+
+struct executor_access_policy;
+struct pipe_awaitable;
+
+template <class T>
+struct internal_promise;
+
+} // namespace detail
 } // namespace fiona
 
 namespace fiona {
@@ -99,16 +93,20 @@ struct key_equal {
   }
 };
 
-struct pipe_waker {
+namespace detail {
+
+using task_set_type =
+    boost::unordered_flat_set<std::coroutine_handle<>, hasher, key_equal>;
+} // namespace detail
+
+struct waker {
   std::weak_ptr<void> p_;
-  std::mutex& m_;
+  std::mutex& m_; // guess this dangles if the runtime dies; fix this
   int fd_ = -1;
   std::coroutine_handle<> h_;
 
   void wake() const {
-    char buffer[sizeof( void* )] = {};
-    void* ptr = h_.address();
-    std::memcpy( buffer, &ptr, sizeof( buffer ) );
+    void const* const ptr = h_.address();
 
     auto p = p_.lock();
     if ( !p ) {
@@ -118,20 +116,12 @@ struct pipe_waker {
     std::lock_guard guard( m_ );
 
     int ret = -1;
-    ret = write( fd_, buffer, sizeof( buffer ) );
+    ret = write( fd_, &ptr, sizeof( ptr ) );
     if ( ret == -1 ) {
       detail::throw_errno_as_error_code( errno );
     }
   }
 };
-
-namespace detail {
-
-struct pipe_awaitable;
-
-using task_set_type =
-    boost::unordered_flat_set<std::coroutine_handle<>, hasher, key_equal>;
-} // namespace detail
 
 struct buf_ring {
 private:
@@ -162,9 +152,6 @@ public:
 };
 
 namespace detail {
-
-template <class T>
-struct internal_promise;
 
 template <class T>
 struct internal_task {
@@ -334,7 +321,9 @@ public:
   }
 
   void unhandled_exception() {
-    if ( this->ps_->use_count() > 1 ) {
+    // current ref count + the ref count found in the corresponding awaitable
+    auto const has_awaiter = ( this->ps_->use_count() > 1 );
+    if ( has_awaiter ) {
       this->ps_->variant_.set_error();
     } else {
       throw;
@@ -390,13 +379,6 @@ struct io_context_frame {
 
 } // namespace detail
 
-namespace detail {
-struct executor_access_policy;
-} // namespace detail
-
-template <class T>
-struct post_awaitable;
-
 struct executor {
 private:
   friend struct detail::executor_access_policy;
@@ -410,7 +392,7 @@ public:
   template <class T>
   post_awaitable<T> post( task<T> t );
 
-  inline pipe_waker make_waker( std::coroutine_handle<> h );
+  inline waker make_waker( std::coroutine_handle<> h );
 };
 
 namespace detail {
@@ -467,7 +449,7 @@ struct executor_access_policy {
 
   static inline pipe_awaitable get_pipe_awaitable( executor ex );
 
-  static inline pipe_waker get_waker( executor ex, std::coroutine_handle<> h ) {
+  static inline waker get_waker( executor ex, std::coroutine_handle<> h ) {
     return { ex.pframe_, ex.pframe_->m_, ex.pframe_->pipefd_[1], h };
   }
 };
@@ -648,7 +630,7 @@ executor_access_policy::get_pipe_awaitable( executor ex ) {
 
 } // namespace detail
 
-pipe_waker
+waker
 executor::make_waker( std::coroutine_handle<> h ) {
   return detail::executor_access_policy::get_waker( *this, h );
 }
