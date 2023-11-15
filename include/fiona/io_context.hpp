@@ -12,7 +12,8 @@
 #include <boost/smart_ptr/intrusive_ptr.hpp>         // for intrusive_ptr
 #include <boost/smart_ptr/intrusive_ref_counter.hpp> // for intrusive_ptr_r...
 #include <boost/unordered/detail/foa/table.hpp>      // for table_iterator
-#include <boost/unordered/unordered_flat_set.hpp>    // for unordered_flat_set
+#include <boost/unordered/unordered_flat_map.hpp>
+#include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
 #include <algorithm> // for copy
 #include <coroutine> // for coroutine_handle
@@ -95,8 +96,8 @@ struct key_equal {
 
 namespace detail {
 
-using task_set_type =
-    boost::unordered_flat_set<std::coroutine_handle<>, hasher, key_equal>;
+using task_map_type =
+    boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
 } // namespace detail
 
 struct waker {
@@ -157,13 +158,36 @@ template <class T>
 struct internal_task {
   using promise_type = internal_promise<T>;
 
-  std::coroutine_handle<promise_type> h_;
+  std::coroutine_handle<promise_type> h_ = nullptr;
 
-  internal_task( std::coroutine_handle<promise_type> h ) : h_( h ) {}
-  ~internal_task() {}
+  internal_task() = default;
+  internal_task( std::coroutine_handle<promise_type> h ) : h_( h ) {
+    BOOST_ASSERT( h_.promise().count_ == 0 );
+    h_.promise().count_ = 2;
+  }
 
-  internal_task( internal_task const& ) = delete;
-  internal_task& operator=( internal_task const& ) = delete;
+  ~internal_task() {
+    if ( h_ && --h_.promise().count_ == 0 ) {
+      h_.destroy();
+    }
+  }
+
+  internal_task( internal_task const& rhs ) {
+    h_ = rhs.h_;
+    ++h_.promise().count_;
+  }
+
+  internal_task& operator=( internal_task const& rhs ) {
+    if ( this != &rhs ) {
+      if ( --h_.promise().count_ == 0 ) {
+        h_.destroy();
+      }
+
+      h_ = rhs.h_;
+      ++h_.promise().count_;
+    }
+    return *this;
+  }
 
   internal_task( internal_task&& rhs ) noexcept : h_( rhs.h_ ) {
     rhs.h_ = nullptr;
@@ -269,14 +293,6 @@ struct promise_variant<void> {
 };
 
 template <class T>
-struct internal_state
-    : boost::intrusive_ref_counter<internal_state<T>,
-                                   boost::thread_unsafe_counter> {
-  promise_variant<T> variant_;
-  std::coroutine_handle<> continuation_ = nullptr;
-};
-
-template <class T>
 struct internal_promise_base {
 private:
   struct final_awaitable {
@@ -286,13 +302,19 @@ private:
     std::coroutine_handle<>
     await_suspend( std::coroutine_handle<Promise> h ) noexcept {
       auto& tasks = h.promise().tasks_;
-      auto ps = h.promise().ps_;
+      auto continuation = h.promise().continuation_;
 
-      auto continuation = ps->continuation_;
       auto cnt = tasks.erase( h.address() );
       (void)cnt;
       BOOST_ASSERT( cnt == 1 );
-      h.destroy();
+
+      // this means there are no living copies of the internal_task left
+      // which means that there's no post_awaitable alive so we're the only ones
+      // with visibility into this coroutine's frame
+      BOOST_ASSERT( h.promise().count_ > 0 );
+      if ( --h.promise().count_ == 0 ) {
+        h.destroy();
+      }
 
       if ( continuation ) {
         return continuation;
@@ -304,27 +326,23 @@ private:
     void await_resume() noexcept { BOOST_ASSERT( false ); }
   };
 
-protected:
-  task_set_type& tasks_;
-  boost::intrusive_ptr<internal_state<T>> ps_ = nullptr;
-
 public:
+  promise_variant<T> variant_;
+  task_map_type& tasks_;
+  std::coroutine_handle<> continuation_ = nullptr;
+  int count_ = 0;
+
   internal_promise_base() = delete;
-  internal_promise_base( task_set_type& tasks )
-      : tasks_{ tasks }, ps_{ new internal_state<T>() } {}
+  internal_promise_base( task_map_type& tasks ) : tasks_{ tasks } {}
 
   std::suspend_always initial_suspend() { return {}; }
   final_awaitable final_suspend() noexcept { return {}; }
 
-  boost::intrusive_ptr<internal_state<T>> get_state() const noexcept {
-    return ps_;
-  }
-
   void unhandled_exception() {
     // current ref count + the ref count found in the corresponding awaitable
-    auto const has_awaiter = ( this->ps_->use_count() > 1 );
+    auto const has_awaiter = ( count_ > 1 );
     if ( has_awaiter ) {
-      this->ps_->variant_.set_error();
+      variant_.set_error();
     } else {
       throw;
     }
@@ -334,7 +352,7 @@ public:
 template <class T>
 struct internal_promise : public internal_promise_base<T> {
   template <class... Args>
-  internal_promise( task_set_type& tasks, Args&&... )
+  internal_promise( task_map_type& tasks, Args&&... )
       : internal_promise_base<T>( tasks ) {}
 
   internal_task<T> get_return_object() {
@@ -344,14 +362,14 @@ struct internal_promise : public internal_promise_base<T> {
 
   template <class Expr>
   void return_value( Expr&& expr ) {
-    this->ps_->variant_.emplace( std::forward<Expr>( expr ) );
+    this->variant_.emplace( std::forward<Expr>( expr ) );
   }
 };
 
 template <>
 struct internal_promise<void> : public internal_promise_base<void> {
   template <class... Args>
-  internal_promise( task_set_type& tasks, Args&&... )
+  internal_promise( task_map_type& tasks, Args&&... )
       : internal_promise_base( tasks ) {}
 
   internal_task<void> get_return_object() {
@@ -365,7 +383,7 @@ struct internal_promise<void> : public internal_promise_base<void> {
 struct io_context_frame {
   io_uring io_ring_;
   std::mutex m_;
-  task_set_type tasks_;
+  task_map_type tasks_;
   io_context_params params_;
   std::vector<buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
@@ -459,34 +477,34 @@ struct executor_access_policy {
 template <class T>
 struct post_awaitable {
   executor ex_;
-  boost::intrusive_ptr<detail::internal_state<T>> ps_;
+  detail::internal_task<T> task_;
   bool was_awaited_ = false;
 
-  post_awaitable( executor ex,
-                  boost::intrusive_ptr<detail::internal_state<T>> ps )
-      : ex_( ex ), ps_( ps ) {}
+  post_awaitable( executor ex, detail::internal_task<T> task )
+      : ex_{ ex }, task_{ task } {}
 
   ~post_awaitable() {
-    if ( ps_->variant_.has_error() && !was_awaited_ ) {
+    auto& promise = task_.h_.promise();
+    if ( promise.variant_.has_error() && !was_awaited_ ) {
       detail::executor_access_policy::unhandled_exception(
-          ex_, ps_->variant_.get_error() );
+          ex_, promise.variant_.get_error() );
     }
   }
 
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend( std::coroutine_handle<> awaiting_coroutine ) {
-    BOOST_ASSERT( ps_->use_count() > 0 );
+    BOOST_ASSERT( task_.h_.promise().count_ > 0 );
 
-    ps_->continuation_ = awaiting_coroutine;
+    task_.h_.promise().continuation_ = awaiting_coroutine;
 
-    bool const task_ended = ( ps_->use_count() < 2 );
+    bool const task_ended = ( task_.h_.promise().count_ < 2 );
     return !task_ended;
   }
 
   T await_resume() {
     was_awaited_ = true;
-    return std::move( this->ps_->variant_ ).result();
+    return std::move( task_.h_.promise().variant_ ).result();
   }
 };
 
@@ -496,17 +514,18 @@ executor::post( task<T> t ) {
   auto ring = detail::executor_access_policy::ring( *this );
 
   auto internal_task = scheduler( pframe_->tasks_, ring, std::move( t ) );
-  auto [it, b] = pframe_->tasks_.insert( internal_task.h_ );
+  auto [it, b] = pframe_->tasks_.emplace( internal_task.h_,
+                                          &internal_task.h_.promise().count_ );
 
   BOOST_ASSERT( b );
-  pframe_->run_queue_.push_back( *it );
+  pframe_->run_queue_.push_back( it->first );
 
-  return { *this, internal_task.h_.promise().get_state() };
+  return { *this, internal_task };
 }
 
 template <class T>
 detail::internal_task<T>
-scheduler( detail::task_set_type& /* tasks */, io_uring* /* ring */,
+scheduler( detail::task_map_type& /* tasks */, io_uring* /* ring */,
            task<T> t ) {
   co_return co_await t;
 }

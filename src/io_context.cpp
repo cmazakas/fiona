@@ -28,14 +28,18 @@ struct cqe_guard {
 };
 
 struct guard {
-  fiona::detail::task_set_type& tasks;
+  fiona::detail::task_map_type& tasks;
   io_uring* ring;
 
   ~guard() {
-    for ( auto const& h : tasks ) {
-      h.destroy();
+    while ( !tasks.empty() ) {
+      auto pos = tasks.begin();
+      auto [h, pcount] = *pos;
+      if ( --*pcount == 0 ) {
+        h.destroy();
+      }
+      tasks.erase( pos );
     }
-    tasks.clear();
 
     boost::unordered_flat_set<void*> blacklist;
 
