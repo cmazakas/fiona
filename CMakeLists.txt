@@ -12,15 +12,18 @@ find_package(Boost 1.82 REQUIRED)
 
 set(fiona_headers
 
-  include/fiona/error.hpp
   include/fiona/borrowed_buffer.hpp
+  include/fiona/error.hpp
+  include/fiona/executor.hpp
   include/fiona/io_context.hpp
-  # include/fiona/tcp.hpp
-  include/fiona/tcpv2.hpp
+  include/fiona/params.hpp
   include/fiona/task.hpp
+  include/fiona/tcpv2.hpp
   include/fiona/time.hpp
-  include/fiona/detail/get_sqe.hpp
+
   include/fiona/detail/awaitable_base.hpp
+  include/fiona/detail/common.hpp
+  include/fiona/detail/get_sqe.hpp
   include/fiona/detail/time.hpp
 )
 

@@ -2,10 +2,9 @@
 #define FIONA_TCP_HPP
 
 // clang-format off
-#include <fiona/error.hpp>                    // for result
-#include <fiona/io_context.hpp>               // for executor
-
 #include <fiona/detail/time.hpp>              // for duration_to_timespec
+#include <fiona/error.hpp>                    // for result
+#include <fiona/executor.hpp>                 // for executor
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>  // for intrusive_ptr
 
@@ -20,6 +19,7 @@ namespace fiona { namespace tcp { struct accept_awaitable; } }
 namespace fiona { namespace tcp { struct connect_awaitable; } }
 namespace fiona { namespace tcp { struct stream_cancel_awaitable; } }
 namespace fiona { namespace tcp { struct stream_close_awaitable; } }
+
 struct __kernel_timespec;
 struct in6_addr;
 struct in_addr;

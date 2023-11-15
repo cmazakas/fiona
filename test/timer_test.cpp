@@ -2,6 +2,7 @@
 
 #include <fiona/time.hpp>
 
+#include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 
 #include <catch2/catch_test_macros.hpp>

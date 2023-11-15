@@ -1,6 +1,7 @@
 #include "helpers.hpp"
 
 #include <fiona/error.hpp>
+#include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/time.hpp>
 

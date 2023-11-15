@@ -1,22 +1,116 @@
-#include <fiona/error.hpp> // for throw_errno_as_err...
-#include <fiona/io_context.hpp>
+// clang-format off
+#include <fiona/error.hpp>                         // for throw_errno_as_error_code
+#include <fiona/executor.hpp>                      // for executor, executor_access_policy
+#include <fiona/io_context.hpp>                    // for io_context
+#include <fiona/detail/get_sqe.hpp>                // for reserve_sqes
+#include <fiona/params.hpp>                        // for io_context_params
+#include <fiona/task.hpp>                          // for task
 
-#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
+#include <fiona/detail/awaitable_base.hpp>         // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
+#include <fiona/detail/common.hpp>                 // for buf_ring, io_context_frame, task_map_type
 
-#include <boost/assert.hpp>                       // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp>          // for hash
-#include <boost/smart_ptr/intrusive_ptr.hpp>      // for intrusive_ptr
-#include <boost/unordered/detail/foa/table.hpp>   // for operator!=, table_...
-#include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
+#include <boost/assert.hpp>                        // for BOOST_ASSERT
+#include <boost/container_hash/hash.hpp>           // for hash
+#include <boost/smart_ptr/intrusive_ptr.hpp>       // for intrusive_ptr
+#include <boost/unordered/detail/foa/table.hpp>    // for operator!=, table_iterator
+#include <boost/unordered/unordered_flat_set.hpp>  // for unordered_flat_set
 
-#include <new> // for bad_alloc
+#include <algorithm>                               // for copy
+#include <coroutine>                               // for coroutine_handle
+#include <cstdint>                                 // for uint32_t, uintptr_t, uint16_t
+#include <cstring>                                 // for size_t, memcpy
+#include <deque>                                   // for deque
+#include <exception>                               // for rethrow_exception, exception_ptr
+#include <memory>                                  // for shared_ptr, __shared_ptr_access
+#include <new>                                     // for bad_alloc
+#include <utility>                                 // for move
+#include <vector>                                  // for vector
 
-#include <liburing.h>  // for io_uring_cqe_get_data
-#include <mm_malloc.h> // for posix_memalign
-#include <stdlib.h>    // for free
-#include <unistd.h>    // for close, pipe, sysconf
+#include <errno.h>                                 // for errno
+#include <liburing.h>                              // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
+#include <mm_malloc.h>                             // for posix_memalign
+#include <stdlib.h>                                // for free
+#include <unistd.h>                                // for close, pipe, sysconf, _SC_PAGESIZE
+#include <liburing/io_uring.h>                     // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
+// clang-format on
 
 namespace {
+
+struct pipe_awaitable {
+  struct frame : public fiona::detail::awaitable_base {
+    fiona::executor ex_;
+    char buffer_[sizeof( std::coroutine_handle<> )] = {};
+    int fd_ = -1;
+    int count_ = 0;
+
+    frame( fiona::executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
+
+    std::coroutine_handle<> h_ = nullptr;
+
+    void init() {
+      auto ring = fiona::detail::executor_access_policy::ring( ex_ );
+      fiona::detail::reserve_sqes( ring, 1 );
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_read( sqe, fd_, buffer_, sizeof( buffer_ ), 0 );
+      io_uring_sqe_set_data( sqe, this );
+      intrusive_ptr_add_ref( this );
+    }
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      if ( cqe->res != sizeof( void* ) ) {
+        BOOST_ASSERT( cqe->res < 0 );
+        fiona::detail::throw_errno_as_error_code( -cqe->res );
+      }
+
+      void* addr = nullptr;
+      std::memcpy( &addr, buffer_, sizeof( addr ) );
+
+      h_ = std::coroutine_handle<>::from_address( addr );
+
+      {
+        auto ring = fiona::detail::executor_access_policy::ring( ex_ );
+        fiona::detail::reserve_sqes( ring, 1 );
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_read( sqe, fd_, buffer_, sizeof( buffer_ ), 0 );
+        io_uring_sqe_set_data( sqe, this );
+        intrusive_ptr_add_ref( this );
+      }
+    }
+
+    std::coroutine_handle<> handle() noexcept override {
+      BOOST_ASSERT( h_ );
+      return h_;
+    }
+
+    void inc_ref() noexcept override { ++count_; }
+    void dec_ref() noexcept override {
+      --count_;
+      if ( count_ == 0 ) {
+        delete this;
+      }
+    }
+
+    int use_count() const noexcept override { return count_; }
+  };
+
+  boost::intrusive_ptr<frame> p_;
+
+  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) {
+    p_->init();
+  }
+
+  ~pipe_awaitable() { cancel(); }
+
+  void cancel() {
+    auto& self = *p_;
+    auto ring = fiona::detail::executor_access_policy::ring( self.ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_prep_cancel( sqe, p_.get(), 0 );
+    io_uring_submit( ring );
+  }
+};
 
 struct cqe_guard {
   io_uring* ring;
@@ -75,6 +169,8 @@ struct guard {
 } // namespace
 
 namespace fiona {
+
+namespace detail {
 
 buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
                     std::uint16_t bgid )
@@ -169,6 +265,7 @@ buf_ring::operator=( buf_ring&& rhs ) noexcept {
   }
   return *this;
 }
+} // namespace detail
 
 io_context::~io_context() {
   {
@@ -179,6 +276,17 @@ io_context::~io_context() {
     guard g{ tasks, ring };
   }
   pframe_ = nullptr;
+}
+
+executor
+io_context::get_executor() const noexcept {
+  return executor{ pframe_ };
+}
+
+void
+io_context::post( task<void> t ) {
+  auto ex = get_executor();
+  ex.post( std::move( t ) );
 }
 
 void
@@ -219,7 +327,7 @@ io_context::run() {
 
   {
     auto pipe_awaiter =
-        detail::executor_access_policy::get_pipe_awaitable( ex );
+        pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
 
     while ( !tasks.empty() ) {
       if ( pframe_->exception_ptr_ ) {

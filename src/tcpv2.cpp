@@ -1,8 +1,7 @@
 // clang-format off
-#include <fiona/tcpv2.hpp>                    // for connect_awaitable, stream_close_awaitable, accept_awaitable
-
+#include <fiona/tcpv2.hpp>
 #include <fiona/error.hpp>                    // for throw_errno_as_error_code, error_code, result
-#include <fiona/io_context.hpp>               // for executor, executor_access_policy
+#include <fiona/executor.hpp>                 // for executor, executor_access_policy
 
 #include <fiona/detail/awaitable_base.hpp>    // for awaitable_base
 #include <fiona/detail/get_sqe.hpp>           // for reserve_sqes, get_sqe
