@@ -89,20 +89,89 @@ TEST_CASE( "post_test - awaiting a sibling coro" ) {
 }
 
 TEST_CASE( "post_test - ignoring exceptions" ) {
+  // test the following:
+  // * coroutine destroyed without a post_awaitable object in its frame
+  // * coroutine destroyed with a post_awaitable in its frame
+  // * destroy a nested coroutine for each of the variants above
+
   num_runs = 0;
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  fiona::post( ex, []( fiona::executor ex ) -> fiona::task<void> {
-    auto h = fiona::post( ex, throw_exception( ex ) );
-    (void)h;
+  ioc.post( FIONA_TASK( fiona::executor ex ) {
     ++num_runs;
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 500ms );
+    CHECK( false );
     co_return;
   }( ex ) );
 
-  duration_guard dg( sleep_dur );
+  ioc.post( FIONA_TASK( fiona::executor ex ) {
+    auto h = fiona::post(
+        ex, FIONA_TASK( fiona::executor ex ) {
+          ++num_runs;
+          fiona::timer timer( ex );
+          co_await timer.async_wait( 500ms );
+          CHECK( false );
+          co_return;
+        }( ex ) );
+
+    (void)h;
+
+    ++num_runs;
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 500ms );
+    CHECK( false );
+  }( ex ) );
+
+  ioc.post( FIONA_TASK( fiona::executor ex ) {
+    auto inner_task = FIONA_TASK( fiona::executor ex ) {
+      ++num_runs;
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 500ms );
+      CHECK( false );
+      co_return;
+    }
+    ( ex );
+
+    co_await inner_task;
+    CHECK( false );
+    co_return;
+  }( ex ) );
+
+  ioc.post( FIONA_TASK( fiona::executor ex ) {
+    auto inner_task = FIONA_TASK( fiona::executor ex ) {
+      auto h = fiona::post(
+          ex, FIONA_TASK( fiona::executor ex ) {
+            ++num_runs;
+            fiona::timer timer( ex );
+            co_await timer.async_wait( 500ms );
+            CHECK( false );
+          }( ex ) );
+
+      (void)h;
+
+      fiona::post(
+          ex, FIONA_TASK() {
+            throw "a random error";
+            co_return;
+          }() );
+
+      ++num_runs;
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 500ms );
+      CHECK( false );
+      co_return;
+    }
+    ( ex );
+
+    co_await inner_task;
+    CHECK( false );
+    co_return;
+  }( ex ) );
+
   CHECK_THROWS( ioc.run() );
-  CHECK( num_runs == 2 );
+  CHECK( num_runs == 6 );
 }
 
 TEST_CASE( "post_test - posting a move-only type" ) {
