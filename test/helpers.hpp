@@ -2,6 +2,7 @@
 #define FIONA_TEST_HELPERS_HPP
 
 #include <fiona/error.hpp>
+#include <fiona/task.hpp>
 
 #include <boost/config.hpp>
 
@@ -20,6 +21,8 @@ using namespace std::chrono_literals;
 #define CHECK_GE( T, U ) CHECK( T >= U )
 #define CHECK_EQ( T, U ) CHECK( T == U )
 #define CHECK_LT( T, U ) CHECK( T < U )
+
+#define FIONA_TASK( ... ) []( __VA_ARGS__ ) -> fiona::task<void>
 
 static in_addr const localhost_ipv4 = { .s_addr = htonl( 0x7f000001 ) };
 
