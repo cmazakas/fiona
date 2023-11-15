@@ -1,52 +1,40 @@
 #ifndef FIONA_IO_CONTEXT_HPP
 #define FIONA_IO_CONTEXT_HPP
 
-#include <fiona/error.hpp> // for throw_errno_as_...
-#include <fiona/task.hpp>  // for task
+// clang-format off
+#include <fiona/error.hpp>                         // for throw_errno_as_error_code
+#include <fiona/task.hpp>                          // for task
 
-#include <fiona/detail/awaitable_base.hpp> // for intrusive_ptr_a...
-#include <fiona/detail/get_sqe.hpp>        // for reserve_sqes
+#include <fiona/detail/awaitable_base.hpp>         // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
+#include <fiona/detail/get_sqe.hpp>                // for reserve_sqes
 
-#include <boost/assert.hpp>                          // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp>             // for hash
-#include <boost/smart_ptr/intrusive_ptr.hpp>         // for intrusive_ptr
-#include <boost/smart_ptr/intrusive_ref_counter.hpp> // for intrusive_ptr_r...
-#include <boost/unordered/detail/foa/table.hpp>      // for table_iterator
-#include <boost/unordered/unordered_flat_map.hpp>
-#include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
+#include <boost/assert.hpp>                        // for BOOST_ASSERT
+#include <boost/container_hash/hash.hpp>           // for hash
+#include <boost/smart_ptr/intrusive_ptr.hpp>       // for intrusive_ptr
+#include <boost/unordered/unordered_flat_map.hpp>  // for unordered_flat_map
+#include <boost/unordered/unordered_flat_set.hpp>  // for unordered_flat_set
 
-#include <algorithm> // for copy
-#include <coroutine> // for coroutine_handle
-#include <cstdint>   // for uint32_t, uint16_t
-#include <cstring>   // for size_t, memcpy
-#include <deque>     // for deque
-#include <exception> // for exception_ptr
-#include <memory>    // for shared_ptr, __s...
-#include <mutex>     // for mutex, lock_guard
-#include <span>      // for span
-#include <utility>   // for move, addressof
-#include <vector>    // for vector
+#include <coroutine>                               // for coroutine_handle, noop_coroutine, suspend_always
+#include <cstdint>                                 // for uint32_t, uint16_t
+#include <cstring>                                 // for size_t, memcpy
+#include <deque>                                   // for deque
+#include <exception>                               // for exception_ptr, rethrow_exception, current_exception
+#include <memory>                                  // for shared_ptr, __shared_ptr_access, make_shared, weak_ptr
+#include <mutex>                                   // for mutex, lock_guard
+#include <span>                                    // for span
+#include <utility>                                 // for move, addressof, forward, pair
+#include <vector>                                  // for vector
 
-#include <errno.h>             // for EINVAL, errno
-#include <liburing.h>          // for io_uring_get_sqe
-#include <liburing/io_uring.h> // for io_uring_cqe
-#include <unistd.h>            // for write
+#include <errno.h>                                 // for EINVAL, errno
+#include <liburing.h>                              // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_prep_read
+#include <liburing/io_uring.h>                     // for io_uring_cqe
+#include <unistd.h>                                // for write
 
-namespace fiona {
-
-template <class T>
-struct post_awaitable;
-
-namespace detail {
-
-struct executor_access_policy;
-struct pipe_awaitable;
-
-template <class T>
-struct internal_promise;
-
-} // namespace detail
-} // namespace fiona
+namespace fiona { namespace detail { struct executor_access_policy; } }
+namespace fiona { namespace detail { struct pipe_awaitable; } }
+namespace fiona { namespace detail { template <class T> struct internal_promise; } }
+namespace fiona { template <class T> struct post_awaitable; }
+// clang-format on
 
 namespace fiona {
 

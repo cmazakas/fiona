@@ -1,24 +1,36 @@
 #ifndef FIONA_TCP_HPP
 #define FIONA_TCP_HPP
 
-#include <fiona/error.hpp>      // for result
-#include <fiona/io_context.hpp> // for executor
+// clang-format off
+#include <fiona/error.hpp>                    // for result
+#include <fiona/io_context.hpp>               // for executor
 
-#include <fiona/detail/time.hpp> // for duration_to_timespec
+#include <fiona/detail/time.hpp>              // for duration_to_timespec
 
-#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
+#include <boost/smart_ptr/intrusive_ptr.hpp>  // for intrusive_ptr
 
-#include <chrono>    // for duration
-#include <coroutine> // for coroutine_handle
-#include <cstdint>   // for uint16_t
+#include <chrono>                             // for duration
+#include <coroutine>                          // for coroutine_handle
+#include <cstdint>                            // for uint16_t
+
+namespace fiona { namespace tcp { namespace detail { struct acceptor_impl; } } }
+namespace fiona { namespace tcp { namespace detail { struct client_impl; } } }
+namespace fiona { namespace tcp { namespace detail { struct stream_impl; } } }
+namespace fiona { namespace tcp { struct accept_awaitable; } }
+namespace fiona { namespace tcp { struct connect_awaitable; } }
+namespace fiona { namespace tcp { struct stream_cancel_awaitable; } }
+namespace fiona { namespace tcp { struct stream_close_awaitable; } }
+struct __kernel_timespec;
+struct in6_addr;
+struct in_addr;
+struct sockaddr;
+
+// clang-format on
 
 namespace fiona {
 namespace tcp {
 
 namespace detail {
-struct acceptor_impl;
-struct client_impl;
-struct stream_impl;
 
 void
 intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
@@ -40,17 +52,8 @@ intrusive_ptr_release( client_impl* pclient ) noexcept;
 
 } // namespace detail
 
-struct accept_awaitable;
-struct connect_awaitable;
-struct stream_cancel_awaitable;
-struct stream_close_awaitable;
 } // namespace tcp
 } // namespace fiona
-
-struct __kernel_timespec;
-struct in6_addr;
-struct in_addr;
-struct sockaddr;
 
 namespace fiona {
 namespace tcp {

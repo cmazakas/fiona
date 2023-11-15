@@ -1,26 +1,29 @@
-#include <fiona/error.hpp>      // for throw_errno_as_error_code
-#include <fiona/io_context.hpp> // for executor, executor_acce...
-#include <fiona/tcpv2.hpp>      // for connect_awaitable, stre...
+// clang-format off
+#include <fiona/tcpv2.hpp>                    // for connect_awaitable, stream_close_awaitable, accept_awaitable
 
-#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
-#include <fiona/detail/get_sqe.hpp>        // for reserve_sqes, get_sqe
+#include <fiona/error.hpp>                    // for throw_errno_as_error_code, error_code, result
+#include <fiona/io_context.hpp>               // for executor, executor_access_policy
 
-#include <boost/assert.hpp>                  // for BOOST_ASSERT
-#include <boost/config/detail/suffix.hpp>    // for BOOST_NOINLINE, BOOST_N...
-#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
+#include <fiona/detail/awaitable_base.hpp>    // for awaitable_base
+#include <fiona/detail/get_sqe.hpp>           // for reserve_sqes, get_sqe
 
-#include <coroutine> // for coroutine_handle
-#include <cstdint>   // for uint16_t
+#include <boost/assert.hpp>                   // for BOOST_ASSERT
+#include <boost/config/detail/suffix.hpp>     // for BOOST_NOINLINE, BOOST_NORETURN
+#include <boost/smart_ptr/intrusive_ptr.hpp>  // for intrusive_ptr
 
-#include <arpa/inet.h>         // for ntohs
-#include <cstring>             // for memcpy
-#include <errno.h>             // for errno, EBUSY, EINVAL
-#include <liburing.h>          // for io_uring_sqe_set_data
-#include <liburing/io_uring.h> // for io_uring_cqe, IOSQE_CQE...
-#include <linux/time_types.h>  // for __kernel_timespec
-#include <netinet/in.h>        // for sockaddr_in, sockaddr_in6
-#include <sys/socket.h>        // for AF_INET, AF_INET6, sock...
-#include <unistd.h>            // for close
+#include <coroutine>                          // for coroutine_handle
+#include <cstdint>                            // for uint16_t
+#include <cstring>                            // for memcpy
+
+#include <arpa/inet.h>                        // for ntohs
+#include <errno.h>                            // for errno, EBUSY, EINVAL, EISCONN
+#include <liburing.h>                         // for io_uring_sqe_set_data, io_uring_get_sqe, io_uring_sqe_set_flags
+#include <liburing/io_uring.h>                // for io_uring_cqe, IOSQE_CQE_SKIP_SUCCESS, IOSQE_IO_LINK, IOSQE_FIXE...
+#include <linux/time_types.h>                 // for __kernel_timespec
+#include <netinet/in.h>                       // for sockaddr_in, sockaddr_in6, in_addr, in6_addr, IPPROTO_TCP
+#include <sys/socket.h>                       // for AF_INET, AF_INET6, sockaddr_storage, sockaddr, bind, getsockname
+#include <unistd.h>                           // for close
+// clang-format on
 
 namespace fiona {
 
