@@ -238,7 +238,7 @@ accept_awaitable::~accept_awaitable() {
     io_uring_prep_cancel( sqe, &af, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
     io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-    io_uring_submit( ring );
+    fiona::detail::submit_ring( ring );
   }
 }
 
@@ -284,7 +284,7 @@ accept_awaitable::await_resume() {
 namespace detail {
 
 struct stream_impl {
-  struct cancel_frame : fiona::detail::awaitable_base {
+  struct cancel_frame : public fiona::detail::awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
     int res_ = 0;
@@ -342,8 +342,38 @@ struct stream_impl {
     }
   };
 
+  struct send_frame final : public fiona::detail::awaitable_base {
+    stream_impl* pstream_ = nullptr;
+    std::coroutine_handle<> h_ = nullptr;
+
+    send_frame( stream_impl* pstream ) : pstream_{ pstream } {}
+
+    virtual ~send_frame() override {}
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      if ( cqe->res < 0 ) {
+        pstream_->connected_ = false;
+      }
+    }
+
+    std::coroutine_handle<> handle() noexcept override {
+      auto h = h_;
+      h_ = nullptr;
+      return h;
+    }
+
+    void inc_ref() noexcept override { ++pstream_->count_; }
+    void dec_ref() noexcept override {
+      if ( --pstream_->count_ == 0 ) {
+        delete pstream_;
+      }
+    }
+    int use_count() const noexcept override { return pstream_->count_; }
+  };
+
   cancel_frame cancel_frame_{ this };
   close_frame close_frame_{ this };
+  send_frame send_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
@@ -360,7 +390,7 @@ struct stream_impl {
       io_uring_prep_close_direct( sqe, fd_ );
       io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       io_uring_sqe_set_data( sqe, nullptr );
-      io_uring_submit( ring );
+      fiona::detail::submit_ring( ring );
 
       fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
     }
@@ -533,7 +563,7 @@ struct client_impl : public stream_impl {
     }
   };
 
-  struct connect_frame : fiona::detail::awaitable_base {
+  struct connect_frame final : public fiona::detail::awaitable_base {
     client_impl* pclient_ = nullptr;
     std::coroutine_handle<> h_;
     int res_ = 0;
@@ -656,7 +686,10 @@ connect_awaitable::~connect_awaitable() {
   auto& cf = pclient_->connect_frame_;
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
-  fiona::detail::reserve_sqes( ring, 2 );
+
+  auto reserve_size =
+      static_cast<int>( sf.initiated_ ) + static_cast<int>( cf.initiated_ );
+  fiona::detail::reserve_sqes( ring, reserve_size );
 
   if ( sf.initiated_ && !sf.done_ ) {
     auto sqe = io_uring_get_sqe( ring );
@@ -670,7 +703,7 @@ connect_awaitable::~connect_awaitable() {
     io_uring_sqe_set_data( sqe, nullptr );
   }
 
-  io_uring_submit( ring );
+  fiona::detail::submit_ring( ring );
 }
 
 bool
@@ -683,22 +716,18 @@ connect_awaitable::await_ready() const {
 
 void
 connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
-  auto const* addr = &pclient_->addr_storage_;
-  auto const is_ipv4 = ( addr->ss_family == AF_INET );
-  BOOST_ASSERT( is_ipv4 || addr->ss_family == AF_INET6 );
-
-  auto af = is_ipv4 ? AF_INET : AF_INET6;
-
-  auto ex = pclient_->ex_;
-  auto ring = fiona::detail::executor_access_policy::ring( ex );
-
   BOOST_ASSERT( !pclient_->socket_frame_.initiated_ );
   BOOST_ASSERT( !pclient_->connect_frame_.initiated_ );
   BOOST_ASSERT( !pclient_->socket_frame_.h_ );
   BOOST_ASSERT( !pclient_->connect_frame_.h_ );
 
-  pclient_->socket_frame_.h_ = h;
-  pclient_->connect_frame_.h_ = h;
+  auto const* addr = &pclient_->addr_storage_;
+  auto const is_ipv4 = ( addr->ss_family == AF_INET );
+  BOOST_ASSERT( is_ipv4 || addr->ss_family == AF_INET6 );
+
+  auto af = is_ipv4 ? AF_INET : AF_INET6;
+  auto ex = pclient_->ex_;
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   if ( pclient_->fd_ >= 0 && pclient_->connected_ ) {
     fiona::detail::reserve_sqes( ring, 3 );
@@ -716,11 +745,13 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP,
                                    pclient_->fd_, 0 );
-      io_uring_sqe_set_data(
-          sqe, boost::intrusive_ptr( &pclient_->socket_frame_ ).detach() );
+      io_uring_sqe_set_data( sqe, &pclient_->socket_frame_ );
       io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
+
+      intrusive_ptr_add_ref( pclient_.get() );
     }
 
+    pclient_->socket_frame_.h_ = h;
     pclient_->socket_frame_.initiated_ = true;
   }
 
@@ -747,11 +778,12 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
-    io_uring_sqe_set_data(
-        sqe, boost::intrusive_ptr( &pclient_->connect_frame_ ).detach() );
+    io_uring_sqe_set_data( sqe, &pclient_->connect_frame_ );
     io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
   }
 
+  intrusive_ptr_add_ref( pclient_.get() );
+  pclient_->connect_frame_.h_ = h;
   pclient_->connect_frame_.initiated_ = true;
 }
 

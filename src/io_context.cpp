@@ -37,7 +37,7 @@
 namespace {
 
 struct pipe_awaitable {
-  struct frame : public fiona::detail::awaitable_base {
+  struct frame final : public fiona::detail::awaitable_base {
     fiona::executor ex_;
     char buffer_[sizeof( std::coroutine_handle<> )] = {};
     int fd_ = -1;
@@ -108,7 +108,7 @@ struct pipe_awaitable {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_sqe_set_data( sqe, nullptr );
     io_uring_prep_cancel( sqe, p_.get(), 0 );
-    io_uring_submit( ring );
+    fiona::detail::submit_ring( ring );
   }
 };
 
@@ -393,6 +393,8 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
     flags |= IORING_SETUP_CQSIZE;
     flags |= IORING_SETUP_SINGLE_ISSUER;
     flags |= IORING_SETUP_COOP_TASKRUN;
+    flags |= IORING_SETUP_TASKRUN_FLAG;
+    flags |= IORING_SETUP_DEFER_TASKRUN;
   }
 
   ret = io_uring_queue_init_params( params_.sq_entries, ring, &params );

@@ -1,7 +1,7 @@
 #include <fiona/error.hpp> // for error_code, throw_errno...
 #include <fiona/executor.hpp>
-#include <fiona/io_context.hpp> // for executor, executor_acce...
-#include <fiona/time.hpp>       // for timer_cancel_awaitable
+// #include <fiona/io_context.hpp> // for executor, executor_acce...
+#include <fiona/time.hpp> // for timer_cancel_awaitable
 
 #include <fiona/detail/awaitable_base.hpp> // for awaitable_base
 #include <fiona/detail/get_sqe.hpp>        // for get_sqe
@@ -216,7 +216,7 @@ timer_awaitable::~timer_awaitable() {
     auto sqe = detail::get_sqe( ring );
     io_uring_prep_cancel( sqe, &frame, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_submit( ring );
+    fiona::detail::submit_ring( ring );
   }
 }
 
@@ -268,7 +268,7 @@ timer_cancel_awaitable::~timer_cancel_awaitable() {
     auto sqe = detail::get_sqe( ring );
     io_uring_prep_cancel( sqe, &frame, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_submit( ring );
+    fiona::detail::submit_ring( ring );
   }
 }
 
