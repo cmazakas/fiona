@@ -19,6 +19,7 @@ namespace fiona { namespace tcp { struct accept_awaitable; } }
 namespace fiona { namespace tcp { struct connect_awaitable; } }
 namespace fiona { namespace tcp { struct stream_cancel_awaitable; } }
 namespace fiona { namespace tcp { struct stream_close_awaitable; } }
+namespace fiona { namespace tcp { struct send_awaitable; } }
 
 struct __kernel_timespec;
 struct in6_addr;
@@ -105,8 +106,13 @@ public:
 
   bool operator==( stream const& ) const = default;
 
+  executor get_executor() const;
+
   stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
+
+  send_awaitable async_send( std::string_view msg );
+  send_awaitable async_send( std::span<unsigned char const> buf );
 };
 
 struct stream_close_awaitable {
@@ -137,6 +143,25 @@ private:
 
 public:
   bool await_ready() const;
+  void await_suspend( std::coroutine_handle<> h );
+  result<int> await_resume();
+};
+
+struct send_awaitable {
+private:
+  friend struct stream;
+  friend struct client;
+
+  std::span<unsigned char const> buf_;
+  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
+
+  send_awaitable( std::span<unsigned char const> buf,
+                  boost::intrusive_ptr<detail::stream_impl> pstream );
+
+public:
+  ~send_awaitable();
+
+  bool await_ready() const noexcept { return false; }
   void await_suspend( std::coroutine_handle<> h );
   result<int> await_resume();
 };
@@ -175,6 +200,9 @@ public:
 
   stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
+
+  send_awaitable async_send( std::string_view msg );
+  send_awaitable async_send( std::span<unsigned char const> buf );
 };
 
 struct accept_awaitable {

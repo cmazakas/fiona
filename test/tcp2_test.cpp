@@ -373,3 +373,55 @@ TEST_CASE( "tcp2_test - client reconnection" ) {
 
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "tcp2_test - send recv hello world" ) {
+
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+
+    auto& stream = mstream.value();
+    auto sv = std::string_view( "hello, world!" );
+    auto mbytes_transferred = co_await stream.async_send( sv );
+
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           sv.size() );
+
+    fiona::timer timer( stream.get_executor() );
+    co_await timer.async_wait( 250ms );
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
+    auto sv = std::string_view( "hello, world!" );
+    auto mbytes_transferred = co_await client.async_send( sv );
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           sv.size() );
+
+    fiona::timer timer( client.get_executor() );
+    co_await timer.async_wait( 250ms );
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
