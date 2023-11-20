@@ -474,11 +474,16 @@ stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ex = pstream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-  auto fd = pstream_->fd_;
-  auto sqe = io_uring_get_sqe( ring );
-  io_uring_prep_close_direct( sqe, fd );
-  io_uring_sqe_set_data(
-      sqe, boost::intrusive_ptr( &pstream_->close_frame_ ).detach() );
+  fiona::detail::reserve_sqes( ring, 1 );
+
+  {
+    auto fd = pstream_->fd_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_close_direct( sqe, fd );
+    io_uring_sqe_set_data( sqe, &pstream_->close_frame_ );
+  }
+
+  intrusive_ptr_add_ref( pstream_.get() );
 
   pstream_->close_frame_.initiated_ = true;
   pstream_->close_frame_.h_ = h;
