@@ -425,3 +425,81 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
 
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "tcp2_test - send not connected" ) {
+
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  // test a send with a socket that isn't connected at all
+  //
+
+  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const /* port  */ ) {
+    fiona::tcp::client client( ex );
+
+    auto sv = std::string_view( "hello, world!" );
+    auto mbytes_transferred = co_await client.async_send( sv );
+    CHECK( mbytes_transferred.has_error() );
+    CHECK( mbytes_transferred.error() ==
+           fiona::error_code::from_errno( EBADF ) );
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  // now we wanna test a send when the remote has closed on us
+  //
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+
+    auto& stream = mstream.value();
+    co_await stream.async_close();
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
+    fiona::timer timer( client.get_executor() );
+    co_await timer.async_wait( 250ms );
+
+    // for more info on why the first send() succeeds, see this answer:
+    // https://stackoverflow.com/questions/11436013/writing-to-a-closed-local-tcp-socket-not-failing
+    //
+
+    auto sv = std::string_view( "hello, world!" );
+
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+             sv.size() );
+    }
+
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( mbytes_transferred.has_error() );
+      CHECK( mbytes_transferred.error() ==
+             fiona::error_code::from_errno( EPIPE ) );
+    }
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 3 );
+}

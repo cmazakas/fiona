@@ -568,10 +568,6 @@ send_awaitable::await_suspend( std::coroutine_handle<> h ) {
     throw_busy();
   }
 
-  if ( !pstream_->connected_ ) {
-    fiona::detail::throw_errno_as_error_code( ENOTCONN );
-  }
-
   auto ex = pstream_->ex_;
   auto fd = pstream_->fd_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
