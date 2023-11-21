@@ -293,14 +293,136 @@ struct stream_impl {
     int use_count() const noexcept override { return pstream_->count_; }
   };
 
+  struct recv_frame final : public fiona::detail::awaitable_base {
+    using clock_type = std::chrono::steady_clock;
+    using timepoint_type = std::chrono::time_point<clock_type>;
+
+    std::deque<result<borrowed_buffer>> buffers_;
+    fiona::detail::buf_ring* pbuf_ring_ = nullptr;
+    stream_impl* pstream_ = nullptr;
+    std::coroutine_handle<> h_ = nullptr;
+    timepoint_type last_recv_ = clock_type::now();
+    int res_ = 0;
+    std::uint16_t buffer_group_id_ = -1;
+    bool initiated_ = false;
+    bool done_ = false;
+    bool was_rescheduled_ = false;
+
+    recv_frame( stream_impl* pstream ) : pstream_{ pstream } {}
+
+    virtual ~recv_frame() override {}
+
+    virtual void await_process_cqe( io_uring_cqe* cqe ) override {
+      bool const cancelled_by_timer =
+          ( cqe->res == -ECANCELED && !pstream_->cancelled_ );
+
+      if ( cancelled_by_timer ) {
+        auto now = clock_type::now();
+
+        auto diff = now - last_recv_;
+        auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } +
+                        std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
+
+        if ( diff < max_diff ) {
+          schedule_recv();
+          was_rescheduled_ = true;
+          return;
+        }
+      }
+
+      if ( cqe->res < 0 ) {
+        BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
+        buffers_.push_back( error_code::from_errno( -cqe->res ) );
+      }
+
+      if ( cqe->res == 0 ) {
+        BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
+        buffers_.push_back( borrowed_buffer() );
+      }
+
+      if ( cqe->res > 0 ) {
+
+        BOOST_ASSERT( cqe->flags & IORING_CQE_F_BUFFER );
+
+        last_recv_ = clock_type::now();
+
+        auto buffer_id = cqe->flags >> 16;
+        auto buffer = pbuf_ring_->get_buffer_view( buffer_id );
+
+        buffers_.push_back( borrowed_buffer( pbuf_ring_->get(), buffer.data(),
+                                             buffer.size(), pbuf_ring_->size(),
+                                             buffer_id, cqe->res ) );
+      }
+
+      if ( !( cqe->flags & IORING_CQE_F_BUFFER ) ) {
+        initiated_ = false;
+      }
+
+      if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {
+        intrusive_ptr_add_ref( this );
+      }
+    }
+
+    virtual std::coroutine_handle<> handle() noexcept override {
+      if ( was_rescheduled_ ) {
+        was_rescheduled_ = false;
+        return nullptr;
+      }
+
+      auto h = h_;
+      h_ = nullptr;
+      return h;
+    }
+
+    virtual void inc_ref() noexcept override { ++pstream_->count_; }
+    virtual void dec_ref() noexcept override {
+      if ( --pstream_->count_ == 0 ) {
+        delete pstream_;
+      }
+    }
+
+    virtual int use_count() const noexcept override { return pstream_->count_; }
+
+    void schedule_recv() {
+      auto ex = pstream_->ex_;
+      auto ring = fiona::detail::executor_access_policy::ring( ex );
+      auto fd = pstream_->fd_;
+
+      fiona::detail::reserve_sqes( ring, 2 );
+
+      {
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_recv_multishot( sqe, fd, nullptr, 0, 0 );
+        io_uring_sqe_set_data( sqe, this );
+        io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE | IOSQE_IO_LINK |
+                                         IOSQE_BUFFER_SELECT );
+
+        sqe->buf_group = buffer_group_id_;
+      }
+
+      {
+        auto ts = &pstream_->ts_;
+        auto sqe = io_uring_get_sqe( ring );
+        io_uring_prep_link_timeout( sqe, ts, 0 );
+        io_uring_sqe_set_data( sqe, nullptr );
+        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      }
+
+      initiated_ = true;
+      intrusive_ptr_add_ref( this );
+    }
+  };
+
   cancel_frame cancel_frame_{ this };
   close_frame close_frame_{ this };
   send_frame send_frame_{ this };
+  recv_frame recv_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
   int fd_ = -1;
   bool connected_ = false;
+  bool cancelled_ = false;
 
   stream_impl( executor ex ) : ex_{ ex } {}
   stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
@@ -453,6 +575,11 @@ stream::async_send( std::string_view msg ) {
 send_awaitable
 stream::async_send( std::span<unsigned char const> buf ) {
   return { buf, pstream_ };
+}
+
+recv_awaitable
+stream::async_recv( std::uint16_t buffer_group_id ) {
+  return { pstream_, buffer_group_id };
 }
 
 stream_close_awaitable::stream_close_awaitable(
@@ -609,6 +736,50 @@ send_awaitable::await_resume() {
   }
 
   return { res };
+}
+
+recv_awaitable::recv_awaitable(
+    boost::intrusive_ptr<detail::stream_impl> pstream,
+    std::uint16_t buffer_group_id )
+    : pstream_{ pstream }, buffer_group_id_{ buffer_group_id } {}
+
+recv_awaitable::~recv_awaitable() {
+  if ( pstream_->recv_frame_.initiated_ ) {
+    pstream_->cancelled_ = true;
+    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+    auto sqe = fiona::detail::get_sqe( ring );
+    io_uring_prep_cancel( sqe, &pstream_->recv_frame_, 0 );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_sqe_set_data( sqe, nullptr );
+    fiona::detail::submit_ring( ring );
+  }
+}
+
+bool
+recv_awaitable::await_ready() const {
+  return !pstream_->recv_frame_.buffers_.empty();
+}
+
+void
+recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto& rf = pstream_->recv_frame_;
+
+  rf.h_ = h;
+  if ( rf.initiated_ ) {
+    return;
+  }
+
+  rf.buffer_group_id_ = buffer_group_id_;
+  rf.pbuf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
+      pstream_->ex_, buffer_group_id_ );
+  rf.schedule_recv();
+}
+
+result<borrowed_buffer>
+recv_awaitable::await_resume() {
+  auto buf = std::move( pstream_->recv_frame_.buffers_.front() );
+  pstream_->recv_frame_.buffers_.pop_front();
+  return buf;
 }
 
 namespace detail {

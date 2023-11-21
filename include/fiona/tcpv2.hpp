@@ -2,9 +2,11 @@
 #define FIONA_TCP_HPP
 
 // clang-format off
-#include <fiona/detail/time.hpp>              // for duration_to_timespec
+#include <fiona/borrowed_buffer.hpp>
 #include <fiona/error.hpp>                    // for result
 #include <fiona/executor.hpp>                 // for executor
+
+#include <fiona/detail/time.hpp>              // for duration_to_timespec
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>  // for intrusive_ptr
 
@@ -20,6 +22,7 @@ namespace fiona { namespace tcp { struct connect_awaitable; } }
 namespace fiona { namespace tcp { struct stream_cancel_awaitable; } }
 namespace fiona { namespace tcp { struct stream_close_awaitable; } }
 namespace fiona { namespace tcp { struct send_awaitable; } }
+namespace fiona { namespace tcp { struct recv_awaitable; } }
 
 struct __kernel_timespec;
 struct in6_addr;
@@ -113,6 +116,8 @@ public:
 
   send_awaitable async_send( std::string_view msg );
   send_awaitable async_send( std::span<unsigned char const> buf );
+
+  recv_awaitable async_recv( std::uint16_t buffer_group_id );
 };
 
 struct stream_close_awaitable {
@@ -164,6 +169,25 @@ public:
   bool await_ready() const noexcept { return false; }
   void await_suspend( std::coroutine_handle<> h );
   result<int> await_resume();
+};
+
+struct recv_awaitable {
+private:
+  friend struct stream;
+  friend struct client;
+
+  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
+  std::uint16_t buffer_group_id_ = -1;
+
+  recv_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream,
+                  std::uint16_t buffer_group_id );
+
+public:
+  ~recv_awaitable();
+
+  bool await_ready() const;
+  void await_suspend( std::coroutine_handle<> h );
+  result<borrowed_buffer> await_resume();
 };
 
 struct client {

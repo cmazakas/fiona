@@ -379,6 +379,8 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
   auto ex = ioc.get_executor();
 
   fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
@@ -398,6 +400,13 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
 
     fiona::timer timer( stream.get_executor() );
     co_await timer.async_wait( 250ms );
+
+    auto mbuffer = co_await stream.async_recv( 0 );
+    CHECK( mbuffer.has_value() );
+
+    auto& buffer = mbuffer.value();
+    auto msg = buffer.as_str();
+    CHECK( msg == sv );
 
     ++num_runs;
     co_return;

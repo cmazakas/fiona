@@ -47,8 +47,8 @@ public:
   buf_ring( buf_ring&& rhs ) noexcept;
   buf_ring& operator=( buf_ring&& rhs ) noexcept;
 
-  std::span<unsigned char> get_buffer( std::size_t bid ) noexcept {
-    return { bufs_[bid] };
+  std::span<unsigned char> get_buffer_view( std::size_t buffer_id ) noexcept {
+    return { bufs_[buffer_id] };
   }
   io_uring_buf_ring* get() const noexcept { return buf_ring_; }
   std::size_t size() const noexcept { return bufs_.size(); }
