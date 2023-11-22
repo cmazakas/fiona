@@ -955,6 +955,11 @@ client::async_send( std::span<unsigned char const> buf ) {
   return { buf, pclient_ };
 }
 
+recv_awaitable
+client::async_recv( std::uint16_t buffer_group_id ) {
+  return { pclient_, buffer_group_id };
+}
+
 connect_awaitable::connect_awaitable(
     boost::intrusive_ptr<detail::client_impl> pclient )
     : pclient_{ pclient } {}

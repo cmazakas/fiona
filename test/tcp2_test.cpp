@@ -387,26 +387,29 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
+  constexpr static auto const client_msg =
+      std::string_view( "hello, world! from the client" );
+
+  constexpr static auto const server_msg =
+      std::string_view( "hello, world! from the server" );
+
   ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
 
     auto& stream = mstream.value();
-    auto sv = std::string_view( "hello, world!" );
-    auto mbytes_transferred = co_await stream.async_send( sv );
+
+    auto mbytes_transferred = co_await stream.async_send( server_msg );
 
     CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
-           sv.size() );
-
-    fiona::timer timer( stream.get_executor() );
-    co_await timer.async_wait( 250ms );
+           server_msg.size() );
 
     auto mbuffer = co_await stream.async_recv( 0 );
     CHECK( mbuffer.has_value() );
 
     auto& buffer = mbuffer.value();
     auto msg = buffer.as_str();
-    CHECK( msg == sv );
+    CHECK( msg == client_msg );
 
     ++num_runs;
     co_return;
@@ -418,13 +421,16 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
     auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
     CHECK( mok.has_value() );
 
-    auto sv = std::string_view( "hello, world!" );
-    auto mbytes_transferred = co_await client.async_send( sv );
+    auto mbytes_transferred = co_await client.async_send( client_msg );
     CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
-           sv.size() );
+           client_msg.size() );
 
-    fiona::timer timer( client.get_executor() );
-    co_await timer.async_wait( 250ms );
+    auto mbuffer = co_await client.async_recv( 0 );
+    CHECK( mbuffer.has_value() );
+
+    auto& buffer = mbuffer.value();
+    auto msg = buffer.as_str();
+    CHECK( msg == server_msg );
 
     ++num_runs;
     co_return;

@@ -227,6 +227,8 @@ public:
 
   send_awaitable async_send( std::string_view msg );
   send_awaitable async_send( std::span<unsigned char const> buf );
+
+  recv_awaitable async_recv( std::uint16_t buffer_group_id );
 };
 
 struct accept_awaitable {
