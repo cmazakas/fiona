@@ -8,7 +8,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(liburing 2.5 REQUIRED)
-find_package(Boost 1.82 REQUIRED)
+find_package(Boost 1.83 REQUIRED)
 
 set(fiona_headers
 
