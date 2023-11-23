@@ -2,7 +2,7 @@ set(fiona_test_sources
 
   test/timer_test.cpp
   # test/ipv6_test.cpp
-  # test/recv_test.cpp
+  test/recv_test.cpp
   test/waker_test.cpp
   test/post_test.cpp
   # test/tcp_test.cpp

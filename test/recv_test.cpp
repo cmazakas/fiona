@@ -1,43 +1,46 @@
 #include "helpers.hpp"
 
+#include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
-#include <fiona/tcp.hpp>
+#include <fiona/tcpv2.hpp>
 #include <fiona/time.hpp>
-
-static in_addr const localhost{ .s_addr = 0x7f000001 };
 
 static int num_runs = 0;
 
-TEST_CASE( "recv timeout" ) {
+TEST_CASE( "recv_test - recv timeout" ) {
   num_runs = 0;
 
-  constexpr static auto const client_sleep_dur = std::chrono::seconds( 3 );
-  constexpr static auto const server_timeout = std::chrono::seconds( 2 );
+  constexpr static auto const server_timeout = 1s;
+  constexpr static auto const client_sleep_dur = 2s;
 
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( server_timeout );
 
-    duration_guard dg( client_sleep_dur );
-    auto rx = session.async_recv( 0 );
+    std::uint16_t buffer_group_id = 0;
+    auto rx = session.get_receiver( buffer_group_id );
 
     {
-      auto mbuf = co_await rx;
+      auto mbuf = co_await rx.async_recv();
       CHECK( mbuf.has_value() );
     }
 
     {
-      auto mbuf = co_await rx;
+      auto mbuf = co_await rx.async_recv();
       CHECK( mbuf.has_error() );
-
-      auto ec = mbuf.error();
-      CHECK( ec == fiona::error_code::from_errno( ECANCELED ) );
+      CHECK( mbuf.error() == fiona::error_code::from_errno( ETIMEDOUT ) );
     }
 
+    fiona::timer timer( session.get_executor() );
+    co_await timer.async_wait( server_timeout );
+
     {
-      auto mbuf = co_await rx;
+      auto mbuf = co_await rx.async_recv();
       CHECK( mbuf.has_value() );
+      if ( mbuf.has_error() ) {
+        CHECK( mbuf.error() == fiona::error_code::from_errno( EBADF ) );
+      }
     }
 
     ++num_runs;
@@ -47,22 +50,23 @@ TEST_CASE( "recv timeout" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    duration_guard dg( client_sleep_dur );
+    fiona::tcp::client client( ex );
 
-    auto mclient =
-        co_await fiona::tcp::client::async_connect( ex, localhost, port );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
 
-    auto& client = mclient.value();
+    auto sv = std::string_view( "rawr" );
 
-    char const msg[] = { 'r', 'a', 'w', 'r' };
-    co_await client.async_write( msg, std::size( msg ) );
+    auto mbytes_transferred = co_await client.async_send( sv );
+    CHECK( mbytes_transferred.value() == static_cast<int>( sv.size() ) );
 
-    co_await fiona::sleep_for( ex, client_sleep_dur );
+    fiona::timer timer( client.get_executor() );
+    co_await timer.async_wait( client_sleep_dur );
 
-    co_await client.async_write( msg, std::size( msg ) );
+    co_await client.async_send( sv );
+    CHECK( mbytes_transferred.value() == static_cast<int>( sv.size() ) );
 
     ++num_runs;
-
     co_return;
   };
 
@@ -70,7 +74,7 @@ TEST_CASE( "recv timeout" ) {
   auto ex = ioc.get_executor();
   ioc.register_buffer_sequence( 1024, 128, 0 );
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
 
   auto port = acceptor.port();
 
@@ -82,21 +86,23 @@ TEST_CASE( "recv timeout" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "recv high traffic" ) {
+TEST_CASE( "recv_test - recv high traffic" ) {
   num_runs = 0;
 
   auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor ex ) -> fiona::task<void> {
+                    fiona::executor /* ex */ ) -> fiona::task<void> {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( std::chrono::seconds( 1 ) );
 
-    auto rx = session.async_recv( 0 );
+    auto rx = session.get_receiver( 0 );
 
     for ( int i = 0; i < 4; ++i ) {
-      auto mbuf = co_await rx;
+      auto mbuf = co_await rx.async_recv();
       CHECK( mbuf.has_value() );
-      co_await fiona::sleep_for( ex, std::chrono::milliseconds( 500 ) );
+
+      fiona::timer timer( session.get_executor() );
+      co_await timer.async_wait( 500ms );
     }
 
     ++num_runs;
@@ -105,16 +111,17 @@ TEST_CASE( "recv high traffic" ) {
 
   auto client = []( fiona::executor ex,
                     std::uint16_t port ) -> fiona::task<void> {
-    auto mclient =
-        co_await fiona::tcp::client::async_connect( ex, localhost, port );
+    fiona::tcp::client client( ex );
 
-    auto& client = mclient.value();
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
 
-    char const msg[] = { 'r', 'a', 'w', 'r' };
+    auto const sv = std::string_view( "rawr" );
 
+    fiona::timer timer( ex );
     for ( int i = 0; i < 4; ++i ) {
-      co_await client.async_write( msg, std::size( msg ) );
-      co_await fiona::sleep_for( ex, std::chrono::milliseconds( 500 ) );
+      co_await client.async_send( sv );
+      co_await timer.async_wait( 500ms );
     }
 
     ++num_runs;
@@ -125,7 +132,7 @@ TEST_CASE( "recv high traffic" ) {
   auto ex = ioc.get_executor();
   ioc.register_buffer_sequence( 1024, 128, 0 );
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
 
   auto port = acceptor.port();
 

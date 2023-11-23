@@ -404,7 +404,9 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
     CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
            server_msg.size() );
 
-    auto mbuffer = co_await stream.async_recv( 0 );
+    auto rx = stream.get_receiver( 0 );
+
+    auto mbuffer = co_await rx.async_recv();
     CHECK( mbuffer.has_value() );
 
     auto& buffer = mbuffer.value();
@@ -425,7 +427,8 @@ TEST_CASE( "tcp2_test - send recv hello world" ) {
     CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
            client_msg.size() );
 
-    auto mbuffer = co_await client.async_recv( 0 );
+    auto rx = client.get_receiver( 0 );
+    auto mbuffer = co_await rx.async_recv();
     CHECK( mbuffer.has_value() );
 
     auto& buffer = mbuffer.value();

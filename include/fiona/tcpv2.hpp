@@ -22,6 +22,7 @@ namespace fiona { namespace tcp { struct connect_awaitable; } }
 namespace fiona { namespace tcp { struct stream_cancel_awaitable; } }
 namespace fiona { namespace tcp { struct stream_close_awaitable; } }
 namespace fiona { namespace tcp { struct send_awaitable; } }
+namespace fiona { namespace tcp { struct receiver; } }
 namespace fiona { namespace tcp { struct recv_awaitable; } }
 
 struct __kernel_timespec;
@@ -98,6 +99,8 @@ private:
   boost::intrusive_ptr<detail::stream_impl> pstream_;
   stream( executor ex, int fd );
 
+  void timeout( __kernel_timespec ts );
+
 public:
   stream() = delete;
 
@@ -111,13 +114,19 @@ public:
 
   executor get_executor() const;
 
+  template <class Rep, class Period>
+  void timeout( std::chrono::duration<Rep, Period> const d ) {
+    auto ts = fiona::detail::duration_to_timespec( d );
+    timeout( ts );
+  }
+
   stream_close_awaitable async_close();
   stream_cancel_awaitable async_cancel();
 
   send_awaitable async_send( std::string_view msg );
   send_awaitable async_send( std::span<unsigned char const> buf );
 
-  recv_awaitable async_recv( std::uint16_t buffer_group_id );
+  receiver get_receiver( std::uint16_t buffer_group_id );
 };
 
 struct stream_close_awaitable {
@@ -171,7 +180,7 @@ public:
   result<int> await_resume();
 };
 
-struct recv_awaitable {
+struct receiver {
 private:
   friend struct stream;
   friend struct client;
@@ -179,10 +188,40 @@ private:
   boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
   std::uint16_t buffer_group_id_ = -1;
 
-  recv_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream,
-                  std::uint16_t buffer_group_id );
+  receiver( boost::intrusive_ptr<detail::stream_impl> pstream,
+            std::uint16_t buffer_group_id );
 
 public:
+  receiver() = delete;
+
+  receiver( receiver const& ) = delete;
+  receiver& operator=( receiver const& ) = delete;
+
+  receiver( receiver&& ) = delete;
+  receiver& operator=( receiver&& ) = delete;
+
+  ~receiver();
+
+  recv_awaitable async_recv();
+};
+
+struct recv_awaitable {
+private:
+  friend struct receiver;
+
+  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
+
+  recv_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
+
+public:
+  recv_awaitable() = delete;
+
+  recv_awaitable( recv_awaitable const& ) = delete;
+  recv_awaitable& operator=( recv_awaitable const& ) = delete;
+
+  recv_awaitable( recv_awaitable&& ) = delete;
+  recv_awaitable& operator=( recv_awaitable&& ) = delete;
+
   ~recv_awaitable();
 
   bool await_ready() const;
@@ -228,7 +267,7 @@ public:
   send_awaitable async_send( std::string_view msg );
   send_awaitable async_send( std::span<unsigned char const> buf );
 
-  recv_awaitable async_recv( std::uint16_t buffer_group_id );
+  receiver get_receiver( std::uint16_t buffer_group_id );
 };
 
 struct accept_awaitable {

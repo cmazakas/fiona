@@ -332,7 +332,11 @@ struct stream_impl {
 
       if ( cqe->res < 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
-        buffers_.push_back( error_code::from_errno( -cqe->res ) );
+        if ( cancelled_by_timer ) {
+          buffers_.push_back( error_code::from_errno( ETIMEDOUT ) );
+        } else {
+          buffers_.push_back( error_code::from_errno( -cqe->res ) );
+        }
       }
 
       if ( cqe->res == 0 ) {
@@ -341,7 +345,6 @@ struct stream_impl {
       }
 
       if ( cqe->res > 0 ) {
-
         BOOST_ASSERT( cqe->flags & IORING_CQE_F_BUFFER );
 
         last_recv_ = clock_type::now();
@@ -402,6 +405,7 @@ struct stream_impl {
 
       {
         auto ts = &pstream_->ts_;
+
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_link_timeout( sqe, ts, 0 );
         io_uring_sqe_set_data( sqe, nullptr );
@@ -409,6 +413,7 @@ struct stream_impl {
       }
 
       initiated_ = true;
+      last_recv_ = clock_type::now();
       intrusive_ptr_add_ref( this );
     }
   };
@@ -551,6 +556,11 @@ accept_awaitable::await_resume() {
 stream::stream( executor ex, int fd )
     : pstream_{ new detail::stream_impl{ ex, fd } } {}
 
+void
+stream::timeout( __kernel_timespec ts ) {
+  pstream_->ts_ = ts;
+}
+
 executor
 stream::get_executor() const {
   return pstream_->ex_;
@@ -577,8 +587,8 @@ stream::async_send( std::span<unsigned char const> buf ) {
   return { buf, pstream_ };
 }
 
-recv_awaitable
-stream::async_recv( std::uint16_t buffer_group_id ) {
+receiver
+stream::get_receiver( std::uint16_t buffer_group_id ) {
   return { pstream_, buffer_group_id };
 }
 
@@ -738,12 +748,13 @@ send_awaitable::await_resume() {
   return { res };
 }
 
-recv_awaitable::recv_awaitable(
-    boost::intrusive_ptr<detail::stream_impl> pstream,
-    std::uint16_t buffer_group_id )
-    : pstream_{ pstream }, buffer_group_id_{ buffer_group_id } {}
+receiver::receiver( boost::intrusive_ptr<detail::stream_impl> pstream,
+                    std::uint16_t buffer_group_id )
+    : pstream_{ pstream }, buffer_group_id_{ buffer_group_id } {
+  pstream_->recv_frame_.buffer_group_id_ = buffer_group_id;
+}
 
-recv_awaitable::~recv_awaitable() {
+receiver::~receiver() {
   if ( pstream_->recv_frame_.initiated_ ) {
     pstream_->cancelled_ = true;
     auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
@@ -752,8 +763,21 @@ recv_awaitable::~recv_awaitable() {
     io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
     io_uring_sqe_set_data( sqe, nullptr );
     fiona::detail::submit_ring( ring );
+
+    pstream_->recv_frame_.buffer_group_id_ = -1;
   }
 }
+
+recv_awaitable
+receiver::async_recv() {
+  return { pstream_ };
+}
+
+recv_awaitable::recv_awaitable(
+    boost::intrusive_ptr<detail::stream_impl> pstream )
+    : pstream_{ pstream } {}
+
+recv_awaitable::~recv_awaitable() {}
 
 bool
 recv_awaitable::await_ready() const {
@@ -769,9 +793,8 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
     return;
   }
 
-  rf.buffer_group_id_ = buffer_group_id_;
   rf.pbuf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
-      pstream_->ex_, buffer_group_id_ );
+      pstream_->ex_, pstream_->recv_frame_.buffer_group_id_ );
   rf.schedule_recv();
 }
 
@@ -955,8 +978,8 @@ client::async_send( std::span<unsigned char const> buf ) {
   return { buf, pclient_ };
 }
 
-recv_awaitable
-client::async_recv( std::uint16_t buffer_group_id ) {
+receiver
+client::get_receiver( std::uint16_t buffer_group_id ) {
   return { pclient_, buffer_group_id };
 }
 
