@@ -5,6 +5,7 @@
 #include <fiona/time.hpp>
 
 #include <atomic>
+#include <random>
 #include <thread>
 
 static int num_runs = 0;
@@ -646,4 +647,107 @@ TEST_CASE( "tcp2_test - tcp echo" ) {
   t1.join();
 
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
+}
+
+TEST_CASE( "tcp2_test - fd reuse" ) {
+  num_runs = 0;
+  // want to prove that the runtime correctly manages its set of file
+  // descriptors by proving they can be reused over and over again
+
+  constexpr std::uint32_t num_files = 10;
+  constexpr std::uint32_t total_connections = 4 * num_files;
+
+  fiona::io_context_params params;
+  params.num_files = 2 * num_files; // duality because of client<->server
+
+  fiona::io_context ioc( params );
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    std::random_device rd;
+    std::mt19937 g( rd() );
+
+    std::uint32_t num_accepted = 0;
+
+    std::vector<fiona::tcp::stream> sessions;
+
+    while ( num_accepted < total_connections ) {
+      auto mstream = co_await acceptor.async_accept();
+      ++num_accepted;
+
+      REQUIRE( mstream.has_value() );
+      auto& stream = mstream.value();
+
+      stream.timeout( std::chrono::seconds( 3 ) );
+
+      auto mbuf = co_await stream.get_receiver( 0 ).async_recv();
+
+      CHECK( mbuf.has_value() );
+      if ( mbuf.has_error() ) {
+        co_return;
+      }
+
+      auto& buf = mbuf.value();
+      auto octets = buf.readable_bytes();
+      CHECK( !octets.empty() );
+      if ( octets.empty() ) {
+        co_return;
+      }
+
+      auto str = std::string_view(
+          reinterpret_cast<char const*>( octets.data() ), octets.size() );
+      CHECK( octets.size() > 0 );
+      CHECK( str == "hello, world!" );
+
+      auto n_result = co_await stream.async_send( octets );
+
+      CHECK( n_result.value() == octets.size() );
+
+      sessions.push_back( std::move( stream ) );
+      if ( sessions.size() == num_files ) {
+        std::shuffle( sessions.begin(), sessions.end(), g );
+        sessions.clear();
+      }
+    }
+
+    ++num_runs;
+    co_return;
+  };
+
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    std::random_device rd;
+    std::mt19937 g( rd() );
+    std::vector<fiona::tcp::client> sessions;
+
+    for ( std::uint32_t i = 0; i < total_connections; ++i ) {
+      fiona::tcp::client client( ex );
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      mok.value();
+
+      std::string_view msg = "hello, world!";
+      auto result = co_await client.async_send( msg );
+      CHECK( result.value() == std::size( msg ) );
+
+      sessions.push_back( std::move( client ) );
+      if ( sessions.size() == num_files ) {
+        std::shuffle( sessions.begin(), sessions.end(), g );
+        sessions.clear();
+      }
+    }
+
+    ++num_runs;
+  };
+
+  ioc.post( server( std::move( acceptor ) ) );
+  ioc.post( client( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
 }

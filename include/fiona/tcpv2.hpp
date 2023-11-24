@@ -177,7 +177,7 @@ public:
 
   bool await_ready() const noexcept { return false; }
   void await_suspend( std::coroutine_handle<> h );
-  result<int> await_resume();
+  result<std::size_t> await_resume();
 };
 
 struct receiver {

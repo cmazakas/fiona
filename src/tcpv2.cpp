@@ -735,7 +735,7 @@ send_awaitable::await_suspend( std::coroutine_handle<> h ) {
   sf.h_ = h;
 }
 
-result<int>
+result<std::size_t>
 send_awaitable::await_resume() {
   auto res = pstream_->send_frame_.res_;
 
