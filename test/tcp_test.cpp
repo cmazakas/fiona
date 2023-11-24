@@ -1,22 +1,385 @@
 #include "helpers.hpp"
 
-#include <fiona/error.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
 
-#include <algorithm>
 #include <atomic>
-#include <cstdint>
 #include <random>
-#include <string_view>
 #include <thread>
-
-constexpr in_addr localhost = in_addr{ .s_addr = 0x7f000001 };
 
 static int num_runs = 0;
 
-TEST_CASE( "accept sanity test" ) {
+TEST_CASE( "tcp_test - acceptor" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - client already connected" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+
+    fiona::timer timer( acceptor.get_executor() );
+    co_await timer.async_wait( std::chrono::milliseconds( 500 ) );
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    {
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      CHECK( mok.has_value() );
+    }
+
+    auto timer = fiona::timer( ex );
+    co_await timer.async_wait( std::chrono::milliseconds( 100 ) );
+
+    {
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      CHECK( mok.has_error() );
+      CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
+    }
+
+    {
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      CHECK( mok.has_error() );
+      CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
+    }
+
+    ++num_runs;
+
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - server not listening" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_error() );
+    CHECK( mok.error() == fiona::error_code::from_errno( ECONNREFUSED ) );
+
+    ++num_runs;
+    co_return;
+  }( ex, 3333 ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 1 );
+}
+
+TEST_CASE( "tcp_test - client connect timeout" ) {
+  num_runs = 0;
+
+  // use one of the IP addresses from the test networks:
+  // 192.0.2.0/24
+  // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+  static auto const ipv4_addr = bytes_to_ipv4( { 192, 0, 2, 0 } );
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    auto const timeout = std::chrono::milliseconds( 1000 );
+
+    fiona::tcp::client client( ex );
+    client.timeout( timeout );
+
+    duration_guard dg( timeout );
+    auto mok = co_await client.async_connect( ipv4_addr, 3301 );
+    CHECK( mok.error() == fiona::error_code::from_errno( ECANCELED ) );
+
+    ++num_runs;
+    co_return;
+  }( ex ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 1 );
+}
+
+TEST_CASE( "tcp_test - client connect interruption" ) {
+  num_runs = 0;
+
+  // use one of the IP addresses from the test networks:
+  // 192.0.2.0/24
+  // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+  static auto const ipv4_addr = bytes_to_ipv4( { 192, 0, 2, 0 } );
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    auto const timeout = std::chrono::milliseconds( 10'000 );
+
+    fiona::tcp::client client( ex );
+    client.timeout( timeout );
+
+    ++num_runs;
+    auto mok = co_await client.async_connect( ipv4_addr, 3301 );
+    (void)mok;
+    CHECK( false );
+
+    co_return;
+  }( ex ) );
+
+  ioc.post( []() -> fiona::task<void> {
+    ++num_runs;
+    throw 1234;
+    co_return;
+  }() );
+
+  CHECK_THROWS( ioc.run() );
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - double connect" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto h = fiona::post( ex,
+                          []( fiona::tcp::client client,
+                              std::uint16_t port ) -> fiona::task<void> {
+                            CHECK_THROWS( co_await client.async_connect(
+                                localhost_ipv4, htons( port ) ) );
+
+                            ++num_runs;
+                          }( client, port ) );
+
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
+    co_await h;
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 3 );
+}
+
+TEST_CASE( "tcp_test - socket creation failed" ) {
+  num_runs = 0;
+
+  fiona::io_context_params params;
+  params.num_files = 16;
+
+  fiona::io_context ioc( params );
+  auto ex = ioc.get_executor();
+
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    std::vector<fiona::tcp::stream> streams;
+    for ( int i = 0; i < 8; ++i ) {
+      auto mstream = co_await acceptor.async_accept();
+      streams.push_back( std::move( mstream.value() ) );
+    }
+
+    fiona::timer timer( acceptor.get_executor() );
+    co_await timer.async_wait( 500ms );
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    std::vector<fiona::tcp::client> clients;
+    for ( int i = 0; i < 10; ++i ) {
+      fiona::tcp::client client( ex );
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      if ( i < 8 ) {
+        CHECK( mok.has_value() );
+        clients.push_back( std::move( client ) );
+      } else {
+        CHECK( mok.has_error() );
+        CHECK( mok.error() == fiona::error_code::from_errno( ENFILE ) );
+      }
+    }
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - connect cancellation" ) {
+  num_runs = 0;
+
+  // use one of the IP addresses from the test networks:
+  // 192.0.2.0/24
+  // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+  static auto const ipv4_addr = bytes_to_ipv4( { 192, 0, 2, 0 } );
+
+  fiona::io_context ioc;
+
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+    ++num_runs;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    client.timeout( 10s );
+
+    auto h =
+        fiona::post( ex, []( fiona::tcp::client client ) -> fiona::task<void> {
+          fiona::timer timer( client.get_executor() );
+          co_await timer.async_wait( 2s );
+
+          auto mcancelled = co_await client.async_cancel();
+          CHECK( mcancelled.value() == 1 );
+          ++num_runs;
+          co_return;
+        }( client ) );
+
+    {
+      duration_guard dg( 2s );
+      auto mok = co_await client.async_connect( ipv4_addr, htons( 3300 ) );
+      CHECK( mok.error() == fiona::error_code::from_errno( ECANCELED ) );
+    }
+
+    co_await h;
+
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
+    ++num_runs;
+    co_return;
+  }( ioc.get_executor(), port ) );
+  ioc.run();
+
+  CHECK( num_runs == 3 );
+}
+
+TEST_CASE( "tcp_test - client reconnection" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), localhost_ipv4, 0 );
+  auto const port = acceptor.port();
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    std::vector<fiona::tcp::stream> connected;
+
+    for ( int i = 0; i < 3; ++i ) {
+      auto mstream = co_await acceptor.async_accept();
+      connected.push_back( std::move( mstream.value() ) );
+    }
+
+    fiona::timer timer( acceptor.get_executor() );
+    co_await timer.async_wait( 500ms );
+
+    for ( auto& stream : connected ) {
+      auto m_ok = co_await stream.async_close();
+      CHECK( m_ok.has_value() );
+    }
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    for ( int i = 0; i < 3; ++i ) {
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      CHECK( mok.has_value() );
+
+      mok = co_await client.async_close();
+      CHECK( mok.has_value() );
+    }
+
+    ++num_runs;
+    co_return;
+  }( ioc.get_executor(), port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - send recv hello world" ) {
+
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -24,218 +387,145 @@ TEST_CASE( "accept sanity test" ) {
 
   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
+  CHECK( port > 0 );
 
-  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
-    auto stream = co_await acceptor.async_accept();
+  constexpr static auto const client_msg =
+      std::string_view( "hello, world! from the client" );
 
-    auto r = stream.value().async_recv( 0 );
-    auto buf = co_await r;
+  constexpr static auto const server_msg =
+      std::string_view( "hello, world! from the server" );
 
-    auto octets = buf.value().readable_bytes();
-    auto str = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() - 1 );
-    CHECK( octets.size() > 0 );
-    CHECK( str == "hello, world!" );
+  ioc.post( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
 
-    auto n_result =
-        co_await stream.value().async_write( octets.data(), octets.size() );
+    auto& stream = mstream.value();
 
-    CHECK( n_result.value() == octets.size() );
+    auto mbytes_transferred = co_await stream.async_send( server_msg );
+
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           server_msg.size() );
+
+    auto rx = stream.get_receiver( 0 );
+
+    auto mbuffer = co_await rx.async_recv();
+    CHECK( mbuffer.has_value() );
+
+    auto& buffer = mbuffer.value();
+    auto msg = buffer.as_str();
+    CHECK( msg == client_msg );
 
     ++num_runs;
     co_return;
-  };
+  }( std::move( acceptor ) ) );
 
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
-    auto maybe_client =
-        co_await fiona::tcp::client::async_connect( ex, localhost, port );
+  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
 
-    CHECK( maybe_client.has_value() );
+    auto mbytes_transferred = co_await client.async_send( client_msg );
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           client_msg.size() );
 
-    auto& client = maybe_client.value();
+    auto rx = client.get_receiver( 0 );
+    auto mbuffer = co_await rx.async_recv();
+    CHECK( mbuffer.has_value() );
 
-    co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
-
-    char const msg[] = "hello, world!";
-    auto result = co_await client.async_write( msg, std::size( msg ) );
-    CHECK( result.value() == std::size( msg ) );
+    auto& buffer = mbuffer.value();
+    auto msg = buffer.as_str();
+    CHECK( msg == server_msg );
 
     ++num_runs;
-  };
-
-  ioc.post( server( std::move( acceptor ) ) );
-  ioc.post( client( ex, port ) );
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
 
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "accept back-pressure test" ) {
-  constexpr std::size_t num_clients = 100;
+TEST_CASE( "tcp_test - send not connected" ) {
 
   num_runs = 0;
 
   fiona::io_context ioc;
-  REQUIRE( num_clients < ioc.params().cq_entries );
   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
+  CHECK( port > 0 );
 
-  auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor ex ) -> fiona::task<void> {
-    co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
+  // test a send with a socket that isn't connected at all
+  //
 
-    for ( unsigned i = 1; i < num_clients; ++i ) {
-      auto stream = co_await acceptor.async_accept();
-      CHECK( stream.has_value() );
+  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const /* port  */ ) {
+    fiona::tcp::client client( ex );
+
+    auto sv = std::string_view( "hello, world!" );
+    auto mbytes_transferred = co_await client.async_send( sv );
+    CHECK( mbytes_transferred.has_error() );
+    CHECK( mbytes_transferred.error() ==
+           fiona::error_code::from_errno( EBADF ) );
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  // now we wanna test a send when the remote has closed on us
+  //
+
+  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+
+    auto& stream = mstream.value();
+    co_await stream.async_close();
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.post( []( fiona::executor ex,
+                std::uint16_t const port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    CHECK( mok.has_value() );
+
+    fiona::timer timer( client.get_executor() );
+    co_await timer.async_wait( 250ms );
+
+    // for more info on why the first send() succeeds, see this answer:
+    // https://stackoverflow.com/questions/11436013/writing-to-a-closed-local-tcp-socket-not-failing
+    //
+
+    auto sv = std::string_view( "hello, world!" );
+
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+             sv.size() );
+    }
+
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( mbytes_transferred.has_error() );
+      CHECK( mbytes_transferred.error() ==
+             fiona::error_code::from_errno( EPIPE ) );
     }
 
     ++num_runs;
-  };
-
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
-    auto maybe_client =
-        co_await fiona::tcp::client::async_connect( ex, localhost, port );
-    CHECK( maybe_client.has_value() );
-
-    ++num_runs;
-  };
-
-  ioc.post( server( std::move( acceptor ), ex ) );
-  for ( unsigned i = 0; i < num_clients; ++i ) {
-    ex.post( client( ex, port ) );
-  }
-
-  ioc.run();
-
-  CHECK( num_runs == num_clients + 1 );
-}
-
-// TEST_CASE( "accept CQ overflow" ) {
-//   // this test purposefully exceeds the size of the completion queue so
-//   // that our multishot accept() needs to be rescheduled
-
-//   // this number will roughly double because of the one-to-one correspondence
-//   // between a connect() CQE and the accept() CQE
-//   constexpr std::size_t num_clients = 600;
-
-//   num_runs = 0;
-
-//   fiona::io_context_params params{
-//       .sq_entries = 512, .cq_entries = 1024, .num_files = 2000 };
-
-//   fiona::io_context ioc( params );
-//   REQUIRE( 2 * num_clients >= ioc.params().cq_entries );
-
-//   auto ex = ioc.get_executor();
-
-//   fiona::tcp::acceptor acceptor( ex, localhost, 0 );
-
-//   auto const port = acceptor.port();
-
-//   auto server = []( fiona::tcp::acceptor acceptor,
-//                     fiona::executor ex ) -> fiona::task<void> {
-//     auto a = acceptor.async_accept();
-
-//     {
-//       auto stream = co_await a;
-//       CHECK( stream.has_value() );
-//     }
-
-//     co_await fiona::sleep_for( ex, std::chrono::milliseconds( 200 ) );
-//     for ( unsigned i = 1; i < num_clients; ++i ) {
-//       auto stream = co_await a;
-//       CHECK( stream.has_value() );
-//     }
-
-//     ++num_runs;
-//   };
-
-//   auto client = []( fiona::executor ex,
-//                     std::uint16_t port ) -> fiona::task<void> {
-//     auto client_result = co_await fiona::tcp::client::make( ex );
-//     auto& client = client_result.value();
-//     client.timeout( std::chrono::seconds( 3 ) );
-//     auto ec = co_await client.async_connect( localhost, port );
-//     (void)ec;
-//     // CHECK( !ec );
-//     // if ( ec ) {
-//     //   throw ec;
-//     // }
-//     ++num_runs;
-//   };
-
-//   ex.post( server( std::move( acceptor ), ex ) );
-//   for ( unsigned i = 0; i < num_clients; ++i ) {
-//     ex.post( client( ex, port ) );
-//   }
-
-//   ioc.run();
-
-//   CHECK( num_runs == num_clients + 1 );
-// }
-
-TEST_CASE( "client connection refused" ) {
-  num_runs = 0;
-
-  auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    auto maybe_ec = co_await fiona::tcp::client::async_connect(
-        ex, localhost, 3301, std::chrono::seconds( 2 ) );
-
-    auto ec = maybe_ec.error();
-    CHECK( ec );
-    CHECK( ec == fiona::error_code::from_errno( ECONNREFUSED ) );
-
-    ++num_runs;
     co_return;
-  };
+  }( ex, port ) );
 
-  constexpr int num_clients = 100;
-
-  fiona::io_context ioc;
-  for ( int i = 0; i < num_clients; ++i ) {
-    ioc.post( client( ioc.get_executor() ) );
-  }
   ioc.run();
-  CHECK( num_runs == num_clients );
+
+  CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "client connect timeout" ) {
-  num_runs = 0;
-
-  auto client = []( fiona::executor ex ) -> fiona::task<void> {
-    // use one of the IP addresses from the test networks:
-    // 192.0.2.0/24
-    // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
-    auto maybe_ec = co_await fiona::tcp::client::async_connect(
-        ex, in_addr{ .s_addr = 0xc0'00'02'00 }, 3301,
-        std::chrono::seconds( 2 ) );
-    auto ec = maybe_ec.error();
-
-    CHECK( ec );
-    CHECK( ec == fiona::error_code::from_errno( ECANCELED ) );
-
-    ++num_runs;
-    co_return;
-  };
-
-  constexpr int num_clients = 100;
-
-  fiona::io_context ioc;
-  for ( int i = 0; i < num_clients; ++i ) {
-    ioc.post( client( ioc.get_executor() ) );
-  }
-  ioc.run();
-  CHECK( num_runs == num_clients );
-}
-
-TEST_CASE( "tcp echo" ) {
+TEST_CASE( "tcp_test - tcp echo" ) {
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -253,7 +543,7 @@ TEST_CASE( "tcp echo" ) {
 
   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
 
   auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
@@ -262,10 +552,10 @@ TEST_CASE( "tcp echo" ) {
 
     std::size_t num_bytes = 0;
 
-    auto rx = stream.async_recv( bgid );
+    auto rx = stream.get_receiver( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto borrowed_buf = co_await rx;
+      auto borrowed_buf = co_await rx.async_recv();
       CHECK( borrowed_buf.has_value() );
 
       auto octets = borrowed_buf.value().readable_bytes();
@@ -273,11 +563,10 @@ TEST_CASE( "tcp echo" ) {
                                  octets.size() );
       CHECK( m == msg );
 
-      auto num_written =
-          co_await stream.async_write( octets.data(), octets.size() );
+      auto num_written = co_await stream.async_send( octets );
 
       CHECK( !num_written.has_error() );
-      CHECK( num_written.value() == octets.size() );
+      CHECK( static_cast<std::size_t>( num_written.value() ) == octets.size() );
       num_bytes += octets.size();
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
@@ -302,23 +591,22 @@ TEST_CASE( "tcp echo" ) {
 
   auto client = []( fiona::executor ex, std::uint16_t port,
                     std::string_view msg ) -> fiona::task<void> {
-    auto mclient = co_await fiona::tcp::client::async_connect(
-        ex, localhost, port, std::chrono::seconds( 3 ) );
+    fiona::tcp::client client( ex );
+    client.timeout( 5s );
 
-    CHECK( mclient.has_value() );
+    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
 
-    auto& client = mclient.value();
-    client.timeout( std::chrono::seconds( 5 ) );
+    CHECK( mok.has_value() );
 
     std::size_t num_bytes = 0;
 
-    auto rx = client.async_recv( bgid );
+    auto rx = client.get_receiver( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto result = co_await client.async_write( msg.data(), msg.size() );
-      CHECK( result.value() == std::size( msg ) );
+      auto result = co_await client.async_send( msg );
+      CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
 
-      auto borrowed_buf = co_await rx;
+      auto borrowed_buf = co_await rx.async_recv();
 
       auto octets = borrowed_buf.value().readable_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
@@ -361,7 +649,7 @@ TEST_CASE( "tcp echo" ) {
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
-TEST_CASE( "fd reuse" ) {
+TEST_CASE( "tcp_test - fd reuse" ) {
   num_runs = 0;
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
@@ -377,7 +665,7 @@ TEST_CASE( "fd reuse" ) {
 
   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost, 0 );
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
   auto const port = acceptor.port();
 
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
@@ -397,8 +685,7 @@ TEST_CASE( "fd reuse" ) {
 
       stream.timeout( std::chrono::seconds( 3 ) );
 
-      auto r = stream.async_recv( 0 );
-      auto mbuf = co_await r;
+      auto mbuf = co_await stream.get_receiver( 0 ).async_recv();
 
       CHECK( mbuf.has_value() );
       if ( mbuf.has_error() ) {
@@ -413,12 +700,11 @@ TEST_CASE( "fd reuse" ) {
       }
 
       auto str = std::string_view(
-          reinterpret_cast<char const*>( octets.data() ), octets.size() - 1 );
+          reinterpret_cast<char const*>( octets.data() ), octets.size() );
       CHECK( octets.size() > 0 );
       CHECK( str == "hello, world!" );
 
-      auto n_result =
-          co_await stream.async_write( octets.data(), octets.size() );
+      auto n_result = co_await stream.async_send( octets );
 
       CHECK( n_result.value() == octets.size() );
 
@@ -440,13 +726,12 @@ TEST_CASE( "fd reuse" ) {
     std::vector<fiona::tcp::client> sessions;
 
     for ( std::uint32_t i = 0; i < total_connections; ++i ) {
-      auto mclient =
-          co_await fiona::tcp::client::async_connect( ex, localhost, port );
+      fiona::tcp::client client( ex );
+      auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+      mok.value();
 
-      auto& client = mclient.value();
-
-      char const msg[] = "hello, world!";
-      auto result = co_await client.async_write( msg, std::size( msg ) );
+      std::string_view msg = "hello, world!";
+      auto result = co_await client.async_send( msg );
       CHECK( result.value() == std::size( msg ) );
 
       sessions.push_back( std::move( client ) );
@@ -466,10 +751,3 @@ TEST_CASE( "fd reuse" ) {
 
   CHECK( num_runs == 2 );
 }
-
-// things to test:
-// * removing buffer groups during async ops
-// * buffer exhausting
-// * recv timeouts
-// * exceptions being thrown at random times
-// * update accept() to be more result-oriented instead of just `i32`

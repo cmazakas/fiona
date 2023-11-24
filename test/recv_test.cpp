@@ -2,7 +2,7 @@
 
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
-#include <fiona/tcpv2.hpp>
+#include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
 
 static int num_runs = 0;
@@ -58,13 +58,13 @@ TEST_CASE( "recv_test - recv timeout" ) {
     auto sv = std::string_view( "rawr" );
 
     auto mbytes_transferred = co_await client.async_send( sv );
-    CHECK( mbytes_transferred.value() == static_cast<int>( sv.size() ) );
+    CHECK( mbytes_transferred.value() == sv.size() );
 
     fiona::timer timer( client.get_executor() );
     co_await timer.async_wait( client_sleep_dur );
 
     co_await client.async_send( sv );
-    CHECK( mbytes_transferred.value() == static_cast<int>( sv.size() ) );
+    CHECK( mbytes_transferred.value() == sv.size() );
 
     ++num_runs;
     co_return;

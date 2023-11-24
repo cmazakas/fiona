@@ -5,8 +5,7 @@ set(fiona_test_sources
   test/recv_test.cpp
   test/waker_test.cpp
   test/post_test.cpp
-  # test/tcp_test.cpp
-  test/tcp2_test.cpp
+  test/tcp_test.cpp
 )
 
 foreach(test_source ${fiona_test_sources})

@@ -18,7 +18,7 @@ set(fiona_headers
   include/fiona/io_context.hpp
   include/fiona/params.hpp
   include/fiona/task.hpp
-  include/fiona/tcpv2.hpp
+  include/fiona/tcp.hpp
   include/fiona/time.hpp
 
   include/fiona/detail/awaitable_base.hpp
@@ -32,8 +32,7 @@ set(fiona_sources
   src/common.cpp
   src/io_context.cpp
   src/time.cpp
-  # src/tcp.cpp
-  src/tcpv2.cpp
+  src/tcp.cpp
 )
 
 add_library(fiona ${fiona_sources})
