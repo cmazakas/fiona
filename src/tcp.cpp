@@ -399,6 +399,7 @@ struct stream_impl {
         io_uring_sqe_set_data( sqe, this );
         io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE | IOSQE_IO_LINK |
                                          IOSQE_BUFFER_SELECT );
+        sqe->ioprio |= IORING_RECVSEND_POLL_FIRST;
 
         sqe->buf_group = buffer_group_id_;
       }
