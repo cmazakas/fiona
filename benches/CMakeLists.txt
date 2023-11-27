@@ -3,21 +3,11 @@ find_package(Catch2 3.0 REQUIRED)
 
 include(Catch)
 
-function(fiona_bench benchname)
-  add_executable(${benchname} ${benchname}.cpp)
-    target_link_libraries(
-      ${benchname}
-      PRIVATE
-        fiona
-        Boost::headers
-        Catch2::Catch2 Catch2::Catch2WithMain
-  )
-endfunction()
-
-set(fiona_bench_sources
+add_executable(echo echo.cpp echo/asio.cpp echo/fiona.cpp)
+target_link_libraries(
   echo
+  PRIVATE
+    fiona
+    Boost::headers
+    Catch2::Catch2 Catch2::Catch2WithMain
 )
-
-foreach(bench_source ${fiona_bench_sources})
-  fiona_bench(${bench_source})
-endforeach()
