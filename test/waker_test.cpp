@@ -45,9 +45,9 @@ struct custom_awaitable {
 
       try {
         waker.wake();
-      } catch ( fiona::error_code const& ec ) {
+      } catch ( std::system_error const& ec ) {
         CHECK( should_detach );
-        CHECK( ec == fiona::error_code::from_errno( EINVAL ) );
+        CHECK( ec.code() == std::errc::invalid_argument );
         return;
       }
 

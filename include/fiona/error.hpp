@@ -29,7 +29,7 @@ namespace detail {
 
 BOOST_NOINLINE BOOST_NORETURN inline void
 throw_errno_as_error_code( int e ) {
-  throw error_code::from_errno( e );
+  throw std::system_error( error_code::from_errno( e ) );
 }
 
 } // namespace detail
