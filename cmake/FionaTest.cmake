@@ -4,7 +4,7 @@ find_package(Catch2 3.0 REQUIRED)
 include(Catch)
 
 function(fiona_test testname)
-  add_executable(${testname} ${testname}.cpp)
+  add_executable(${testname} helpers.hpp ${testname}.cpp)
   target_link_libraries(
     ${testname}
     PRIVATE
