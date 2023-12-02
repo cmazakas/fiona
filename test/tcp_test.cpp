@@ -653,6 +653,13 @@ TEST_CASE( "tcp_test - fd reuse" ) {
   num_runs = 0;
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
+  // this test had to introduce micro-sleeps before each async op because the
+  // timeout operation internally used by the runtime to track activity can
+  // prolong the lifetime of the backing I/O object this means it doesn't get
+  // returned back to the FD table until the timeout is reaped completely
+  // the sleeps are just a helpful hack to help us consistently ensure library
+  // invariants, i.e. they don't affect the fact that we're still holding onto
+  // a set number of TCP streams
 
   constexpr std::uint32_t num_files = 10;
   constexpr std::uint32_t total_connections = 4 * num_files;
@@ -676,7 +683,11 @@ TEST_CASE( "tcp_test - fd reuse" ) {
 
     std::vector<fiona::tcp::stream> sessions;
 
+    fiona::timer timer( acceptor.get_executor() );
+
     while ( num_accepted < total_connections ) {
+      co_await timer.async_wait( 50ms );
+
       auto mstream = co_await acceptor.async_accept();
       ++num_accepted;
 
@@ -709,7 +720,7 @@ TEST_CASE( "tcp_test - fd reuse" ) {
       CHECK( n_result.value() == octets.size() );
 
       sessions.push_back( std::move( stream ) );
-      if ( sessions.size() == num_files ) {
+      if ( sessions.size() >= num_files ) {
         std::shuffle( sessions.begin(), sessions.end(), g );
         sessions.clear();
       }
@@ -725,8 +736,12 @@ TEST_CASE( "tcp_test - fd reuse" ) {
     std::mt19937 g( rd() );
     std::vector<fiona::tcp::client> sessions;
 
+    fiona::timer timer( ex );
+
     for ( std::uint32_t i = 0; i < total_connections; ++i ) {
       fiona::tcp::client client( ex );
+
+      co_await timer.async_wait( 50ms );
       auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
       mok.value();
 
@@ -735,7 +750,7 @@ TEST_CASE( "tcp_test - fd reuse" ) {
       CHECK( result.value() == std::size( msg ) );
 
       sessions.push_back( std::move( client ) );
-      if ( sessions.size() == num_files ) {
+      if ( sessions.size() >= num_files ) {
         std::shuffle( sessions.begin(), sessions.end(), g );
         sessions.clear();
       }

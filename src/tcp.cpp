@@ -194,6 +194,9 @@ intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept {
 namespace detail {
 
 struct stream_impl {
+  using clock_type = std::chrono::steady_clock;
+  using timepoint_type = std::chrono::time_point<clock_type>;
+
   struct cancel_frame : public fiona::detail::awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
@@ -255,6 +258,7 @@ struct stream_impl {
   struct send_frame final : public fiona::detail::awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
+    timepoint_type last_send_ = clock_type::now();
     int res_ = 0;
     bool initiated_ = false;
     bool done_ = false;
@@ -294,9 +298,6 @@ struct stream_impl {
   };
 
   struct recv_frame final : public fiona::detail::awaitable_base {
-    using clock_type = std::chrono::steady_clock;
-    using timepoint_type = std::chrono::time_point<clock_type>;
-
     std::deque<result<borrowed_buffer>> buffers_;
     fiona::detail::buf_ring* pbuf_ring_ = nullptr;
     stream_impl* pstream_ = nullptr;
@@ -391,26 +392,16 @@ struct stream_impl {
       auto ring = fiona::detail::executor_access_policy::ring( ex );
       auto fd = pstream_->fd_;
 
-      fiona::detail::reserve_sqes( ring, 2 );
+      fiona::detail::reserve_sqes( ring, 1 );
 
       {
+        auto flags = IOSQE_FIXED_FILE | IOSQE_BUFFER_SELECT;
         auto sqe = io_uring_get_sqe( ring );
         io_uring_prep_recv_multishot( sqe, fd, nullptr, 0, 0 );
         io_uring_sqe_set_data( sqe, this );
-        io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE | IOSQE_IO_LINK |
-                                         IOSQE_BUFFER_SELECT );
+        io_uring_sqe_set_flags( sqe, flags );
         sqe->ioprio |= IORING_RECVSEND_POLL_FIRST;
-
         sqe->buf_group = buffer_group_id_;
-      }
-
-      {
-        auto ts = &pstream_->ts_;
-
-        auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_link_timeout( sqe, ts, 0 );
-        io_uring_sqe_set_data( sqe, nullptr );
-        io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       }
 
       initiated_ = true;
@@ -419,10 +410,99 @@ struct stream_impl {
     }
   };
 
+  struct timeout_frame final : public fiona::detail::awaitable_base {
+    stream_impl* pstream_ = nullptr;
+    bool initiated_ = false;
+    bool done_ = false;
+    bool cancelled_ = false;
+
+    timeout_frame() = delete;
+    timeout_frame( stream_impl* pstream ) : pstream_{ pstream } {}
+    virtual ~timeout_frame() override {}
+
+    void reset() {
+      initiated_ = false;
+      done_ = false;
+      cancelled_ = false;
+    }
+
+    void await_process_cqe( io_uring_cqe* cqe ) override {
+      if ( cqe->res == -ECANCELED && cancelled_ ) {
+        initiated_ = false;
+        return;
+      }
+
+      if ( cqe->res == -ECANCELED ) {
+        auto ring =
+            fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+
+        fiona::detail::reserve_sqes( ring, 1 );
+
+        {
+          auto sqe = io_uring_get_sqe( ring );
+          io_uring_prep_timeout( sqe, &pstream_->ts_, 0,
+                                 IORING_TIMEOUT_MULTISHOT );
+          io_uring_sqe_set_data( sqe, &pstream_->timeout_frame_ );
+        }
+
+        pstream_->timeout_frame_.initiated_ = true;
+        intrusive_ptr_add_ref( this );
+        return;
+      }
+
+      if ( cqe->res != -ETIME ) {
+        BOOST_ASSERT( false );
+        initiated_ = false;
+        return;
+      }
+
+      auto ex = pstream_->ex_;
+      auto ring = fiona::detail::executor_access_policy::ring( ex );
+      auto now = clock_type::now();
+      auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } +
+                      std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
+
+      if ( pstream_->recv_frame_.initiated_ ) {
+        auto diff = now - pstream_->recv_frame_.last_recv_;
+        if ( diff >= max_diff ) {
+          fiona::detail::reserve_sqes( ring, 1 );
+          auto sqe = io_uring_get_sqe( ring );
+          io_uring_prep_cancel( sqe, &pstream_->recv_frame_,
+                                IORING_ASYNC_CANCEL_ALL );
+        }
+      }
+
+      if ( pstream_->send_frame_.initiated_ && !pstream_->send_frame_.done_ ) {
+        auto diff = now - pstream_->send_frame_.last_send_;
+        if ( diff >= max_diff ) {
+          fiona::detail::reserve_sqes( ring, 1 );
+          auto sqe = io_uring_get_sqe( ring );
+          io_uring_prep_cancel( sqe, &pstream_->send_frame_,
+                                IORING_ASYNC_CANCEL_ALL );
+        }
+      }
+
+      BOOST_ASSERT( ( cqe->flags & IORING_CQE_F_MORE ) );
+      intrusive_ptr_add_ref( this );
+    }
+
+    std::coroutine_handle<> handle() noexcept override { return nullptr; }
+
+    void inc_ref() noexcept override { ++pstream_->count_; }
+    void dec_ref() noexcept override {
+      if ( --pstream_->count_ == 0 ) {
+        delete pstream_;
+      }
+    }
+
+    int use_count() const noexcept override { return pstream_->count_; }
+  };
+
   cancel_frame cancel_frame_{ this };
   close_frame close_frame_{ this };
   send_frame send_frame_{ this };
   recv_frame recv_frame_{ this };
+  timeout_frame timeout_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;
@@ -430,8 +510,20 @@ struct stream_impl {
   bool connected_ = false;
   bool cancelled_ = false;
 
-  stream_impl( executor ex ) : ex_{ ex } {}
-  stream_impl( executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
+  stream_impl( executor ex ) : ex_{ ex } {
+    auto ring = fiona::detail::executor_access_policy::ring( ex );
+
+    fiona::detail::reserve_sqes( ring, 1 );
+
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_timeout( sqe, &ts_, 0, IORING_TIMEOUT_MULTISHOT );
+    io_uring_sqe_set_data( sqe, &timeout_frame_ );
+
+    timeout_frame_.initiated_ = true;
+    intrusive_ptr_add_ref( this );
+  }
+
+  stream_impl( executor ex, int fd ) : stream_impl( ex ) { fd_ = fd; }
 
   virtual ~stream_impl() {
     if ( fd_ >= 0 ) {
@@ -560,6 +652,38 @@ stream::stream( executor ex, int fd )
 void
 stream::timeout( __kernel_timespec ts ) {
   pstream_->ts_ = ts;
+
+  auto ex = pstream_->ex_;
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+
+  fiona::detail::reserve_sqes( ring, 2 );
+
+  {
+    auto sqe = io_uring_get_sqe( ring );
+
+    io_uring_prep_timeout_remove(
+        sqe, reinterpret_cast<std::uintptr_t>( &pstream_->timeout_frame_ ), 0 );
+    io_uring_sqe_set_data( sqe, nullptr /* &pstream_->timeout_frame_ */ );
+    io_uring_sqe_set_flags( sqe, /* IOSQE_IO_LINK | */ IOSQE_CQE_SKIP_SUCCESS );
+  }
+}
+
+void
+stream::cancel_timer() {
+  if ( pstream_ && pstream_->timeout_frame_.initiated_ ) {
+    pstream_->timeout_frame_.cancelled_ = true;
+    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    {
+      auto user_data =
+          reinterpret_cast<std::uintptr_t>( &pstream_->timeout_frame_ );
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_timeout_remove( sqe, user_data, 0 );
+      io_uring_sqe_set_data( sqe, nullptr );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      fiona::detail::submit_ring( ring );
+    }
+  }
 }
 
 executor
@@ -710,29 +834,19 @@ send_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto fd = pstream_->fd_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-  fiona::detail::reserve_sqes( ring, 2 );
+  fiona::detail::reserve_sqes( ring, 1 );
 
   {
-    /* Note that using IOSQE_IO_LINK with this request type requires the setting
-     * of MSG_WAITALL in the flags argument, as a short send isn’t a considered
-     * an error condition without that being set.
-     */
     auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_send( sqe, fd, buf_.data(), buf_.size(), MSG_WAITALL );
+    io_uring_prep_send( sqe, fd, buf_.data(), buf_.size(), 0 );
     io_uring_sqe_set_data( sqe, &sf );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
-  }
-
-  {
-    auto ts = &pstream_->ts_;
-    auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_link_timeout( sqe, ts, 0 );
-    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
   }
 
   intrusive_ptr_add_ref( &sf );
 
   sf.initiated_ = true;
+  sf.last_send_ = fiona::tcp::detail::stream_impl::clock_type::now();
   sf.h_ = h;
 }
 
@@ -928,6 +1042,24 @@ client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
 void
 client::timeout( __kernel_timespec ts ) {
   pclient_->ts_ = ts;
+}
+
+void
+client::cancel_timer() {
+  if ( pclient_ && pclient_->timeout_frame_.initiated_ ) {
+    pclient_->timeout_frame_.cancelled_ = true;
+    auto ring = fiona::detail::executor_access_policy::ring( pclient_->ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    {
+      auto user_data =
+          reinterpret_cast<std::uintptr_t>( &pclient_->timeout_frame_ );
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_timeout_remove( sqe, user_data, 0 );
+      io_uring_sqe_set_data( sqe, nullptr );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      fiona::detail::submit_ring( ring );
+    }
+  }
 }
 
 executor

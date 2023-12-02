@@ -100,6 +100,7 @@ private:
   stream( executor ex, int fd );
 
   void timeout( __kernel_timespec ts );
+  void cancel_timer();
 
 public:
   stream() = delete;
@@ -109,6 +110,8 @@ public:
 
   stream( stream&& ) = default;
   stream& operator=( stream&& ) = default;
+
+  ~stream() { cancel_timer(); }
 
   bool operator==( stream const& ) const = default;
 
@@ -236,6 +239,7 @@ private:
   client( boost::intrusive_ptr<detail::client_impl> pclient );
 
   void timeout( __kernel_timespec ts );
+  void cancel_timer();
 
 public:
   client() = delete;
@@ -246,6 +250,8 @@ public:
 
   client( client&& ) = default;
   client& operator=( client&& ) = default;
+
+  ~client() { cancel_timer(); }
 
   bool operator==( client const& ) const = default;
 

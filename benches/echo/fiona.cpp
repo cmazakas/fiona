@@ -30,7 +30,7 @@ fiona_echo_bench() {
 
   auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void> {
-    stream.timeout( 5s );
+    // stream.timeout( 5s );
 
     std::size_t num_bytes = 0;
 
@@ -73,7 +73,7 @@ fiona_echo_bench() {
   auto client = []( fiona::executor ex, std::uint16_t port,
                     std::string_view msg ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
-    client.timeout( 5s );
+    // client.timeout( 5s );
 
     auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
     (void)mok;
