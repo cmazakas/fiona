@@ -2,6 +2,7 @@
   "dependencies": [
     "boost-asio",
     "boost-assert",
+    "boost-beast",
     "boost-config",
     "boost-container-hash",
     "boost-core",
