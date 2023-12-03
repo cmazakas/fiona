@@ -1,5 +1,19 @@
 #include "common.hpp"
 
+#include <boost/config.hpp>
+
+#if defined( BOOST_GCC ) && defined( __SANITIZE_THREAD__ )
+
+#include <iostream>
+
+void
+asio_echo_bench() {
+  std::cout << "Asio does not support building with tsan and gcc!" << std::endl;
+  CHECK( false );
+}
+
+#else
+
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/executor.hpp>
@@ -147,3 +161,4 @@ asio_echo_bench() {
 
   REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
 }
+#endif
