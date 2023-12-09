@@ -1,0 +1,15 @@
+{
+  "dependencies": [
+    "boost-asio",
+    "boost-assert",
+    "boost-beast",
+    "boost-config",
+    "boost-container-hash",
+    "boost-core",
+    "boost-smart-ptr",
+    "boost-system",
+    "boost-unordered",
+    "catch2",
+    "liburing"
+  ]
+}

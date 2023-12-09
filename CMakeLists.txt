@@ -53,7 +53,9 @@ target_sources(
   FILES ${fiona_headers}
 )
 
-if(BUILD_TESTING)
+add_library(Fiona::fiona ALIAS fiona)
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt")
   set_target_properties(fiona PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
   include(CTest)
   include(FionaTest)
