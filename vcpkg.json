@@ -9,6 +9,7 @@
     "boost-smart-ptr",
     "boost-system",
     "boost-unordered",
-    "catch2"
+    "catch2",
+    "liburing"
   ]
 }
