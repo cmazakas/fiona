@@ -70,6 +70,12 @@ public:
   post_awaitable<T> post( task<T> t );
 
   inline waker make_waker( std::coroutine_handle<> h );
+  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size,
+                                 std::uint16_t buffer_group_id ) {
+    auto ring = &pframe_->io_ring_;
+    auto br = detail::buf_ring( ring, num_bufs, buf_size, buffer_group_id );
+    pframe_->buf_rings_.push_back( std::move( br ) );
+  }
 };
 
 namespace detail {

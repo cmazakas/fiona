@@ -505,8 +505,7 @@ TEST_CASE( "tcp_test - send not connected" ) {
 
     {
       auto mbytes_transferred = co_await client.async_send( sv );
-      CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
-             sv.size() );
+      CHECK( mbytes_transferred.value() == sv.size() );
     }
 
     {

@@ -157,52 +157,80 @@ TEST_CASE( "recv_test - double registering same buffer group" ) {
   }
 }
 
-// TEST_CASE( "recv_test - buffer exhaustion" ) {
-//   num_runs = 0;
+TEST_CASE( "recv_test - buffer exhaustion" ) {
+  num_runs = 0;
 
-//   fiona::io_context ioc;
-//   auto ex = ioc.get_executor();
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
 
-//   constexpr static int const num_bufs = 8;
+  constexpr static int const num_bufs = 8;
 
-//   ioc.register_buffer_sequence( num_bufs, 64, 0 );
+  ioc.register_buffer_sequence( num_bufs, 64, 0 );
 
-//   fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
-//   auto const port = acceptor.port();
+  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto const port = acceptor.port();
 
-//   ioc.post( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
-//     auto mstream = co_await acceptor.async_accept();
-//     auto& stream = mstream.value();
+  constexpr static std::string_view const msg = "rawr";
 
-//     auto receiver = stream.get_receiver( 0 );
+  ioc.post( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+    auto mstream = co_await acceptor.async_accept();
+    auto& stream = mstream.value();
+    stream.timeout( 500ms );
 
-//     std::vector<fiona::borrowed_buffer> bufs;
+    std::vector<fiona::borrowed_buffer> bufs;
 
-//     for ( int i = 0; i < 2 * num_bufs; ++i ) {
-//       auto mbuf = co_await receiver.async_recv();
-//       if ( i >= ( num_bufs - 1 ) ) {
-//         CHECK( mbuf.error() == std::errc::no_buffer_space );
-//       } else {
-//         CHECK( mbuf.has_value() );
-//         bufs.push_back( std::move( mbuf.value() ) );
-//       }
-//     }
+    {
+      auto receiver = stream.get_receiver( 0 );
+      for ( int i = 0; i < 2 * num_bufs; ++i ) {
+        auto mbuf = co_await receiver.async_recv();
+        if ( i >= num_bufs ) {
+          CHECK( bufs.size() >= num_bufs );
+          CHECK( mbuf.error() == std::errc::no_buffer_space );
+        } else {
+          CHECK( mbuf.has_value() );
+          CHECK( mbuf.value().as_str() == msg );
+          bufs.push_back( std::move( mbuf.value() ) );
+        }
+      }
+    }
 
-//     ++num_runs;
-//   }( std::move( acceptor ) ) );
+    auto ex = stream.get_executor();
+    ex.register_buffer_sequence( num_bufs, 64, 1 );
 
-//   ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
-//     fiona::tcp::client client( ex );
-//     co_await client.async_connect( localhost_ipv4, htons( port ) );
+    {
+      auto receiver = stream.get_receiver( 1 );
+      for ( int i = 0; i < num_bufs; ++i ) {
+        auto mbuf = co_await receiver.async_recv();
+        if ( mbuf.has_value() ) {
+          CHECK( mbuf.value().readable_bytes().size() ==
+                 num_bufs * msg.size() );
+          bufs.push_back( std::move( mbuf.value() ) );
+        } else {
+          CHECK( mbuf.error() == std::errc::timed_out );
+          break;
+        }
+      }
+    }
 
-//     for ( int i = 0; i < 2 * num_bufs; ++i ) {
-//       co_await client.async_send( { "rawr" } );
-//     }
+    ++num_runs;
+  }( std::move( acceptor ) ) );
 
-//     ++num_runs;
-//   }( ex, port ) );
+  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+    fiona::tcp::client client( ex );
+    co_await client.async_connect( localhost_ipv4, htons( port ) );
 
-//   ioc.run();
+    for ( int i = 0; i < 2 * num_bufs; ++i ) {
+      auto mbytes_transferred = co_await client.async_send( msg );
+      CHECK( mbytes_transferred.value() == 4 );
+    }
 
-//   CHECK( num_runs == 2 );
-// }
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 250ms );
+
+    ++num_runs;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
