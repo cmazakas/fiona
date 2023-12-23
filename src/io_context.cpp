@@ -126,6 +126,8 @@ struct guard {
   io_uring* ring;
 
   ~guard() {
+    io_uring_submit( ring );
+
     while ( !tasks.empty() ) {
       auto pos = tasks.begin();
       auto [h, pcount] = *pos;
@@ -146,7 +148,7 @@ struct guard {
         continue;
       }
 
-      if ( blacklist.find( p ) != blacklist.end() ) {
+      if ( blacklist.contains( p ) ) {
         // when destructing, we can have N CQEs associated with an awaitable
         // because of multishot ops
         // our normal I/O loop handles this case fine, but during cleanup
@@ -155,13 +157,10 @@ struct guard {
         continue;
       }
 
+      blacklist.insert( p );
+
       auto q = boost::intrusive_ptr(
           static_cast<fiona::detail::awaitable_base*>( p ), false );
-
-      if ( q->use_count() == 1 ) {
-        blacklist.insert( p );
-      }
-
       (void)q;
     }
   }
@@ -258,15 +257,25 @@ io_context::run() {
       auto num_ready = io_uring_cq_ready( ring );
       io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
 
-      advance_guard guard = { .ring = ring, .count = 0 };
-      for ( ; guard.count < num_ready; ) {
-        on_cqe( cqes[guard.count++] );
+      for ( std::size_t i = 0; i < num_ready; ++i ) {
+        auto guard = cqe_guard( ring, cqes[i] );
+        on_cqe( cqes[i] );
         if ( pframe_->exception_ptr_ ) {
           auto p = pframe_->exception_ptr_;
 
           std::rethrow_exception( pframe_->exception_ptr_ );
         }
       }
+
+      // advance_guard guard = { .ring = ring, .count = 0 };
+      // for ( ; guard.count < num_ready; ) {
+      //   on_cqe( cqes[guard.count++] );
+      //   if ( pframe_->exception_ptr_ ) {
+      //     auto p = pframe_->exception_ptr_;
+
+      //     std::rethrow_exception( pframe_->exception_ptr_ );
+      //   }
+      // }
     }
 
     if ( pframe_->exception_ptr_ ) {

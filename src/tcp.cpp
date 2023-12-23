@@ -197,6 +197,24 @@ struct stream_impl {
   using clock_type = std::chrono::steady_clock;
   using timepoint_type = std::chrono::time_point<clock_type>;
 
+  struct nop_frame final : public fiona::detail::awaitable_base {
+    nop_frame( stream_impl* pstream ) : pstream_{ pstream } {}
+    ~nop_frame() override {}
+
+    stream_impl* pstream_ = nullptr;
+
+    void await_process_cqe( io_uring_cqe* cqe ) override { (void)cqe; }
+    std::coroutine_handle<> handle() noexcept override { return nullptr; }
+    void inc_ref() noexcept override { ++pstream_->count_; }
+    void dec_ref() noexcept override {
+      if ( --pstream_->count_ == 0 ) {
+        delete pstream_;
+      }
+    }
+
+    int use_count() const noexcept override { return pstream_->count_; }
+  };
+
   struct cancel_frame : public fiona::detail::awaitable_base {
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
@@ -265,7 +283,7 @@ struct stream_impl {
 
     send_frame( stream_impl* pstream ) : pstream_{ pstream } {}
 
-    virtual ~send_frame() override {}
+    ~send_frame() override {}
 
     void reset() {
       h_ = nullptr;
@@ -307,29 +325,14 @@ struct stream_impl {
     std::uint16_t buffer_group_id_ = -1;
     bool initiated_ = false;
     bool done_ = false;
-    bool was_rescheduled_ = false;
 
     recv_frame( stream_impl* pstream ) : pstream_{ pstream } {}
 
-    virtual ~recv_frame() override {}
+    ~recv_frame() override {}
 
-    virtual void await_process_cqe( io_uring_cqe* cqe ) override {
+    void await_process_cqe( io_uring_cqe* cqe ) override {
       bool const cancelled_by_timer =
           ( cqe->res == -ECANCELED && !pstream_->cancelled_ );
-
-      if ( cancelled_by_timer ) {
-        auto now = clock_type::now();
-
-        auto diff = now - last_recv_;
-        auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } +
-                        std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
-
-        if ( diff < max_diff ) {
-          schedule_recv();
-          was_rescheduled_ = true;
-          return;
-        }
-      }
 
       if ( cqe->res < 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
@@ -348,6 +351,7 @@ struct stream_impl {
       if ( cqe->res > 0 ) {
         BOOST_ASSERT( cqe->flags & IORING_CQE_F_BUFFER );
 
+        // TODO: find out if we should potentially set this when we see the EOF
         last_recv_ = clock_type::now();
 
         auto buffer_id = cqe->flags >> 16;
@@ -358,34 +362,28 @@ struct stream_impl {
                                              buffer_id, cqe->res ) );
       }
 
-      if ( !( cqe->flags & IORING_CQE_F_BUFFER ) ) {
-        initiated_ = false;
-      }
-
       if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {
         intrusive_ptr_add_ref( this );
+        initiated_ = true;
+      } else {
+        initiated_ = false;
       }
     }
 
-    virtual std::coroutine_handle<> handle() noexcept override {
-      if ( was_rescheduled_ ) {
-        was_rescheduled_ = false;
-        return nullptr;
-      }
-
+    std::coroutine_handle<> handle() noexcept override {
       auto h = h_;
       h_ = nullptr;
       return h;
     }
 
-    virtual void inc_ref() noexcept override { ++pstream_->count_; }
-    virtual void dec_ref() noexcept override {
+    void inc_ref() noexcept override { ++pstream_->count_; }
+    void dec_ref() noexcept override {
       if ( --pstream_->count_ == 0 ) {
         delete pstream_;
       }
     }
 
-    virtual int use_count() const noexcept override { return pstream_->count_; }
+    int use_count() const noexcept override { return pstream_->count_; }
 
     void schedule_recv() {
       auto ex = pstream_->ex_;
@@ -432,7 +430,8 @@ struct stream_impl {
         return;
       }
 
-      if ( cqe->res == -ECANCELED ) {
+      auto const timeout_adjusted = ( cqe->res == -ECANCELED );
+      if ( timeout_adjusted ) {
         auto ring =
             fiona::detail::executor_access_policy::ring( pstream_->ex_ );
 
@@ -450,7 +449,7 @@ struct stream_impl {
         return;
       }
 
-      if ( cqe->res != -ETIME ) {
+      if ( cqe->res != -ETIME && cqe->res != 0 ) {
         BOOST_ASSERT( false );
         initiated_ = false;
         return;
@@ -469,6 +468,8 @@ struct stream_impl {
           auto sqe = io_uring_get_sqe( ring );
           io_uring_prep_cancel( sqe, &pstream_->recv_frame_,
                                 IORING_ASYNC_CANCEL_ALL );
+          io_uring_sqe_set_data( sqe, &pstream_->recv_cancel_frame_ );
+          intrusive_ptr_add_ref( &pstream_->recv_cancel_frame_ );
         }
       }
 
@@ -479,10 +480,22 @@ struct stream_impl {
           auto sqe = io_uring_get_sqe( ring );
           io_uring_prep_cancel( sqe, &pstream_->send_frame_,
                                 IORING_ASYNC_CANCEL_ALL );
+          io_uring_sqe_set_data( sqe, &pstream_->send_cancel_frame_ );
+          intrusive_ptr_add_ref( &pstream_->send_cancel_frame_ );
         }
       }
 
-      BOOST_ASSERT( ( cqe->flags & IORING_CQE_F_MORE ) );
+      if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
+        fiona::detail::reserve_sqes( ring, 1 );
+        {
+          auto sqe = io_uring_get_sqe( ring );
+          io_uring_prep_timeout( sqe, &pstream_->ts_, 0,
+                                 IORING_TIMEOUT_MULTISHOT );
+          io_uring_sqe_set_data( sqe, &pstream_->timeout_frame_ );
+        }
+        pstream_->timeout_frame_.initiated_ = true;
+      }
+
       intrusive_ptr_add_ref( this );
     }
 
@@ -503,6 +516,8 @@ struct stream_impl {
   send_frame send_frame_{ this };
   recv_frame recv_frame_{ this };
   timeout_frame timeout_frame_{ this };
+  nop_frame send_cancel_frame_{ this };
+  nop_frame recv_cancel_frame_{ this };
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
   int count_ = 0;

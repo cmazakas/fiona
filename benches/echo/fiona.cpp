@@ -19,6 +19,8 @@ fiona_echo_bench() {
   params.num_files = 4 * 4096;
   params.sq_entries = 4 * 4096;
   params.cq_entries = 8 * 4096;
+  // params.sq_entries = 2 * 4096;
+  // params.cq_entries = 2 * 4096;
 
   fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 4 * 4096, 128, bgid );
@@ -115,6 +117,8 @@ fiona_echo_bench() {
     } catch ( std::exception const& ex ) {
       std::cout << "exception caught in client thread:\n"
                 << ex.what() << std::endl;
+    } catch ( ... ) {
+      std::cout << "unidentified exception caught" << std::endl;
     }
   } );
 
