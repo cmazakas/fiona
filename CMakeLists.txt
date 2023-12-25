@@ -13,6 +13,7 @@ find_package(Boost 1.83 REQUIRED)
 set(fiona_headers
 
   include/fiona/borrowed_buffer.hpp
+  include/fiona/dns.hpp
   include/fiona/error.hpp
   include/fiona/executor.hpp
   include/fiona/io_context.hpp
@@ -29,6 +30,7 @@ set(fiona_headers
 
 set(fiona_sources
 
+  src/dns.cpp
   src/common.cpp
   src/io_context.cpp
   src/time.cpp

@@ -6,6 +6,7 @@ set(fiona_test_sources
   test/waker_test.cpp
   test/post_test.cpp
   test/tcp_test.cpp
+  test/dns_test.cpp
 )
 
 foreach(test_source ${fiona_test_sources})
