@@ -43,9 +43,10 @@ public:
 
 struct dns_awaitable {
 private:
+  executor ex_;
   std::shared_ptr<dns_frame> pframe_;
 
-  dns_awaitable( std::shared_ptr<dns_frame> pframe );
+  dns_awaitable( executor ex, std::shared_ptr<dns_frame> pframe );
 
   friend struct dns_resolver;
 

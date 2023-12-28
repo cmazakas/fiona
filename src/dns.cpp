@@ -1,20 +1,17 @@
 #include <fiona/dns.hpp>
 
+#include <pthread.h>
+
 namespace fiona {
 
 struct dns_frame {
   std::mutex m_;
   std::jthread t_;
-  fiona::executor ex_;
-  char const* const node_ = nullptr;
-  char const* const service_ = nullptr;
-  addrinfo const* const hints_ = nullptr;
+  char const* node_ = nullptr;
+  char const* service_ = nullptr;
+  addrinfo const* hints_ = nullptr;
   addrinfo* addrlist_ = nullptr;
   int res_ = -1;
-
-  dns_frame( fiona::executor ex, char const* node, char const* service,
-             addrinfo const* hints )
-      : ex_{ ex }, node_{ node }, service_{ service }, hints_{ hints } {}
 };
 
 dns_entry_list::dns_entry_list( addrinfo* head ) : head_{ head } {}
@@ -41,8 +38,8 @@ dns_entry_list::data() const noexcept {
   return head_;
 }
 
-dns_awaitable::dns_awaitable( std::shared_ptr<dns_frame> pframe )
-    : pframe_{ pframe } {}
+dns_awaitable::dns_awaitable( executor ex, std::shared_ptr<dns_frame> pframe )
+    : ex_{ ex }, pframe_{ pframe } {}
 
 bool
 dns_awaitable::await_ready() const {
@@ -51,10 +48,8 @@ dns_awaitable::await_ready() const {
 
 void
 dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
+  auto waker = ex_.make_waker( h );
   auto& frame = *pframe_;
-
-  auto waker = frame.ex_.make_waker( h );
-
   frame.t_ = std::jthread( [pframe = pframe_, waker] {
     int res = -1;
 
@@ -84,11 +79,14 @@ dns_awaitable::await_resume() {
   return { dns_entry_list( frame.addrlist_ ) };
 }
 
-dns_resolver::dns_resolver( fiona::executor ex ) : ex_{ ex } {}
+dns_resolver::dns_resolver( fiona::executor ex )
+    : ex_{ ex }, pframe_{ new dns_frame() } {}
 
 dns_awaitable
 dns_resolver::async_resolve( char const* node, char const* service ) {
-  pframe_ = std::make_shared<dns_frame>( ex_, node, service, nullptr );
-  return { pframe_ };
+  pframe_->node_ = node;
+  pframe_->service_ = service;
+  return { ex_, pframe_ };
 }
+
 } // namespace fiona
