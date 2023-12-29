@@ -7,12 +7,17 @@
 #include <arpa/inet.h>
 
 auto
-get_localhost() {
+make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t port ) {
   int ret = -1;
-  char const* localhost = "::1";
 
-  in6_addr addr = {};
-  ret = inet_pton( AF_INET6, localhost, &addr );
+  sockaddr_in6 addr = {};
+  addr.sin6_port = htons( port );
+  addr.sin6_family = AF_INET6;
+  addr.sin6_flowinfo = 0;
+  addr.sin6_scope_id = 0;
+
+  ret = inet_pton( AF_INET6, ipv6_addr, &addr.sin6_addr );
+
   if ( ret == 0 ) {
     throw "invalid network address was used";
   }
@@ -22,6 +27,12 @@ get_localhost() {
   }
 
   return addr;
+}
+
+auto
+get_localhost( std::uint16_t port ) {
+  char const* localhost = "::1";
+  return make_sockaddr_ipv6( localhost, port );
 }
 
 static int num_runs = 0;
@@ -35,9 +46,9 @@ TEST_CASE( "ipv6 sanity check" ) {
     auto mstream = co_await acceptor.async_accept();
     auto& stream = mstream.value();
 
-    auto rx = stream.async_recv( 0 );
+    auto rx = stream.get_receiver( 0 );
 
-    auto mbuf = co_await rx;
+    auto mbuf = co_await rx.async_recv();
     auto& buf = mbuf.value();
 
     auto octets = buf.readable_bytes();
@@ -45,7 +56,7 @@ TEST_CASE( "ipv6 sanity check" ) {
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
 
-    auto n_result = co_await stream.async_write( octets.data(), octets.size() );
+    auto n_result = co_await stream.async_send( octets );
 
     CHECK( n_result.value() == octets.size() );
 
@@ -53,23 +64,24 @@ TEST_CASE( "ipv6 sanity check" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex, in6_addr ipv6_addr,
-                    std::uint16_t port ) -> fiona::task<void> {
-    auto mclient =
-        co_await fiona::tcp::client::async_connect( ex, ipv6_addr, port );
+  auto client = []( fiona::executor ex,
+                    sockaddr_in6 ipv6_addr ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+    fiona::timer timer( ex );
 
-    CHECK( mclient.has_value() );
+    auto mok = co_await client.async_connect( &ipv6_addr );
 
-    auto& client = mclient.value();
+    CHECK( mok.has_value() );
 
-    co_await fiona::sleep_for( ex, std::chrono::seconds( 1 ) );
+    co_await timer.async_wait( 1s );
 
-    char const msg[] = "hello, world!";
-    auto result = co_await client.async_write( msg, std::size( msg ) - 1 );
-    CHECK( result.value() == std::size( msg ) - 1 );
+    auto const msg = std::string_view( "hello, world!" );
+    auto result = co_await client.async_send( msg );
+    CHECK( result.value() == msg.size() );
 
-    auto rx = client.async_recv( 0 );
-    auto mbuf = co_await rx;
+    auto rx = client.get_receiver( 0 );
+
+    auto mbuf = co_await rx.async_recv();
 
     CHECK( mbuf.has_value() );
 
@@ -91,13 +103,14 @@ TEST_CASE( "ipv6 sanity check" ) {
 
   auto ex = ioc.get_executor();
 
-  auto ipv6_addr = get_localhost();
-  fiona::tcp::acceptor acceptor( ex, ipv6_addr, 0 );
+  auto server_addr = get_localhost( 0 );
+  fiona::tcp::acceptor acceptor( ex, &server_addr );
 
   auto port = acceptor.port();
 
+  server_addr = get_localhost( port );
   ioc.post( server( ex, std::move( acceptor ) ) );
-  ioc.post( client( ex, ipv6_addr, port ) );
+  ioc.post( client( ex, server_addr ) );
 
   ioc.run();
   CHECK( num_runs == 2 );

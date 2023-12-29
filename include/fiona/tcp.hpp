@@ -29,6 +29,8 @@ struct __kernel_timespec;
 struct in6_addr;
 struct in_addr;
 struct sockaddr;
+struct sockaddr_in;
+struct sockaddr_in6;
 
 // clang-format on
 
@@ -75,6 +77,12 @@ public:
 
   acceptor( acceptor&& ) = default;
   acceptor& operator=( acceptor&& ) = default;
+
+  acceptor( executor ex, sockaddr const* addr );
+  acceptor( executor ex, sockaddr_in const* addr )
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
+  acceptor( executor ex, sockaddr_in6 const* addr )
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
 
   acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port );
   acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port,
@@ -255,9 +263,11 @@ public:
 
   bool operator==( client const& ) const = default;
 
+  connect_awaitable async_connect( sockaddr const* addr );
+  connect_awaitable async_connect( sockaddr_in const* addr );
+  connect_awaitable async_connect( sockaddr_in6 const* addr );
   connect_awaitable async_connect( in_addr const ipv4_addr,
                                    std::uint16_t const port );
-  connect_awaitable async_connect( sockaddr const* addr );
 
   template <class Rep, class Period>
   void timeout( std::chrono::duration<Rep, Period> const d ) {

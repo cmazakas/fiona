@@ -89,9 +89,11 @@ struct acceptor_impl {
   int count_ = 0;
   bool is_ipv4_ = true;
 
-  acceptor_impl( executor ex, sockaddr const* addr, socklen_t const addrlen,
-                 int const backlog )
+  acceptor_impl( executor ex, sockaddr const* addr, int const backlog )
       : ex_{ ex } {
+    auto const addrlen = addr->sa_family == AF_INET6 ? sizeof( sockaddr_in6 )
+                                                     : sizeof( sockaddr_in );
+
     auto const is_ipv4 = ( addr->sa_family == AF_INET );
     BOOST_ASSERT( is_ipv4 || addr->sa_family == AF_INET6 );
 
@@ -133,11 +135,11 @@ struct acceptor_impl {
 
   acceptor_impl( executor ex, sockaddr_in const addr, int const backlog )
       : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ),
-                       sizeof( addr ), backlog ) {}
+                       backlog ) {}
 
   acceptor_impl( executor ex, sockaddr_in6 const addr, int const backlog )
       : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ),
-                       sizeof( addr ), backlog ) {}
+                       backlog ) {}
 
 public:
   acceptor_impl( executor ex, in_addr ipv4_addr, std::uint16_t const port,
@@ -569,6 +571,9 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
 } // namespace detail
 
 inline constexpr int const static default_backlog = 256;
+
+acceptor::acceptor( executor ex, sockaddr const* addr )
+    : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) } {}
 
 acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port )
     : acceptor( ex, ipv4_addr, port, default_backlog ) {}
@@ -1090,6 +1095,15 @@ client::async_close() {
 stream_cancel_awaitable
 client::async_cancel() {
   return { pclient_ };
+}
+
+connect_awaitable
+client::async_connect( sockaddr_in6 const* addr ) {
+  return async_connect( reinterpret_cast<sockaddr const*>( addr ) );
+}
+connect_awaitable
+client::async_connect( sockaddr_in const* addr ) {
+  return async_connect( reinterpret_cast<sockaddr const*>( addr ) );
 }
 
 connect_awaitable
