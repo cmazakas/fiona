@@ -18,6 +18,9 @@ TEST_CASE( "recv_test - recv timeout" ) {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( server_timeout );
+    session.timeout( server_timeout );
+    session.timeout( server_timeout );
+    session.timeout( server_timeout );
 
     std::uint16_t buffer_group_id = 0;
     auto rx = session.get_receiver( buffer_group_id );
