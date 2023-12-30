@@ -92,6 +92,74 @@ TEST_CASE( "recv_test - recv timeout" ) {
   CHECK( num_runs == 2 );
 }
 
+TEST_CASE( "recv_test - recv cancel" ) {
+  num_runs = 0;
+
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto msession = co_await acceptor.async_accept();
+    auto& session = msession.value();
+    session.timeout( 5s );
+
+    std::uint16_t buffer_group_id = 0;
+
+    auto ex = session.get_executor();
+    fiona::post(
+        ex, FIONA_TASK( fiona::tcp::stream session ) {
+          auto ex = session.get_executor();
+          fiona::timer timer( ex );
+          co_await timer.async_wait( 1s );
+          co_await session.async_cancel();
+
+          ++num_runs;
+          co_return;
+        }( session ) );
+
+    auto rx = session.get_receiver( buffer_group_id );
+    {
+      auto mbuf = co_await rx.async_recv();
+      CHECK( mbuf.has_error() );
+      CHECK( mbuf.error() == std::errc::operation_canceled );
+    }
+
+    ++num_runs;
+
+    co_return;
+  };
+
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_value() );
+
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 1500ms );
+
+    co_await client.async_close();
+
+    ++num_runs;
+    co_return;
+  };
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
+
+  auto port = acceptor.port();
+
+  ex.post( server( std::move( acceptor ) ) );
+  ex.post( client( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 3 );
+}
+
 TEST_CASE( "recv_test - recv high traffic" ) {
   num_runs = 0;
 

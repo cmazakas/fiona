@@ -798,6 +798,7 @@ stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   cf.initiated_ = true;
   cf.h_ = h;
+  pstream_->cancelled_ = true;
 }
 
 result<int>
