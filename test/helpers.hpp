@@ -24,7 +24,8 @@ using namespace std::chrono_literals;
 
 #define FIONA_TASK( ... ) []( __VA_ARGS__ ) -> fiona::task<void>
 
-inline constexpr static char const* localhost_ipv4 = "127.0.0.1";
+inline constexpr char const* localhost_ipv4 = "127.0.0.1";
+inline constexpr char const* localhost_ipv6 = "::1";
 
 template <class Rep, class Period>
 struct duration_guard {

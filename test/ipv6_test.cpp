@@ -1,39 +1,9 @@
 #include "helpers.hpp"
 
 #include <fiona/io_context.hpp>
+#include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
-
-#include <arpa/inet.h>
-
-auto
-make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t port ) {
-  int ret = -1;
-
-  sockaddr_in6 addr = {};
-  addr.sin6_port = htons( port );
-  addr.sin6_family = AF_INET6;
-  addr.sin6_flowinfo = 0;
-  addr.sin6_scope_id = 0;
-
-  ret = inet_pton( AF_INET6, ipv6_addr, &addr.sin6_addr );
-
-  if ( ret == 0 ) {
-    throw "invalid network address was used";
-  }
-
-  if ( ret != 1 ) {
-    fiona::detail::throw_errno_as_error_code( errno );
-  }
-
-  return addr;
-}
-
-auto
-get_localhost( std::uint16_t port ) {
-  char const* localhost = "::1";
-  return make_sockaddr_ipv6( localhost, port );
-}
 
 static int num_runs = 0;
 
@@ -103,12 +73,12 @@ TEST_CASE( "ipv6 sanity check" ) {
 
   auto ex = ioc.get_executor();
 
-  auto server_addr = get_localhost( 0 );
+  auto server_addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
   fiona::tcp::acceptor acceptor( ex, &server_addr );
 
   auto port = acceptor.port();
 
-  server_addr = get_localhost( port );
+  server_addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, port );
   ioc.post( server( ex, std::move( acceptor ) ) );
   ioc.post( client( ex, server_addr ) );
 
