@@ -575,20 +575,6 @@ inline constexpr int const static default_backlog = 256;
 acceptor::acceptor( executor ex, sockaddr const* addr )
     : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) } {}
 
-acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port )
-    : acceptor( ex, ipv4_addr, port, default_backlog ) {}
-
-acceptor::acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port,
-                    int const backlog )
-    : pacceptor_{ new detail::acceptor_impl( ex, ipv4_addr, port, backlog ) } {}
-
-acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port )
-    : acceptor( ex, ipv6_addr, port, default_backlog ) {}
-
-acceptor::acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
-                    int const backlog )
-    : pacceptor_{ new detail::acceptor_impl( ex, ipv6_addr, port, backlog ) } {}
-
 std::uint16_t
 acceptor::port() const noexcept {
   return pacceptor_->port();
@@ -1104,16 +1090,6 @@ client::async_connect( sockaddr_in6 const* addr ) {
 connect_awaitable
 client::async_connect( sockaddr_in const* addr ) {
   return async_connect( reinterpret_cast<sockaddr const*>( addr ) );
-}
-
-connect_awaitable
-client::async_connect( in_addr const ipv4_addr, std::uint16_t const port ) {
-  sockaddr_in const addr = { .sin_family = AF_INET,
-                             .sin_port = port,
-                             .sin_addr = ipv4_addr,
-                             .sin_zero = {} };
-
-  return async_connect( reinterpret_cast<sockaddr const*>( &addr ) );
 }
 
 connect_awaitable

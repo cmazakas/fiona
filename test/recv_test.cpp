@@ -2,6 +2,7 @@
 
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
+#include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
 
@@ -52,7 +53,8 @@ TEST_CASE( "recv_test - recv timeout" ) {
                     std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
-    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
     CHECK( mok.has_value() );
 
     auto sv = std::string_view( "rawr" );
@@ -74,7 +76,8 @@ TEST_CASE( "recv_test - recv timeout" ) {
   auto ex = ioc.get_executor();
   ioc.register_buffer_sequence( 1024, 128, 0 );
 
-  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
 
   auto port = acceptor.port();
 
@@ -113,7 +116,8 @@ TEST_CASE( "recv_test - recv high traffic" ) {
                     std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
-    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
     CHECK( mok.has_value() );
 
     auto const sv = std::string_view( "rawr" );
@@ -132,7 +136,8 @@ TEST_CASE( "recv_test - recv high traffic" ) {
   auto ex = ioc.get_executor();
   ioc.register_buffer_sequence( 1024, 128, 0 );
 
-  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
 
   auto port = acceptor.port();
 
@@ -167,7 +172,8 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
 
   ioc.register_buffer_sequence( num_bufs, 64, 0 );
 
-  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
   constexpr static std::string_view const msg = "rawr";
@@ -217,7 +223,9 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
 
   ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
     fiona::tcp::client client( ex );
-    co_await client.async_connect( localhost_ipv4, htons( port ) );
+
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    co_await client.async_connect( &addr );
 
     for ( int i = 0; i < 2 * num_bufs; ++i ) {
       auto mbytes_transferred = co_await client.async_send( msg );

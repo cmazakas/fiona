@@ -2,6 +2,7 @@
 
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
+#include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
@@ -27,7 +28,8 @@ fiona_echo_bench() {
 
   auto ex = ioc.get_executor();
 
-  fiona::tcp::acceptor acceptor( ex, localhost_ipv4, 0 );
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
   auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
@@ -77,7 +79,8 @@ fiona_echo_bench() {
     fiona::tcp::client client( ex );
     // client.timeout( 5s );
 
-    auto mok = co_await client.async_connect( localhost_ipv4, htons( port ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
     (void)mok;
 
     std::size_t num_bytes = 0;

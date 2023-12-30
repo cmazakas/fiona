@@ -16,7 +16,7 @@
 
 using namespace std::chrono_literals;
 
-static in_addr const localhost_ipv4 = { .s_addr = htonl( 0x7f000001 ) };
+inline constexpr char const* localhost_ipv4 = "127.0.0.1";
 
 constexpr int num_clients = 5000;
 constexpr int num_msgs = 1000;

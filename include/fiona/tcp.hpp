@@ -26,8 +26,6 @@ namespace fiona { namespace tcp { struct receiver; } }
 namespace fiona { namespace tcp { struct recv_awaitable; } }
 
 struct __kernel_timespec;
-struct in6_addr;
-struct in_addr;
 struct sockaddr;
 struct sockaddr_in;
 struct sockaddr_in6;
@@ -83,14 +81,6 @@ public:
       : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
   acceptor( executor ex, sockaddr_in6 const* addr )
       : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
-
-  acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port );
-  acceptor( executor ex, in_addr ipv4_addr, std::uint16_t const port,
-            int const backlog );
-
-  acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port );
-  acceptor( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
-            int const backlog );
 
   bool operator==( acceptor const& ) const = default;
 
@@ -266,8 +256,6 @@ public:
   connect_awaitable async_connect( sockaddr const* addr );
   connect_awaitable async_connect( sockaddr_in const* addr );
   connect_awaitable async_connect( sockaddr_in6 const* addr );
-  connect_awaitable async_connect( in_addr const ipv4_addr,
-                                   std::uint16_t const port );
 
   template <class Rep, class Period>
   void timeout( std::chrono::duration<Rep, Period> const d ) {

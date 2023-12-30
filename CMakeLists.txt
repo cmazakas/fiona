@@ -17,6 +17,7 @@ set(fiona_headers
   include/fiona/error.hpp
   include/fiona/executor.hpp
   include/fiona/io_context.hpp
+  include/fiona/ip.hpp
   include/fiona/params.hpp
   include/fiona/task.hpp
   include/fiona/tcp.hpp
@@ -35,6 +36,7 @@ set(fiona_sources
   src/io_context.cpp
   src/time.cpp
   src/tcp.cpp
+  src/ip.cpp
 )
 
 add_library(fiona ${fiona_sources})

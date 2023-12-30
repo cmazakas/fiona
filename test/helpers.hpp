@@ -24,14 +24,7 @@ using namespace std::chrono_literals;
 
 #define FIONA_TASK( ... ) []( __VA_ARGS__ ) -> fiona::task<void>
 
-static in_addr const localhost_ipv4 = { .s_addr = htonl( 0x7f000001 ) };
-
-in_addr
-bytes_to_ipv4( std::array<unsigned char, 4> octets ) {
-  std::uint32_t ipv4_addr = 0;
-  std::memcpy( &ipv4_addr, octets.data(), sizeof( ipv4_addr ) );
-  return in_addr{ .s_addr = htonl( ipv4_addr ) };
-}
+inline constexpr static char const* localhost_ipv4 = "127.0.0.1";
 
 template <class Rep, class Period>
 struct duration_guard {
