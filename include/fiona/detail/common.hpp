@@ -16,6 +16,7 @@
 #include <mutex>                                   // for mutex
 #include <span>                                    // for span
 #include <vector>                                  // for vector
+#include <list>
 
 #include <liburing.h>                              // for io_uring
 
@@ -40,12 +41,13 @@ public:
   buf_ring( buf_ring const& ) = delete;
   buf_ring& operator=( buf_ring const& ) = delete;
 
+  buf_ring( buf_ring&& rhs ) = delete;
+  buf_ring& operator=( buf_ring&& rhs ) = delete;
+
   buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
             std::uint16_t bgid );
 
   ~buf_ring();
-  buf_ring( buf_ring&& rhs ) noexcept;
-  buf_ring& operator=( buf_ring&& rhs ) noexcept;
 
   std::span<unsigned char> get_buffer_view( std::size_t buffer_id ) noexcept {
     return { bufs_[buffer_id] };
@@ -99,7 +101,7 @@ struct io_context_frame {
   std::mutex m_;
   task_map_type tasks_;
   io_context_params params_;
-  std::vector<buf_ring> buf_rings_;
+  std::list<buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
   std::deque<std::coroutine_handle<>> run_queue_;
   std::exception_ptr exception_ptr_;

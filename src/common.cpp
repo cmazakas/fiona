@@ -83,36 +83,5 @@ buf_ring::~buf_ring() {
   }
 }
 
-buf_ring::buf_ring( buf_ring&& rhs ) noexcept {
-  bufs_ = std::move( rhs.bufs_ );
-  ring_ = rhs.ring_;
-  buf_ring_ = rhs.buf_ring_;
-  bgid_ = rhs.bgid_;
-
-  rhs.ring_ = nullptr;
-  rhs.buf_ring_ = nullptr;
-  rhs.bgid_ = 0;
-}
-
-buf_ring&
-buf_ring::operator=( buf_ring&& rhs ) noexcept {
-  if ( this != &rhs ) {
-    if ( buf_ring_ ) {
-      BOOST_ASSERT( ring_ );
-      io_uring_unregister_buf_ring( ring_, bgid_ );
-      free( buf_ring_ );
-    }
-
-    bufs_ = std::move( rhs.bufs_ );
-    ring_ = rhs.ring_;
-    buf_ring_ = rhs.buf_ring_;
-    bgid_ = rhs.bgid_;
-
-    rhs.ring_ = nullptr;
-    rhs.buf_ring_ = nullptr;
-    rhs.bgid_ = 0;
-  }
-  return *this;
-}
 } // namespace detail
 } // namespace fiona
