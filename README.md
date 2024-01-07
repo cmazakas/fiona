@@ -63,12 +63,12 @@ build_and_test() {
   if [ -z "$3" ]
   then
     build_dir=__ci_build__/${cc}/${build_type}/nosan
-    cxx_flags_init="-Wall -Wextra -pedantic"
+    cxx_flags_init="-Wall -Wextra -pedantic -Werror"
   else
     local sanitizers
     sanitizers=$(clean "$3")
     build_dir=__ci_build__/${cc}/${build_type}/${sanitizers}
-    cxx_flags_init="-Wall -Wextra -pedantic -fsanitize=$3"
+    cxx_flags_init="-Wall -Wextra -pedantic -Werror -fsanitize=$3"
   fi
 
   mkdir -p "$build_dir"
@@ -76,7 +76,7 @@ build_and_test() {
   cmake \
     --no-warn-unused-cli \
     -DBUILD_TESTING=ON \
-    -DCMAKE_TOOLCHAIN_FILE=/home/exbigboss/cpp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+    -DFIONA_BUILD_TESTING=ON \
     -DCMAKE_PREFIX_PATH=/home/exbigboss/cpp/__install__ \
     -DCMAKE_BUILD_TYPE="$2" \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
@@ -84,6 +84,8 @@ build_and_test() {
     -DCMAKE_CXX_STANDARD=20 \
     -DCMAKE_CXX_EXTENSIONS=OFF \
     -DCMAKE_CXX_FLAGS_INIT="$cxx_flags_init" \
+    -DCMAKE_CXX_VISIBILITY_PRESET=hidden \
+    -DCMAKE_TOOLCHAIN_FILE=/home/exbigboss/cpp/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -S/home/exbigboss/cpp/fiona \
     -B/home/exbigboss/cpp/fiona/"$build_dir" \
     -G Ninja
