@@ -17,9 +17,9 @@ fiona_echo_bench() {
   constexpr std::string_view msg = "hello, world!";
 
   fiona::io_context_params params;
-  params.num_files = 4 * 4096;
-  params.sq_entries = 4 * 4096;
-  params.cq_entries = 8 * 4096;
+  params.num_files = 16 * 1024;
+  params.sq_entries = 1024;
+  params.cq_entries = 16 * 1024;
   // params.sq_entries = 2 * 4096;
   // params.cq_entries = 2 * 4096;
 
