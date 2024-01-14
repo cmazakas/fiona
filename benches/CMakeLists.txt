@@ -11,3 +11,12 @@ target_link_libraries(
     Boost::headers
     Catch2::Catch2 Catch2::Catch2WithMain
 )
+
+add_executable(timer timer/common.hpp timer/timer.cpp timer/asio.cpp timer/fiona.cpp)
+target_link_libraries(
+  timer
+  PRIVATE
+    fiona
+    Boost::headers
+    Catch2::Catch2 Catch2::Catch2WithMain
+)
