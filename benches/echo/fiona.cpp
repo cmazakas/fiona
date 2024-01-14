@@ -50,8 +50,7 @@ fiona_echo_bench() {
 
       auto num_written = co_await stream.async_send( octets );
 
-      REQUIRE( static_cast<std::size_t>( num_written.value() ) ==
-               octets.size() );
+      REQUIRE( num_written.value() == octets.size() );
       num_bytes += octets.size();
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
@@ -94,8 +93,7 @@ fiona_echo_bench() {
       auto borrowed_buf = co_await rx.async_recv();
 
       auto octets = borrowed_buf.value().readable_bytes();
-      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() );
+      auto m = borrowed_buf.value().as_str();
 
       REQUIRE( octets.size() == result.value() );
       REQUIRE( m == msg );
