@@ -1,25 +1,22 @@
 #ifndef FIONA_DNS_HPP
 #define FIONA_DNS_HPP
 
-#include <fiona/executor.hpp>
+#include <fiona/error.hpp>         // for result
+#include <fiona/executor.hpp>      // for executor
 
-#include <boost/core/exchange.hpp>
+#include <fiona/detail/config.hpp> // for FIONA_DECL
 
-#include <coroutine>
-#include <memory>
-#include <mutex>
-#include <thread>
+#include <coroutine>               // for coroutine_handle
+#include <memory>                  // for shared_ptr
 
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <sys/types.h>
+namespace fiona {
+struct dns_frame;
+} // namespace fiona
+struct addrinfo;
 
 namespace fiona {
 
-struct dns_frame;
-
-struct dns_entry_list {
+struct FIONA_DECL dns_entry_list {
 private:
   addrinfo* head_ = nullptr;
 
@@ -41,7 +38,7 @@ public:
   addrinfo const* data() const noexcept;
 };
 
-struct dns_awaitable {
+struct FIONA_DECL dns_awaitable {
 private:
   executor ex_;
   std::shared_ptr<dns_frame> pframe_;
@@ -58,7 +55,7 @@ public:
   result<dns_entry_list> await_resume();
 };
 
-struct dns_resolver {
+struct FIONA_DECL dns_resolver {
 private:
   fiona::executor ex_;
   std::shared_ptr<dns_frame> pframe_ = nullptr;

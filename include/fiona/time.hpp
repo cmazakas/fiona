@@ -1,24 +1,25 @@
 #ifndef FIONA_TIME_HPP
 #define FIONA_TIME_HPP
 
-#include <fiona/error.hpp>      // for result
-#include <fiona/io_context.hpp> // for executor
+#include <fiona/error.hpp>                   // for result
+#include <fiona/executor.hpp>                // for executor
 
-#include <fiona/detail/time.hpp> // for duration_to_timespec
+#include <fiona/detail/config.hpp>           // for FIONA_DECL
+#include <fiona/detail/time.hpp>             // for duration_to_timespec
 
 #include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
 
-#include <chrono>    // for duration
-#include <coroutine> // for coroutine_handle
+#include <chrono>                            // for duration
+#include <coroutine>                         // for coroutine_handle
 
 namespace fiona {
 namespace detail {
 struct timer_impl;
 
-void
+void FIONA_DECL
 intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
 
-void
+void FIONA_DECL
 intrusive_ptr_release( timer_impl* ptimer ) noexcept;
 } // namespace detail
 } // namespace fiona
@@ -27,14 +28,13 @@ struct __kernel_timespec;
 
 namespace fiona {
 
-struct timer_awaitable {
+struct FIONA_DECL timer_awaitable {
 private:
   friend struct timer;
 
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
-  timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer,
-                   __kernel_timespec ts );
+  timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts );
 
 public:
   ~timer_awaitable();
@@ -44,7 +44,7 @@ public:
   result<void> await_resume();
 };
 
-struct timer_cancel_awaitable {
+struct FIONA_DECL timer_cancel_awaitable {
 private:
   friend struct timer;
 
@@ -60,7 +60,7 @@ public:
   result<void> await_resume();
 };
 
-struct timer {
+struct FIONA_DECL timer {
 private:
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 

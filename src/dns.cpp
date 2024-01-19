@@ -1,6 +1,14 @@
 #include <fiona/dns.hpp>
 
-#include <pthread.h>
+#include <fiona/error.hpp>         // for error_code, result
+#include <fiona/executor.hpp>      // for executor, waker
+
+#include <boost/core/exchange.hpp> // for exchange
+
+#include <mutex>                   // for lock_guard, mutex
+#include <thread>                  // for jthread
+
+#include <netdb.h>                 // for addrinfo (ptr only), freeaddrinfo, getaddrinfo
 
 namespace fiona {
 
@@ -16,8 +24,7 @@ struct dns_frame {
 
 dns_entry_list::dns_entry_list( addrinfo* head ) : head_{ head } {}
 
-dns_entry_list::dns_entry_list( dns_entry_list&& rhs ) noexcept
-    : head_{ boost::exchange( rhs.head_, nullptr ) } {}
+dns_entry_list::dns_entry_list( dns_entry_list&& rhs ) noexcept : head_{ boost::exchange( rhs.head_, nullptr ) } {}
 
 dns_entry_list&
 dns_entry_list::operator=( dns_entry_list&& rhs ) noexcept {
@@ -38,8 +45,7 @@ dns_entry_list::data() const noexcept {
   return head_;
 }
 
-dns_awaitable::dns_awaitable( executor ex, std::shared_ptr<dns_frame> pframe )
-    : ex_{ ex }, pframe_{ pframe } {}
+dns_awaitable::dns_awaitable( executor ex, std::shared_ptr<dns_frame> pframe ) : ex_{ ex }, pframe_{ pframe } {}
 
 bool
 dns_awaitable::await_ready() const {
@@ -54,8 +60,7 @@ dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
     int res = -1;
 
     addrinfo* addrlist = nullptr;
-    res = getaddrinfo( pframe->node_, pframe->service_, pframe->hints_,
-                       &addrlist );
+    res = getaddrinfo( pframe->node_, pframe->service_, pframe->hints_, &addrlist );
 
     {
       std::lock_guard guard{ pframe->m_ };
@@ -79,8 +84,7 @@ dns_awaitable::await_resume() {
   return { dns_entry_list( frame.addrlist_ ) };
 }
 
-dns_resolver::dns_resolver( fiona::executor ex )
-    : ex_{ ex }, pframe_{ new dns_frame() } {}
+dns_resolver::dns_resolver( fiona::executor ex ) : ex_{ ex }, pframe_{ new dns_frame() } {}
 
 dns_awaitable
 dns_resolver::async_resolve( char const* node, char const* service ) {

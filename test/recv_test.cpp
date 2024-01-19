@@ -52,8 +52,7 @@ TEST_CASE( "recv_test - recv timeout" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -126,8 +125,7 @@ TEST_CASE( "recv_test - recv cancel" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -163,8 +161,7 @@ TEST_CASE( "recv_test - recv cancel" ) {
 TEST_CASE( "recv_test - recv high traffic" ) {
   num_runs = 0;
 
-  auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor /* ex */ ) -> fiona::task<void> {
+  auto server = []( fiona::tcp::acceptor acceptor, fiona::executor /* ex */ ) -> fiona::task<void> {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( std::chrono::seconds( 1 ) );
@@ -183,8 +180,7 @@ TEST_CASE( "recv_test - recv high traffic" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -279,8 +275,7 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
       for ( int i = 0; i < num_bufs; ++i ) {
         auto mbuf = co_await receiver.async_recv();
         if ( mbuf.has_value() ) {
-          CHECK( mbuf.value().readable_bytes().size() ==
-                 num_bufs * msg.size() );
+          CHECK( mbuf.value().readable_bytes().size() == num_bufs * msg.size() );
           bufs.push_back( std::move( mbuf.value() ) );
         } else {
           CHECK( mbuf.error() == std::errc::timed_out );

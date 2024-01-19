@@ -4,3 +4,6 @@ toolchain.cmake
 *.sh
 __ci_build__/
 vcpkg-configuration.json
+.cache
+compile_commands.json
+.clangd

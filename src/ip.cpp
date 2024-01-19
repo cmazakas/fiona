@@ -1,13 +1,17 @@
 #include <fiona/ip.hpp>
 
-#include <fiona/error.hpp>
+#include <fiona/error.hpp>         // for throw_errno_as_error_code
 
-#include <arpa/inet.h>
+#include <fiona/detail/config.hpp> // for FIONA_DECL
+
+#include <arpa/inet.h>             // for htons, inet_pton
+#include <errno.h>                 // for errno
+#include <sys/socket.h>            // for AF_INET, AF_INET6
 
 namespace fiona {
 namespace ip {
 
-sockaddr_in
+sockaddr_in FIONA_DECL
 make_sockaddr_ipv4( char const* ipv4_addr, std::uint16_t const port ) {
   int ret = -1;
 
@@ -28,7 +32,7 @@ make_sockaddr_ipv4( char const* ipv4_addr, std::uint16_t const port ) {
   return addr;
 }
 
-sockaddr_in6
+sockaddr_in6 FIONA_DECL
 make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port ) {
   int ret = -1;
 

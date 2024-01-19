@@ -1,34 +1,34 @@
 #ifndef FIONA_DETAIL_COMMON_HPP
 #define FIONA_DETAIL_COMMON_HPP
 
-// clang-format off
-#include <fiona/params.hpp>                        // for io_context_params
+#include <fiona/params.hpp> // for io_context_params
 
-#include <boost/container_hash/hash.hpp>           // for hash
-#include <boost/unordered/unordered_flat_map.hpp>  // for unordered_flat_map
-#include <boost/unordered/unordered_flat_set.hpp>  // for unordered_flat_set
+#include <fiona/detail/config.hpp>
 
-#include <coroutine>                               // for coroutine_handle
-#include <cstdint>                                 // for uint16_t
-#include <cstring>                                 // for size_t
-#include <deque>                                   // for deque
-#include <exception>                               // for exception_ptr
-#include <mutex>                                   // for mutex
-#include <span>                                    // for span
-#include <vector>                                  // for vector
+#include <boost/container_hash/hash.hpp>          // for hash
+#include <boost/unordered/unordered_flat_map.hpp> // for unordered_flat_map
+#include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
+
+#include <coroutine> // for coroutine_handle
+#include <cstdint>   // for uint16_t
+#include <cstring>   // for size_t
+#include <deque>     // for deque
+#include <exception> // for exception_ptr
 #include <list>
+#include <mutex>  // for mutex
+#include <span>   // for span
+#include <vector> // for vector
 
-#include <liburing.h>                              // for io_uring
+#include <liburing.h> // for io_uring
 
 struct io_uring_buf_ring;
-// clang-format on
 
 namespace fiona {
 namespace detail {
 
 using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
 
-struct buf_ring {
+struct FIONA_DECL buf_ring {
 private:
   buffer_sequence_type bufs_;
   io_uring* ring_ = nullptr;
@@ -44,8 +44,9 @@ public:
   buf_ring( buf_ring&& rhs ) = delete;
   buf_ring& operator=( buf_ring&& rhs ) = delete;
 
-  buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
-            std::uint16_t bgid );
+  buf_ring(
+      io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
+      std::uint16_t bgid );
 
   ~buf_ring();
 
@@ -75,20 +76,21 @@ struct key_equal {
   using is_transparent = void;
 
   template <class Promise1, class Promise2>
-  bool operator()( std::coroutine_handle<Promise1> const h1,
-                   std::coroutine_handle<Promise2> const h2 ) const noexcept {
+  bool operator()(
+      std::coroutine_handle<Promise1> const h1,
+      std::coroutine_handle<Promise2> const h2 ) const noexcept {
     return h1.address() == h2.address();
   }
 
   template <class Promise>
-  bool operator()( std::coroutine_handle<Promise> const h,
-                   void* p ) const noexcept {
+  bool
+  operator()( std::coroutine_handle<Promise> const h, void* p ) const noexcept {
     return h.address() == p;
   }
 
   template <class Promise>
-  bool operator()( void* p,
-                   std::coroutine_handle<Promise> const h ) const noexcept {
+  bool
+  operator()( void* p, std::coroutine_handle<Promise> const h ) const noexcept {
     return h.address() == p;
   }
 };
@@ -96,7 +98,7 @@ struct key_equal {
 using task_map_type =
     boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
 
-struct io_context_frame {
+struct FIONA_DECL io_context_frame {
   io_uring io_ring_;
   std::mutex m_;
   task_map_type tasks_;

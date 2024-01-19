@@ -3,3 +3,10 @@ PointerAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
 SpacesInParentheses: true
 LambdaBodyIndentation: OuterScope
+ColumnLimit: 120
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: true
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 2

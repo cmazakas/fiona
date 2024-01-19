@@ -1,38 +1,30 @@
-// clang-format off
-#include <fiona/error.hpp>                         // for throw_errno_as_error_code
-#include <fiona/executor.hpp>                      // for executor, executor_access_policy
-#include <fiona/io_context.hpp>                    // for io_context
-#include <fiona/detail/get_sqe.hpp>                // for reserve_sqes
-#include <fiona/params.hpp>                        // for io_context_params
-#include <fiona/task.hpp>                          // for task
+#include <fiona/io_context.hpp>
 
-#include <fiona/detail/awaitable_base.hpp>         // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
-#include <fiona/detail/common.hpp>                 // for buf_ring, io_context_frame, task_map_type
+#include <fiona/detail/awaitable_base.hpp>        // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
+#include <fiona/detail/common.hpp>                // for io_context_frame, buf_ring, task_map_type
+#include <fiona/detail/get_sqe.hpp>               // for reserve_sqes, submit_ring
+#include <fiona/error.hpp>                        // for throw_errno_as_error_code
+#include <fiona/executor.hpp>                     // for executor, executor_access_policy
+#include <fiona/params.hpp>                       // for io_context_params
+#include <fiona/task.hpp>                         // for task
 
-#include <boost/assert.hpp>                        // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp>           // for hash
-#include <boost/smart_ptr/intrusive_ptr.hpp>       // for intrusive_ptr
-#include <boost/unordered/detail/foa/table.hpp>    // for operator!=, table_iterator
-#include <boost/unordered/unordered_flat_set.hpp>  // for unordered_flat_set
+#include <boost/assert.hpp>                       // for BOOST_ASSERT
+#include <boost/container_hash/hash.hpp>          // for hash
+#include <boost/smart_ptr/intrusive_ptr.hpp>      // for intrusive_ptr
+#include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
-#include <algorithm>                               // for copy
-#include <coroutine>                               // for coroutine_handle
-#include <cstdint>                                 // for uint32_t, uintptr_t, uint16_t
-#include <cstring>                                 // for size_t, memcpy
-#include <deque>                                   // for deque
-#include <exception>                               // for rethrow_exception, exception_ptr
-#include <memory>                                  // for shared_ptr, __shared_ptr_access
-#include <new>                                     // for bad_alloc
-#include <utility>                                 // for move
-#include <vector>                                  // for vector
+#include <coroutine>                              // for coroutine_handle
+#include <cstring>                                // for memcpy, size_t
+#include <deque>                                  // for deque
+#include <exception>                              // for rethrow_exception, exception_ptr
+#include <memory>                                 // for shared_ptr, __shared_ptr_access
+#include <utility>                                // for move
+#include <vector>                                 // for vector
 
-#include <errno.h>                                 // for errno
-#include <liburing.h>                              // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
-#include <mm_malloc.h>                             // for posix_memalign
-#include <stdlib.h>                                // for free
-#include <unistd.h>                                // for close, pipe, sysconf, _SC_PAGESIZE
-#include <liburing/io_uring.h>                     // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
-// clang-format on
+#include <errno.h>                                // for errno
+#include <liburing.h>                             // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
+#include <liburing/io_uring.h>                    // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
+#include <unistd.h>                               // for close, pipe
 
 namespace {
 
@@ -95,9 +87,7 @@ struct pipe_awaitable {
 
   boost::intrusive_ptr<frame> p_;
 
-  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) {
-    p_->init();
-  }
+  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) { p_->init(); }
 
   ~pipe_awaitable() { cancel(); }
 
@@ -116,8 +106,7 @@ struct cqe_guard {
   io_uring* ring;
   io_uring_cqe* cqe;
 
-  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ )
-      : ring{ ring_ }, cqe{ cqe_ } {}
+  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ ) : ring{ ring_ }, cqe{ cqe_ } {}
   ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
 };
 
@@ -159,8 +148,7 @@ struct guard {
 
       blacklist.insert( p );
 
-      auto q = boost::intrusive_ptr(
-          static_cast<fiona::detail::awaitable_base*>( p ), false );
+      auto q = boost::intrusive_ptr( static_cast<fiona::detail::awaitable_base*>( p ), false );
       (void)q;
     }
   }
@@ -210,8 +198,7 @@ io_context::run() {
       return;
     }
 
-    auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ),
-                                   false );
+    auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ), false );
     BOOST_ASSERT( q->use_count() >= 1 );
 
     q->await_process_cqe( cqe );
@@ -228,8 +215,7 @@ io_context::run() {
   guard g{ tasks, ring };
 
   {
-    auto pipe_awaiter =
-        pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
+    auto pipe_awaiter = pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
 
     while ( !tasks.empty() ) {
       if ( pframe_->exception_ptr_ ) {
@@ -286,8 +272,7 @@ io_context::run() {
 
 namespace detail {
 
-io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
-    : params_( io_ctx_params ) {
+io_context_frame::io_context_frame( io_context_params const& io_ctx_params ) : params_( io_ctx_params ) {
 
   int ret = -1;
   auto ring = &io_ring_;

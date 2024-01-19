@@ -1,11 +1,19 @@
-#include "helpers.hpp"
+#include "helpers.hpp"               // for FIONA_TASK
 
-#include <fiona/dns.hpp>
-#include <fiona/executor.hpp>
-#include <fiona/io_context.hpp>
-#include <fiona/tcp.hpp>
+#include <fiona/borrowed_buffer.hpp> // for borrowed_buffer
+#include <fiona/dns.hpp>             // for dns_entry_list, dns_awaitable, dns_resolver
+#include <fiona/error.hpp>           // for result, error_code
+#include <fiona/executor.hpp>        // for executor
+#include <fiona/io_context.hpp>      // for io_context
+#include <fiona/tcp.hpp>             // for client, connect_awaitable, recv_awaitable, send_awaitable, stream_cl...
 
-#include <arpa/inet.h>
+#include <cstddef>                   // for size_t
+#include <iostream>                  // for char_traits, basic_ostream, endl, cout
+#include <span>                      // for span
+
+#include <netdb.h>                   // for addrinfo, EAI_NONAME
+#include <string_view>               // for operator<<, string_view
+#include <sys/socket.h>              // for AF_INET, AF_INET6
 
 static int num_runs = 0;
 
@@ -17,8 +25,7 @@ TEST_CASE( "dns_test - fetching the list of remote IP addresses" ) {
   ioc.post( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
-    auto mentrylist =
-        co_await resolver.async_resolve( "www.bing.com", "https" );
+    auto mentrylist = co_await resolver.async_resolve( "www.bing.com", "https" );
 
     CHECK( mentrylist.has_value() );
 
@@ -49,8 +56,7 @@ TEST_CASE( "dns_test - fetching a non-existent entry" ) {
   ioc.post( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
-    auto mentrylist =
-        co_await resolver.async_resolve( "www.lmaobro.rawr", "https" );
+    auto mentrylist = co_await resolver.async_resolve( "www.lmaobro.rawr", "https" );
 
     CHECK( mentrylist.has_error() );
     CHECK( mentrylist.error().value() == EAI_NONAME );
@@ -71,8 +77,7 @@ TEST_CASE( "dns_test - connecting a client" ) {
   ioc.post( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
-    auto mentrylist =
-        co_await resolver.async_resolve( "www.google.com", "http" );
+    auto mentrylist = co_await resolver.async_resolve( "www.google.com", "http" );
 
     CHECK( mentrylist.has_value() );
 

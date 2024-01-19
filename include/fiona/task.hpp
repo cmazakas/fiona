@@ -3,7 +3,6 @@
 
 #include <coroutine> // for coroutine_handle, suspend_always
 #include <exception> // for exception_ptr, rethrow_exception, curren...
-#include <new>       // for operator new
 #include <utility>   // for addressof, move, forward
 
 #include <boost/assert.hpp> // for BOOST_ASSERT

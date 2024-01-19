@@ -57,6 +57,11 @@ target_sources(
   FILES ${fiona_headers}
 )
 
+target_compile_definitions(fiona PRIVATE FIONA_SOURCE)
+if (BUILD_SHARED_LIBS)
+  target_compile_definitions(fiona PRIVATE FIONA_DYN_LINK)
+endif()
+
 add_library(Fiona::fiona ALIAS fiona)
 
 option(FIONA_BUILD_TESTING "" OFF)

@@ -1,23 +1,24 @@
-#include <fiona/error.hpp> // for error_code, throw_errno...
-#include <fiona/executor.hpp>
-// #include <fiona/io_context.hpp> // for executor, executor_acce...
-#include <fiona/time.hpp> // for timer_cancel_awaitable
+#include <fiona/time.hpp>
 
-#include <fiona/detail/awaitable_base.hpp> // for awaitable_base
-#include <fiona/detail/get_sqe.hpp>        // for get_sqe
+#include <fiona/error.hpp>                   // for error_code, throw_errno_as_error_code, result
+#include <fiona/executor.hpp>                // for executor, executor_access_policy
+
+#include <fiona/detail/awaitable_base.hpp>   // for awaitable_base
+#include <fiona/detail/config.hpp>           // for FIONA_DECL
+#include <fiona/detail/get_sqe.hpp>          // for get_sqe, submit_ring
 
 #include <boost/assert.hpp>                  // for BOOST_ASSERT
-#include <boost/config/detail/suffix.hpp>    // for BOOST_NOINLINE, BOOST_N...
+#include <boost/config/detail/suffix.hpp>    // for BOOST_NOINLINE, BOOST_NORETURN
 #include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
 
-#include <coroutine>    // for coroutine_handle
-#include <system_error> // for make_error_code, errc
-#include <utility>      // for move
+#include <coroutine>                         // for coroutine_handle
+#include <system_error>                      // for make_error_code, errc
+#include <utility>                           // for move
 
-#include <errno.h>             // for EBUSY, ETIME
-#include <liburing.h>          // for io_uring_sqe_set_data
-#include <liburing/io_uring.h> // for io_uring_cqe
-#include <linux/time_types.h>  // for __kernel_timespec
+#include <errno.h>                           // for EBUSY, ETIME
+#include <liburing.h>                        // for io_uring_sqe_set_data, io_uring_prep_cancel, io_uring_prep_timeout
+#include <liburing/io_uring.h>               // for io_uring_cqe
+#include <linux/time_types.h>                // for __kernel_timespec
 
 namespace fiona {
 
@@ -92,12 +93,12 @@ public:
   timer_impl( executor ex );
 };
 
-void
+void FIONA_DECL
 intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept {
   ++ptimer->count_;
 }
 
-void
+void FIONA_DECL
 intrusive_ptr_release( timer_impl* ptimer ) noexcept {
   --ptimer->count_;
   if ( ptimer->count_ == 0 ) {
@@ -105,8 +106,7 @@ intrusive_ptr_release( timer_impl* ptimer ) noexcept {
   }
 }
 
-timer_impl::timeout_frame::timeout_frame( executor ex, timer_impl* ptimer )
-    : ex_{ ex }, ptimer_{ ptimer } {}
+timer_impl::timeout_frame::timeout_frame( executor ex, timer_impl* ptimer ) : ex_{ ex }, ptimer_{ ptimer } {}
 
 timer_impl::timeout_frame::~timeout_frame() {}
 
@@ -154,8 +154,7 @@ timer_impl::timeout_frame::use_count() const noexcept {
   return ptimer_->count_;
 }
 
-timer_impl::cancel_frame::cancel_frame( executor ex, timer_impl* ptimer )
-    : ex_{ ex }, ptimer_{ ptimer } {}
+timer_impl::cancel_frame::cancel_frame( executor ex, timer_impl* ptimer ) : ex_{ ex }, ptimer_{ ptimer } {}
 
 timer_impl::cancel_frame::~cancel_frame() {}
 
@@ -202,8 +201,7 @@ timer_impl::cancel_frame::use_count() const noexcept {
 timer_impl::timer_impl( executor ex ) : tf_{ ex, this }, cf_{ ex, this } {}
 } // namespace detail
 
-timer_awaitable::timer_awaitable(
-    boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts )
+timer_awaitable::timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts )
     : ptimer_{ ptimer } {
   ptimer_->tf_.ts_ = ts;
 }
@@ -257,9 +255,7 @@ timer_awaitable::await_resume() {
   return {};
 }
 
-timer_cancel_awaitable::timer_cancel_awaitable(
-    boost::intrusive_ptr<detail::timer_impl> ptimer )
-    : ptimer_{ ptimer } {}
+timer_cancel_awaitable::timer_cancel_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer ) : ptimer_{ ptimer } {}
 
 timer_cancel_awaitable::~timer_cancel_awaitable() {
   auto& frame = this->ptimer_->cf_;

@@ -1,21 +1,19 @@
 #ifndef FIONA_ERROR_HPP
 #define FIONA_ERROR_HPP
 
-#include <boost/assert.hpp> // for BOOST_ASSERT
+#include <boost/assert.hpp>        // for BOOST_ASSERT
 #include <boost/config.hpp>
 #include <boost/system/result.hpp> // for result
 
-#include <cstring>      // for strerror
-#include <iostream>     // for operator<<, basic_ostream:...
-#include <system_error> // for make_error_code, operator<<
+#include <cstring>                 // for strerror
+#include <iostream>                // for operator<<, basic_ostream:...
+#include <system_error>            // for make_error_code, operator<<
 
 namespace fiona {
 
 struct error_code : public std::error_code {
-  inline friend std::ostream& operator<<( std::ostream& os,
-                                          error_code const& ec ) {
-    os << static_cast<std::error_code const&>( ec ) << ":"
-       << std::strerror( ec.value() );
+  inline friend std::ostream& operator<<( std::ostream& os, error_code const& ec ) {
+    os << static_cast<std::error_code const&>( ec ) << ":" << std::strerror( ec.value() );
     return os;
   }
 
