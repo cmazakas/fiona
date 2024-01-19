@@ -1,5 +1,7 @@
 #include "common.hpp"
 
+#include <boost/config.hpp>
+
 #if defined( BOOST_GCC ) && defined( __SANITIZE_THREAD__ )
 
 #include <iostream>
