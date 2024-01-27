@@ -113,7 +113,7 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
     cert_data_source.discard_next( cert_data_source.get_bytes_read() );
     CHECK( cert_data_source.end_of_data() );
 
-    ckps_.emplace_back( std::move( cert ), std::move( pkey ) );
+    ckps_.emplace_back( cert_key_pair{ std::move( cert ), std::move( pkey ) } );
   }
 
   std::shared_ptr<Botan::Private_Key> private_key_for( const Botan::X509_Certificate& cert,
