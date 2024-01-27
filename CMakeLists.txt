@@ -9,6 +9,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(liburing 2.5 REQUIRED)
 find_package(Boost 1.83 REQUIRED)
+find_package(Botan 3.3.0 COMPONENTS tls)
 
 set(fiona_headers
 
@@ -48,6 +49,7 @@ target_link_libraries(
   PUBLIC
   liburing::liburing
   Boost::headers
+  Botan::Botan
 )
 
 target_sources(

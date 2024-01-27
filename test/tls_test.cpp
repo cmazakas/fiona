@@ -1,5 +1,11 @@
 #include "helpers.hpp"
 
+#include <botan/certstor.h>
+#include <botan/pk_keys.h>
+#include <botan/pkix_enums.h>
+#include <botan/x509cert.h>
+#include <botan/x509path.h>
+
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/ip.hpp>
@@ -35,29 +41,55 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   };
 
-  void tls_record_received(
-      uint64_t seq_no, std::span<const uint8_t> data ) override {
-    std::cout
-        << "this should be where we pass along application data (decrypted)"
-        << std::endl;
+  void tls_record_received( uint64_t seq_no, std::span<const uint8_t> data ) override {
+    std::cout << "this should be where we pass along application data (decrypted)" << std::endl;
 
     (void)seq_no;
     (void)data;
   }
 
   void tls_alert( Botan::TLS::Alert alert ) override {
-    std::cout << "this should be called when the session is terminating"
-              << std::endl;
+    std::cout << "this should be called when the session is terminating" << std::endl;
     (void)alert;
+  }
+
+  void tls_session_activated() override { std::cout << "handshake completed!!!!" << std::endl; }
+
+  void tls_session_established( const Botan::TLS::Session_Summary& /* session */ ) override {
+    std::cout << "session established!" << std::endl;
+  }
+
+  void tls_verify_cert_chain( const std::vector<Botan::X509_Certificate>& cert_chain,
+                              const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
+                              const std::vector<Botan::Certificate_Store*>& trusted_roots, Botan::Usage_Type usage,
+                              std::string_view hostname, const Botan::TLS::Policy& policy ) override {
+
+    Botan::Path_Validation_Restrictions restrictions( false, policy.minimum_signature_strength() );
+
+    Botan::Path_Validation_Result result = Botan::x509_path_validate(
+        cert_chain, restrictions, trusted_roots, hostname, usage, tls_current_timestamp(), 0ms, ocsp_responses );
+
+    CHECK( result.successful_validation() );
+    std::cout << result.result_string() << std::endl;
   }
 };
 
 struct tls_credentials_manager : public Botan::Credentials_Manager {
-  std::vector<Botan::X509_Certificate> certs_;
-  std::vector<std::shared_ptr<Botan::Private_Key>> keys_;
+  struct cert_key_pair {
+    Botan::X509_Certificate cert;
+    std::shared_ptr<Botan::Private_Key> key;
+  };
+
+  std::vector<cert_key_pair> ckps_;
+  Botan::Certificate_Store_In_Memory cert_store_;
 
   tls_credentials_manager() {
-    std::string key = "../../test/tls/botan/ca.key.pem";
+    {
+      Botan::X509_Certificate cert( "../../test/tls/botan/ca.crt.pem" );
+      cert_store_.add_certificate( cert );
+    }
+
+    std::string key = "../../test/tls/botan/server.key.pem";
     REQUIRE( std::filesystem::exists( key ) );
     Botan::DataSource_Stream data_source( key );
 
@@ -66,84 +98,76 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
 
     std::vector<Botan::X509_Certificate> certs;
 
-    std::string cert = "../../test/tls/botan/ca.crt.pem";
-    REQUIRE( std::filesystem::exists( cert ) );
+    std::string cert_file = "../../test/tls/botan/server.crt.pem";
+    REQUIRE( std::filesystem::exists( cert_file ) );
 
-    Botan::DataSource_Stream cert_data_source( cert );
-    certs.push_back( Botan::X509_Certificate( cert_data_source ) );
+    Botan::DataSource_Stream cert_data_source( cert_file );
+    Botan::X509_Certificate cert( cert_data_source );
+
+    auto constraints = cert.constraints();
+    std::cout << "Hopefully this helps: " << constraints.to_string() << std::endl;
+    // CHECK( constraints.includes_any( Botan::Key_Constraints::NonRepudiation ) );
+    // CHECK( constraints.includes_any( Botan::Key_Constraints::DigitalSignature ) );
+
     CHECK( cert_data_source.get_bytes_read() > 0 );
     cert_data_source.discard_next( cert_data_source.get_bytes_read() );
     CHECK( cert_data_source.end_of_data() );
 
-    std::cout << "rawr????" << std::endl;
-    certs_ = std::move( certs );
-    keys_.push_back( std::move( pkey ) );
+    ckps_.emplace_back( std::move( cert ), std::move( pkey ) );
   }
 
-  std::shared_ptr<Botan::Private_Key> private_key_for(
-      const Botan::X509_Certificate& cert, const std::string& /* type */,
-      const std::string& /* context */ ) override {
-    for ( auto i = 0u; i < certs_.size(); ++i ) {
-      auto const& mcert = certs_[i];
+  std::shared_ptr<Botan::Private_Key> private_key_for( const Botan::X509_Certificate& cert,
+                                                       const std::string& /* type */,
+                                                       const std::string& /* context */ ) override {
+    for ( auto const& [mcert, pkey] : ckps_ ) {
       if ( cert == mcert ) {
-        return keys_[i];
+        return pkey;
       }
     }
 
     return nullptr;
   }
 
-  std::vector<Botan::X509_Certificate> find_cert_chain(
-      const std::vector<std::string>& algos,
-      const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
-      const std::vector<Botan::X509_DN>& acceptable_cas,
-      const std::string& type, const std::string& hostname ) override {
+  std::vector<Botan::X509_Certificate>
+  find_cert_chain( const std::vector<std::string>& algos,
+                   const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
+                   const std::vector<Botan::X509_DN>& acceptable_cas, const std::string& type,
+                   const std::string& hostname ) override {
     BOTAN_UNUSED( cert_signature_schemes );
     BOTAN_UNUSED( acceptable_cas );
 
-    if ( type != "tls-server" ) {
-      throw "unsupported";
+    if ( type == "tls-server" ) {
+      for ( auto const& [cert, pkey] : ckps_ ) {
+        auto pos = std::find( algos.begin(), algos.end(), pkey->algo_name() );
+        if ( pos == algos.end() ) {
+          continue;
+        }
+
+        if ( !hostname.empty() && cert.matches_dns_name( hostname ) ) {
+          return { cert };
+        }
+      }
     }
 
-    for ( auto i = 0u; i < certs_.size(); ++i ) {
-      auto const& cert = certs_[i];
-      auto const& pkey = keys_[i];
-
-      auto pos = std::find( algos.begin(), algos.end(), pkey->algo_name() );
-      if ( pos == algos.end() ) {
-        continue;
-      }
-
-      if ( !hostname.empty() && cert.matches_dns_name( hostname ) ) {
-        return certs_;
+    if ( type == "tls-client" ) {
+      for ( const auto& dn : acceptable_cas ) {
+        for ( const auto& cred : ckps_ ) {
+          if ( dn == cred.cert.issuer_dn() ) {
+            return { cred.cert };
+          }
+        }
       }
     }
 
     return {};
+  }
 
-    // if ( type == "tls-client" ) {
-    //   for ( const auto& dn : acceptable_cas ) {
-    //     for ( const auto& cred : m_certs ) {
-    //       if ( dn == cred.certs[0].issuer_dn() ) {
-    //         return cred.certs;
-    //       }
-    //     }
-    //   }
-    // } else if ( type == "tls-server" ) {
-    //   for ( const auto& i : m_certs ) {
-    //     if ( std::find( algos.begin(), algos.end(), i.key->algo_name() ) ==
-    //          algos.end() ) {
-    //       continue;
-    //     }
-
-    //     if ( !hostname.empty() && !i.certs[0].matches_dns_name( hostname ) )
-    //     {
-    //       continue;
-    //     }
-
-    //     return i.certs;
-    //   }
-    // }
+  std::vector<Botan::Certificate_Store*> trusted_certificate_authorities( const std::string& type,
+                                                                          const std::string& context ) override {
+    BOTAN_UNUSED( type, context );
+    // return a list of certificates of CAs we trust for tls server certificates
+    // ownership of the pointers remains with Credentials_Manager
+    return { &cert_store_ };
   }
 };
 
@@ -151,14 +175,12 @@ fiona::task<void>
 server( fiona::tcp::acceptor acceptor ) {
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
-  auto psession_mgr =
-      std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
+  auto psession_mgr = std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
 
   auto pcreds_mgr = std::make_shared<tls_credentials_manager>();
   auto ptls_policy = std::make_shared<Botan::TLS::Policy const>();
 
-  Botan::TLS::Server tls_server(
-      pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng );
+  Botan::TLS::Server tls_server( pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng );
 
   CHECK( !tls_server.is_active() );
   CHECK( !tls_server.is_closed() );
@@ -170,33 +192,25 @@ server( fiona::tcp::acceptor acceptor ) {
   ex.register_buffer_sequence( 1024, 128, 0 );
 
   auto rx = stream.get_receiver( 0 );
-  while ( true ) {
+  while ( !tls_server.is_handshake_complete() ) {
     auto mbuf = co_await rx.async_recv();
     auto& buf = mbuf.value();
 
     CHECK( buf.readable_bytes().size() > 0 );
 
     std::cout << "going to feed data to server tls session" << std::endl;
-    try {
-      auto n = tls_server.received_data( buf.readable_bytes() );
-      std::cout << "we're looking for " << n << " more bytes from the client"
-                << std::endl;
+    auto n = tls_server.received_data( buf.readable_bytes() );
+    std::cout << "we're looking for " << n << " more bytes from the client" << std::endl;
 
-      if ( n == 0 ) {
-        break;
-      }
-    } catch ( ... ) {
-      std::cout << "so I am throwing here!" << std::endl;
-      throw;
+    if ( !pcallbacks->send_buf_.empty() ) {
+      co_await stream.async_send( pcallbacks->send_buf_ );
+      pcallbacks->send_buf_.clear();
     }
   }
 
-  REQUIRE( pcallbacks->send_buf_.size() > 0 );
-
-  std::cout << "server sent back its part of the handshake" << std::endl;
-  auto n = co_await stream.async_send( pcallbacks->send_buf_ );
-  REQUIRE( n.value() == pcallbacks->send_buf_.size() );
-  pcallbacks->send_buf_.clear();
+  CHECK( pcallbacks->send_buf_.empty() );
+  CHECK( tls_server.is_active() );
+  CHECK( tls_server.is_handshake_complete() );
 
   ++num_runs;
   co_return;
@@ -206,16 +220,14 @@ fiona::task<void>
 client( fiona::executor ex, std::uint16_t const port ) {
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
-  auto psession_mgr =
-      std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
+  auto psession_mgr = std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
 
-  auto pcreds_mgr = std::make_shared<Botan::Credentials_Manager>();
+  auto pcreds_mgr = std::make_shared<tls_credentials_manager>();
   auto ptls_policy = std::make_shared<Botan::TLS::Policy const>();
 
   auto server_info = Botan::TLS::Server_Information( "localhost", 0 );
 
-  Botan::TLS::Client tls_client(
-      pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng, server_info );
+  Botan::TLS::Client tls_client( pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng, server_info );
 
   CHECK( !tls_client.is_active() );
   CHECK( !tls_client.is_closed() );
@@ -225,14 +237,15 @@ client( fiona::executor ex, std::uint16_t const port ) {
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
   co_await client.async_connect( &addr );
 
-  auto n = co_await client.async_send( pcallbacks->send_buf_ );
-  CHECK( n == pcallbacks->send_buf_.size() );
+  REQUIRE( !pcallbacks->send_buf_.empty() );
+
+  co_await client.async_send( pcallbacks->send_buf_ );
   pcallbacks->send_buf_.clear();
 
   ex.register_buffer_sequence( 1024, 128, 1 );
   auto rx = client.get_receiver( 1 );
 
-  while ( true ) {
+  while ( !tls_client.is_handshake_complete() ) {
     auto mbuf = co_await rx.async_recv();
     auto& buf = mbuf.value();
 
@@ -240,12 +253,17 @@ client( fiona::executor ex, std::uint16_t const port ) {
 
     std::cout << "going to feed data to client tls session now" << std::endl;
     auto n = tls_client.received_data( data );
-    std::cout << "client read back from the server... (" << n << " bytes)"
-              << std::endl;
-    if ( n == 0 ) {
-      break;
+    std::cout << "client read back from the server... (" << n << " bytes)" << std::endl;
+
+    if ( !pcallbacks->send_buf_.empty() ) {
+      co_await client.async_send( pcallbacks->send_buf_ );
+      pcallbacks->send_buf_.clear();
     }
   }
+
+  CHECK( pcallbacks->send_buf_.empty() );
+  CHECK( tls_client.is_active() );
+  CHECK( tls_client.is_handshake_complete() );
 
   ++num_runs;
   co_return;
