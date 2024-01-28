@@ -667,8 +667,8 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
 
   fiona::io_context_params params;
   params.num_files = 1024;
-  params.sq_entries = 512;
-  params.cq_entries = 512;
+  params.sq_entries = 256;
+  params.cq_entries = 256;
 
   fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, bgid );
