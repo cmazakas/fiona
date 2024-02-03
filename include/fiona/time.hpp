@@ -28,23 +28,30 @@ struct __kernel_timespec;
 
 namespace fiona {
 
-struct FIONA_DECL timer_awaitable {
+struct timer_awaitable {
 private:
   friend struct timer;
 
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
+  FIONA_DECL
   timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts );
 
 public:
+  FIONA_DECL
   ~timer_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<void> await_resume();
 };
 
-struct FIONA_DECL timer_cancel_awaitable {
+struct timer_cancel_awaitable {
 private:
   friend struct timer;
 
@@ -53,18 +60,25 @@ private:
   timer_cancel_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer );
 
 public:
+  FIONA_DECL
   ~timer_cancel_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<void> await_resume();
 };
 
-struct FIONA_DECL timer {
+struct timer {
 private:
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
 public:
+  FIONA_DECL
   timer( executor ex );
 
   timer( timer const& ) = default;
@@ -81,8 +95,10 @@ public:
     return { ptimer_, ts };
   }
 
+  FIONA_DECL
   timer_cancel_awaitable async_cancel();
 
+  FIONA_DECL
   executor get_executor() const noexcept;
 };
 
