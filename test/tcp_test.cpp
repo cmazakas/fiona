@@ -765,7 +765,7 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
     }
   } );
 
-  ioc.post( server( ex, std::move( acceptor ), msg ) );
+  ioc.post( server( ex, acceptor, msg ) );
   try {
     ioc.run();
   } catch ( ... ) {
@@ -848,7 +848,7 @@ TEST_CASE( "tcp_test - fd reuse" ) {
 
       CHECK( n_result.value() == octets.size() );
 
-      sessions.push_back( std::move( stream ) );
+      sessions.push_back( stream );
       if ( sessions.size() >= num_files ) {
         std::shuffle( sessions.begin(), sessions.end(), g );
         sessions.clear();

@@ -49,7 +49,7 @@ namespace fiona {
 namespace tcp {
 namespace detail {
 
-void
+void FIONA_DECL
 intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
 
 void FIONA_DECL
@@ -74,7 +74,7 @@ intrusive_ptr_release( client_impl* pclient ) noexcept;
 namespace fiona {
 namespace tcp {
 
-struct FIONA_DECL acceptor {
+struct acceptor {
 private:
   boost::intrusive_ptr<detail::acceptor_impl> pacceptor_;
 
@@ -87,26 +87,35 @@ public:
   acceptor( acceptor&& ) = default;
   acceptor& operator=( acceptor&& ) = default;
 
+  FIONA_DECL
   acceptor( executor ex, sockaddr const* addr );
+
   acceptor( executor ex, sockaddr_in const* addr ) : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
   acceptor( executor ex, sockaddr_in6 const* addr ) : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
 
   bool operator==( acceptor const& ) const = default;
 
+  FIONA_DECL
   std::uint16_t port() const noexcept;
+
+  FIONA_DECL
   executor get_executor() const noexcept;
 
+  FIONA_DECL
   accept_awaitable async_accept();
 };
 
-struct FIONA_DECL stream {
+struct stream {
 private:
   friend struct accept_awaitable;
 
   boost::intrusive_ptr<detail::stream_impl> pstream_;
   stream( executor ex, int fd );
 
+  FIONA_DECL
   void timeout( __kernel_timespec ts );
+
+  FIONA_DECL
   void cancel_timer();
 
 public:
@@ -122,6 +131,7 @@ public:
 
   bool operator==( stream const& ) const = default;
 
+  FIONA_DECL
   executor get_executor() const;
 
   template <class Rep, class Period>
@@ -130,16 +140,23 @@ public:
     timeout( ts );
   }
 
+  FIONA_DECL
   stream_close_awaitable async_close();
+
+  FIONA_DECL
   stream_cancel_awaitable async_cancel();
 
+  FIONA_DECL
   send_awaitable async_send( std::string_view msg );
+
+  FIONA_DECL
   send_awaitable async_send( std::span<unsigned char const> buf );
 
+  FIONA_DECL
   receiver get_receiver( std::uint16_t buffer_group_id );
 };
 
-struct FIONA_DECL stream_close_awaitable {
+struct stream_close_awaitable {
 private:
   friend struct stream;
   friend struct client;
@@ -149,14 +166,20 @@ private:
   stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
+  FIONA_DECL
   ~stream_close_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<void> await_resume();
 };
 
-struct FIONA_DECL stream_cancel_awaitable {
+struct stream_cancel_awaitable {
 private:
   friend struct stream;
   friend struct client;
@@ -166,12 +189,17 @@ private:
   stream_cancel_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<int> await_resume();
 };
 
-struct FIONA_DECL send_awaitable {
+struct send_awaitable {
 private:
   friend struct stream;
   friend struct client;
@@ -182,14 +210,19 @@ private:
   send_awaitable( std::span<unsigned char const> buf, boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
+  FIONA_DECL
   ~send_awaitable();
 
   bool await_ready() const noexcept { return false; }
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<std::size_t> await_resume();
 };
 
-struct FIONA_DECL receiver {
+struct receiver {
 private:
   friend struct stream;
   friend struct client;
@@ -208,12 +241,14 @@ public:
   receiver( receiver&& ) = delete;
   receiver& operator=( receiver&& ) = delete;
 
+  FIONA_DECL
   ~receiver();
 
+  FIONA_DECL
   recv_awaitable async_recv();
 };
 
-struct FIONA_DECL recv_awaitable {
+struct recv_awaitable {
 private:
   friend struct receiver;
 
@@ -230,24 +265,35 @@ public:
   recv_awaitable( recv_awaitable&& ) = delete;
   recv_awaitable& operator=( recv_awaitable&& ) = delete;
 
+  FIONA_DECL
   ~recv_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<borrowed_buffer> await_resume();
 };
 
-struct FIONA_DECL client {
+struct client {
 private:
   boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
 
   client( boost::intrusive_ptr<detail::client_impl> pclient );
 
+  FIONA_DECL
   void timeout( __kernel_timespec ts );
+
+  FIONA_DECL
   void cancel_timer();
 
 public:
   client() = delete;
+
+  FIONA_DECL
   client( executor ex );
 
   client( client const& ) = default;
@@ -260,8 +306,13 @@ public:
 
   bool operator==( client const& ) const = default;
 
+  FIONA_DECL
   connect_awaitable async_connect( sockaddr const* addr );
+
+  FIONA_DECL
   connect_awaitable async_connect( sockaddr_in const* addr );
+
+  FIONA_DECL
   connect_awaitable async_connect( sockaddr_in6 const* addr );
 
   template <class Rep, class Period>
@@ -270,18 +321,26 @@ public:
     timeout( ts );
   }
 
+  FIONA_DECL
   executor get_executor() const noexcept;
 
+  FIONA_DECL
   stream_close_awaitable async_close();
+
+  FIONA_DECL
   stream_cancel_awaitable async_cancel();
 
+  FIONA_DECL
   send_awaitable async_send( std::string_view msg );
+
+  FIONA_DECL
   send_awaitable async_send( std::span<unsigned char const> buf );
 
+  FIONA_DECL
   receiver get_receiver( std::uint16_t buffer_group_id );
 };
 
-struct FIONA_DECL accept_awaitable {
+struct accept_awaitable {
 private:
   friend struct acceptor;
 
@@ -293,14 +352,21 @@ public:
   accept_awaitable() = delete;
   accept_awaitable( accept_awaitable const& ) = delete;
   accept_awaitable( accept_awaitable&& ) = delete;
+
+  FIONA_DECL
   ~accept_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<stream> await_resume();
 };
 
-struct FIONA_DECL connect_awaitable {
+struct connect_awaitable {
 private:
   friend struct client;
 
@@ -309,10 +375,16 @@ private:
   connect_awaitable( boost::intrusive_ptr<detail::client_impl> pclient );
 
 public:
+  FIONA_DECL
   ~connect_awaitable();
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<void> await_resume();
 };
 
