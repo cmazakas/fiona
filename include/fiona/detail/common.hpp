@@ -9,17 +9,17 @@
 #include <boost/unordered/unordered_flat_map.hpp> // for unordered_flat_map
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
-#include <coroutine> // for coroutine_handle
-#include <cstdint>   // for uint16_t
-#include <cstring>   // for size_t
-#include <deque>     // for deque
-#include <exception> // for exception_ptr
+#include <coroutine>                              // for coroutine_handle
+#include <cstdint>                                // for uint16_t
+#include <cstring>                                // for size_t
+#include <deque>                                  // for deque
+#include <exception>                              // for exception_ptr
 #include <list>
-#include <mutex>  // for mutex
-#include <span>   // for span
-#include <vector> // for vector
+#include <mutex>                                  // for mutex
+#include <span>                                   // for span
+#include <vector>                                 // for vector
 
-#include <liburing.h> // for io_uring
+#include <liburing.h>                             // for io_uring
 
 struct io_uring_buf_ring;
 
@@ -28,7 +28,7 @@ namespace detail {
 
 using buffer_sequence_type = std::vector<std::vector<unsigned char>>;
 
-struct FIONA_DECL buf_ring {
+struct buf_ring {
 private:
   buffer_sequence_type bufs_;
   io_uring* ring_ = nullptr;
@@ -44,15 +44,13 @@ public:
   buf_ring( buf_ring&& rhs ) = delete;
   buf_ring& operator=( buf_ring&& rhs ) = delete;
 
-  buf_ring(
-      io_uring* ring, std::size_t num_bufs, std::size_t buf_size,
-      std::uint16_t bgid );
+  FIONA_DECL
+  buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size, std::uint16_t bgid );
 
+  // TODO: this probably needs to be exported but we currently lack test coverage for this
   ~buf_ring();
 
-  std::span<unsigned char> get_buffer_view( std::size_t buffer_id ) noexcept {
-    return { bufs_[buffer_id] };
-  }
+  std::span<unsigned char> get_buffer_view( std::size_t buffer_id ) noexcept { return { bufs_[buffer_id] }; }
   io_uring_buf_ring* get() const noexcept { return buf_ring_; }
   std::size_t size() const noexcept { return bufs_.size(); }
   std::uint16_t bgid() const noexcept { return bgid_; }
@@ -76,29 +74,24 @@ struct key_equal {
   using is_transparent = void;
 
   template <class Promise1, class Promise2>
-  bool operator()(
-      std::coroutine_handle<Promise1> const h1,
-      std::coroutine_handle<Promise2> const h2 ) const noexcept {
+  bool operator()( std::coroutine_handle<Promise1> const h1, std::coroutine_handle<Promise2> const h2 ) const noexcept {
     return h1.address() == h2.address();
   }
 
   template <class Promise>
-  bool
-  operator()( std::coroutine_handle<Promise> const h, void* p ) const noexcept {
+  bool operator()( std::coroutine_handle<Promise> const h, void* p ) const noexcept {
     return h.address() == p;
   }
 
   template <class Promise>
-  bool
-  operator()( void* p, std::coroutine_handle<Promise> const h ) const noexcept {
+  bool operator()( void* p, std::coroutine_handle<Promise> const h ) const noexcept {
     return h.address() == p;
   }
 };
 
-using task_map_type =
-    boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
+using task_map_type = boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
 
-struct FIONA_DECL io_context_frame {
+struct io_context_frame {
   io_uring io_ring_;
   std::mutex m_;
   task_map_type tasks_;
@@ -109,7 +102,10 @@ struct FIONA_DECL io_context_frame {
   std::exception_ptr exception_ptr_;
   int pipefd_[2] = { -1, -1 };
 
+  FIONA_DECL
   io_context_frame( io_context_params const& io_ctx_params );
+
+  FIONA_DECL
   ~io_context_frame();
 };
 

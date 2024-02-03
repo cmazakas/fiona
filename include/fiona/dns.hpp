@@ -16,7 +16,7 @@ struct addrinfo;
 
 namespace fiona {
 
-struct FIONA_DECL dns_entry_list {
+struct dns_entry_list {
 private:
   addrinfo* head_ = nullptr;
 
@@ -33,12 +33,14 @@ public:
   dns_entry_list( dns_entry_list const& ) = delete;
   dns_entry_list& operator=( dns_entry_list const& ) = delete;
 
+  FIONA_DECL
   ~dns_entry_list();
 
+  FIONA_DECL
   addrinfo const* data() const noexcept;
 };
 
-struct FIONA_DECL dns_awaitable {
+struct dns_awaitable {
 private:
   executor ex_;
   std::shared_ptr<dns_frame> pframe_;
@@ -50,17 +52,23 @@ private:
 public:
   ~dns_awaitable() = default;
 
+  FIONA_DECL
   bool await_ready() const;
+
+  FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
+
+  FIONA_DECL
   result<dns_entry_list> await_resume();
 };
 
-struct FIONA_DECL dns_resolver {
+struct dns_resolver {
 private:
   fiona::executor ex_;
   std::shared_ptr<dns_frame> pframe_ = nullptr;
 
 public:
+  FIONA_DECL
   dns_resolver( fiona::executor ex );
 
   dns_resolver( dns_resolver&& ) = default;
@@ -71,6 +79,7 @@ public:
 
   ~dns_resolver() = default;
 
+  FIONA_DECL
   dns_awaitable async_resolve( char const* node, char const* service );
 };
 } // namespace fiona

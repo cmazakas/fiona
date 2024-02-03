@@ -17,7 +17,7 @@ struct executor;
 
 namespace fiona {
 
-struct FIONA_DECL io_context {
+struct io_context {
 private:
   std::shared_ptr<detail::io_context_frame> pframe_;
 
@@ -25,11 +25,15 @@ public:
   io_context( io_context_params const& params = {} )
       : pframe_( std::make_shared<detail::io_context_frame>( params ) ) {}
 
+  FIONA_DECL
   ~io_context();
 
+  FIONA_DECL
   executor get_executor() const noexcept;
+
   io_context_params params() const noexcept { return pframe_->params_; }
 
+  FIONA_DECL
   void post( task<void> t );
 
   void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size, std::uint16_t buffer_group_id ) {
@@ -37,6 +41,7 @@ public:
     pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size, buffer_group_id );
   }
 
+  FIONA_DECL
   void run();
 };
 
