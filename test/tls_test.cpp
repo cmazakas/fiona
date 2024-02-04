@@ -34,18 +34,24 @@
 static int num_runs = 0;
 
 struct tls_callbacks final : public Botan::TLS::Callbacks {
-  std::vector<std::uint8_t> send_buf_;
+  static_assert( std::is_same_v<std::uint8_t, unsigned char> );
 
-  void tls_emit_data( std::span<uint8_t const> data ) override {
+  std::vector<unsigned char> send_buf_;
+  std::vector<unsigned char> recv_buf_;
+
+  void tls_emit_data( std::span<std::uint8_t const> data ) override {
     std::cout << "this needs to be buffered up in a send buffer" << std::endl;
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   };
 
-  void tls_record_received( uint64_t seq_no, std::span<const uint8_t> data ) override {
+  void tls_record_received( uint64_t seq_no, std::span<std::uint8_t const> data ) override {
     std::cout << "this should be where we pass along application data (decrypted)" << std::endl;
 
     (void)seq_no;
-    (void)data;
+    std::cout << "received tls record with sequence number: " << seq_no << std::endl;
+
+    REQUIRE( !data.empty() );
+    recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
   }
 
   void tls_alert( Botan::TLS::Alert alert ) override {
@@ -80,7 +86,7 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
     std::shared_ptr<Botan::Private_Key> key;
   };
 
-  std::vector<cert_key_pair> ckps_;
+  std::vector<cert_key_pair> cert_key_pairs_;
   Botan::Certificate_Store_In_Memory cert_store_;
 
   tls_credentials_manager() {
@@ -113,13 +119,13 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
     cert_data_source.discard_next( cert_data_source.get_bytes_read() );
     CHECK( cert_data_source.end_of_data() );
 
-    ckps_.emplace_back( cert_key_pair{ std::move( cert ), std::move( pkey ) } );
+    cert_key_pairs_.emplace_back( cert_key_pair{ std::move( cert ), std::move( pkey ) } );
   }
 
   std::shared_ptr<Botan::Private_Key> private_key_for( const Botan::X509_Certificate& cert,
                                                        const std::string& /* type */,
                                                        const std::string& /* context */ ) override {
-    for ( auto const& [mcert, pkey] : ckps_ ) {
+    for ( auto const& [mcert, pkey] : cert_key_pairs_ ) {
       if ( cert == mcert ) {
         return pkey;
       }
@@ -137,7 +143,7 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
     BOTAN_UNUSED( acceptable_cas );
 
     if ( type == "tls-server" ) {
-      for ( auto const& [cert, pkey] : ckps_ ) {
+      for ( auto const& [cert, pkey] : cert_key_pairs_ ) {
         auto pos = std::find( algos.begin(), algos.end(), pkey->algo_name() );
         if ( pos == algos.end() ) {
           continue;
@@ -151,7 +157,7 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
 
     if ( type == "tls-client" ) {
       for ( const auto& dn : acceptable_cas ) {
-        for ( const auto& cred : ckps_ ) {
+        for ( const auto& cred : cert_key_pairs_ ) {
           if ( dn == cred.cert.issuer_dn() ) {
             return { cred.cert };
           }
@@ -212,6 +218,24 @@ server( fiona::tcp::acceptor acceptor ) {
   CHECK( tls_server.is_active() );
   CHECK( tls_server.is_handshake_complete() );
 
+  auto mbuf = co_await rx.async_recv();
+  tls_server.received_data( mbuf.value().readable_bytes() );
+
+  CHECK( !pcallbacks->recv_buf_.empty() );
+  auto msg =
+      std::string_view( reinterpret_cast<char const*>( pcallbacks->recv_buf_.data() ), pcallbacks->recv_buf_.size() );
+  CHECK( msg == "hello, world! encryption is great!" );
+
+  tls_server.send( "hello from the server!" );
+  CHECK( !pcallbacks->send_buf_.empty() );
+
+  std::cout << "going to send: " << pcallbacks->send_buf_.size() << " octets to the client" << std::endl;
+  auto mnbytes = co_await stream.async_send( pcallbacks->send_buf_ );
+  CHECK( mnbytes.value() == pcallbacks->send_buf_.size() );
+  pcallbacks->send_buf_.clear();
+
+  std::cout << "I should've sent back..." << std::endl;
+
   ++num_runs;
   co_return;
 }
@@ -264,6 +288,24 @@ client( fiona::executor ex, std::uint16_t const port ) {
   CHECK( pcallbacks->send_buf_.empty() );
   CHECK( tls_client.is_active() );
   CHECK( tls_client.is_handshake_complete() );
+
+  tls_client.send( std::string_view( "hello, world! encryption is great!" ) );
+  CHECK( !pcallbacks->send_buf_.empty() );
+
+  auto mnbytes = co_await client.async_send( pcallbacks->send_buf_ );
+  CHECK( mnbytes.value() == pcallbacks->send_buf_.size() );
+  pcallbacks->send_buf_.clear();
+
+  while ( pcallbacks->recv_buf_.empty() ) {
+    auto mbuf = co_await rx.async_recv();
+    std::cout << "received: " << mbuf.value().readable_bytes().size() << " octets" << std::endl;
+    tls_client.received_data( mbuf.value().readable_bytes() );
+  }
+
+  CHECK( !pcallbacks->recv_buf_.empty() );
+  auto msg =
+      std::string_view( reinterpret_cast<char const*>( pcallbacks->recv_buf_.data() ), pcallbacks->recv_buf_.size() );
+  CHECK( msg == "hello from the server!" );
 
   ++num_runs;
   co_return;
