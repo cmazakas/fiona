@@ -40,30 +40,21 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> recv_buf_;
 
   void tls_emit_data( std::span<std::uint8_t const> data ) override {
-    std::cout << "this needs to be buffered up in a send buffer" << std::endl;
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   };
 
   void tls_record_received( uint64_t seq_no, std::span<std::uint8_t const> data ) override {
-    std::cout << "this should be where we pass along application data (decrypted)" << std::endl;
-
     (void)seq_no;
-    std::cout << "received tls record with sequence number: " << seq_no << std::endl;
 
     REQUIRE( !data.empty() );
     recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_alert( Botan::TLS::Alert alert ) override {
-    std::cout << "this should be called when the session is terminating" << std::endl;
-    (void)alert;
-  }
+  void tls_alert( Botan::TLS::Alert alert ) override { (void)alert; }
 
-  void tls_session_activated() override { std::cout << "handshake completed!!!!" << std::endl; }
+  void tls_session_activated() override {}
 
-  void tls_session_established( const Botan::TLS::Session_Summary& /* session */ ) override {
-    std::cout << "session established!" << std::endl;
-  }
+  void tls_session_established( const Botan::TLS::Session_Summary& /* session */ ) override {}
 
   void tls_verify_cert_chain( const std::vector<Botan::X509_Certificate>& cert_chain,
                               const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
@@ -76,7 +67,6 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
         cert_chain, restrictions, trusted_roots, hostname, usage, tls_current_timestamp(), 0ms, ocsp_responses );
 
     CHECK( result.successful_validation() );
-    std::cout << result.result_string() << std::endl;
   }
 };
 
@@ -109,11 +99,6 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
 
     Botan::DataSource_Stream cert_data_source( cert_file );
     Botan::X509_Certificate cert( cert_data_source );
-
-    auto constraints = cert.constraints();
-    std::cout << "Hopefully this helps: " << constraints.to_string() << std::endl;
-    // CHECK( constraints.includes_any( Botan::Key_Constraints::NonRepudiation ) );
-    // CHECK( constraints.includes_any( Botan::Key_Constraints::DigitalSignature ) );
 
     CHECK( cert_data_source.get_bytes_read() > 0 );
     cert_data_source.discard_next( cert_data_source.get_bytes_read() );
@@ -204,9 +189,7 @@ server( fiona::tcp::acceptor acceptor ) {
 
     CHECK( buf.readable_bytes().size() > 0 );
 
-    std::cout << "going to feed data to server tls session" << std::endl;
-    auto n = tls_server.received_data( buf.readable_bytes() );
-    std::cout << "we're looking for " << n << " more bytes from the client" << std::endl;
+    tls_server.received_data( buf.readable_bytes() );
 
     if ( !pcallbacks->send_buf_.empty() ) {
       co_await stream.async_send( pcallbacks->send_buf_ );
@@ -229,12 +212,9 @@ server( fiona::tcp::acceptor acceptor ) {
   tls_server.send( "hello from the server!" );
   CHECK( !pcallbacks->send_buf_.empty() );
 
-  std::cout << "going to send: " << pcallbacks->send_buf_.size() << " octets to the client" << std::endl;
   auto mnbytes = co_await stream.async_send( pcallbacks->send_buf_ );
   CHECK( mnbytes.value() == pcallbacks->send_buf_.size() );
   pcallbacks->send_buf_.clear();
-
-  std::cout << "I should've sent back..." << std::endl;
 
   ++num_runs;
   co_return;
@@ -275,9 +255,7 @@ client( fiona::executor ex, std::uint16_t const port ) {
 
     auto data = buf.readable_bytes();
 
-    std::cout << "going to feed data to client tls session now" << std::endl;
-    auto n = tls_client.received_data( data );
-    std::cout << "client read back from the server... (" << n << " bytes)" << std::endl;
+    tls_client.received_data( data );
 
     if ( !pcallbacks->send_buf_.empty() ) {
       co_await client.async_send( pcallbacks->send_buf_ );
@@ -298,7 +276,6 @@ client( fiona::executor ex, std::uint16_t const port ) {
 
   while ( pcallbacks->recv_buf_.empty() ) {
     auto mbuf = co_await rx.async_recv();
-    std::cout << "received: " << mbuf.value().readable_bytes().size() << " octets" << std::endl;
     tls_client.received_data( mbuf.value().readable_bytes() );
   }
 
