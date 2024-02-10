@@ -49,7 +49,6 @@ target_link_libraries(
   PUBLIC
   liburing::liburing
   Boost::headers
-  Botan::Botan
 )
 
 target_sources(
@@ -65,6 +64,12 @@ if (BUILD_SHARED_LIBS)
 endif()
 
 add_library(Fiona::fiona ALIAS fiona)
+
+if(Botan_FOUND)
+  add_library(fiona_tls INTERFACE)
+  target_link_libraries(fiona_tls INTERFACE fiona Botan::Botan)
+  add_library(Fiona::tls ALIAS fiona_tls)
+endif()
 
 option(FIONA_BUILD_TESTING "" OFF)
 if(FIONA_BUILD_TESTING)
