@@ -22,14 +22,14 @@ TEST_CASE( "tcp_test - acceptor" ) {
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -55,7 +55,7 @@ TEST_CASE( "tcp_test - client already connected" ) {
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
 
@@ -66,7 +66,7 @@ TEST_CASE( "tcp_test - client already connected" ) {
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
     fiona::tcp::client client( ex );
@@ -106,7 +106,7 @@ TEST_CASE( "tcp_test - server not listening" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -133,7 +133,7 @@ TEST_CASE( "tcp_test - client connect timeout" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
     auto const timeout = std::chrono::milliseconds( 1000 );
 
     fiona::tcp::client client( ex );
@@ -164,7 +164,7 @@ TEST_CASE( "tcp_test - client connect interruption" ) {
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
     auto const timeout = std::chrono::milliseconds( 10'000 );
 
     fiona::tcp::client client( ex );
@@ -180,7 +180,7 @@ TEST_CASE( "tcp_test - client connect interruption" ) {
     co_return;
   }( ex ) );
 
-  ioc.post( []() -> fiona::task<void> {
+  ioc.spawn( []() -> fiona::task<void> {
     ++num_runs;
     throw 1234;
     co_return;
@@ -202,17 +202,17 @@ TEST_CASE( "tcp_test - double connect" ) {
   auto const port = acceptor.port();
   CHECK( port > 0 );
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
-    auto h = fiona::post( ex, []( fiona::tcp::client client, std::uint16_t port ) -> fiona::task<void> {
+    auto h = fiona::spawn( ex, []( fiona::tcp::client client, std::uint16_t port ) -> fiona::task<void> {
       auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
       CHECK_THROWS( co_await client.async_connect( &addr ) );
 
@@ -247,7 +247,7 @@ TEST_CASE( "tcp_test - socket creation failed" ) {
   fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     std::vector<fiona::tcp::stream> streams;
     for ( int i = 0; i < 8; ++i ) {
       auto mstream = co_await acceptor.async_accept();
@@ -261,7 +261,7 @@ TEST_CASE( "tcp_test - socket creation failed" ) {
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     std::vector<fiona::tcp::client> clients;
     for ( int i = 0; i < 10; ++i ) {
       fiona::tcp::client client( ex );
@@ -298,17 +298,17 @@ TEST_CASE( "tcp_test - connect cancellation" ) {
   fiona::tcp::acceptor acceptor( ioc.get_executor(), &addr );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
     ++num_runs;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
     client.timeout( 10s );
 
-    auto h = fiona::post( ex, []( fiona::tcp::client client ) -> fiona::task<void> {
+    auto h = fiona::spawn( ex, []( fiona::tcp::client client ) -> fiona::task<void> {
       fiona::timer timer( client.get_executor() );
       co_await timer.async_wait( 2s );
 
@@ -348,7 +348,7 @@ TEST_CASE( "tcp_test - client reconnection" ) {
   fiona::tcp::acceptor acceptor( ioc.get_executor(), &addr );
   auto const port = acceptor.port();
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     std::vector<fiona::tcp::stream> connected;
 
     for ( int i = 0; i < 3; ++i ) {
@@ -368,7 +368,7 @@ TEST_CASE( "tcp_test - client reconnection" ) {
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
     fiona::tcp::client client( ex );
@@ -408,7 +408,7 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
 
   constexpr static auto const server_msg = std::string_view( "hello, world! from the server" );
 
-  ioc.post( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+  ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
 
@@ -431,7 +431,7 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
     fiona::tcp::client client( ex );
@@ -474,7 +474,7 @@ TEST_CASE( "tcp_test - send not connected" ) {
   // test a send with a socket that isn't connected at all
   //
 
-  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const /* port  */ ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex, std::uint16_t const /* port  */ ) {
     fiona::tcp::client client( ex );
 
     auto sv = std::string_view( "hello, world!" );
@@ -489,7 +489,7 @@ TEST_CASE( "tcp_test - send not connected" ) {
   // now we wanna test a send when the remote has closed on us
   //
 
-  ioc.post( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
     auto mstream = co_await acceptor.async_accept();
     CHECK( mstream.has_value() );
 
@@ -500,7 +500,7 @@ TEST_CASE( "tcp_test - send not connected" ) {
     co_return;
   }( std::move( acceptor ) ) );
 
-  ioc.post( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn( []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
     fiona::tcp::client client( ex );
@@ -592,7 +592,7 @@ TEST_CASE( "tcp_test - tcp echo" ) {
                                   std::string_view msg ) -> fiona::task<void> {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await acceptor.async_accept();
-      ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
+      ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
     ++anum_runs;
@@ -635,7 +635,7 @@ TEST_CASE( "tcp_test - tcp echo" ) {
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {
-        ioc.post( client( ex, port, msg ) );
+        ioc.spawn( client( ex, port, msg ) );
       }
       ioc.run();
 
@@ -644,7 +644,7 @@ TEST_CASE( "tcp_test - tcp echo" ) {
     }
   } );
 
-  ioc.post( server( ex, std::move( acceptor ), msg ) );
+  ioc.spawn( server( ex, std::move( acceptor ), msg ) );
   try {
     ioc.run();
   } catch ( ... ) {
@@ -713,7 +713,7 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
                                   std::string_view msg ) -> fiona::task<void> {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await acceptor.async_accept();
-      ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
+      ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
     ++anum_runs;
@@ -756,7 +756,7 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {
-        ioc.post( client( ex, port, msg ) );
+        ioc.spawn( client( ex, port, msg ) );
       }
       ioc.run();
 
@@ -765,7 +765,7 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
     }
   } );
 
-  ioc.post( server( ex, acceptor, msg ) );
+  ioc.spawn( server( ex, acceptor, msg ) );
   try {
     ioc.run();
   } catch ( ... ) {
@@ -889,8 +889,8 @@ TEST_CASE( "tcp_test - fd reuse" ) {
     ++num_runs;
   };
 
-  ioc.post( server( std::move( acceptor ) ) );
-  ioc.post( client( ex, port ) );
+  ioc.spawn( server( std::move( acceptor ) ) );
+  ioc.spawn( client( ex, port ) );
 
   ioc.run();
 
@@ -954,7 +954,7 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
                                   std::string_view msg ) -> fiona::task<void> {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await acceptor.async_accept();
-      ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
+      ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
     ++anum_runs;
@@ -993,7 +993,7 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {
-        ioc.post( client( ex, port, msg ) );
+        ioc.spawn( client( ex, port, msg ) );
       }
       CHECK_THROWS( ioc.run() );
       ++anum_runs;
@@ -1003,7 +1003,7 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
     }
   } );
 
-  ioc.post( server( ex, acceptor, msg ) );
+  ioc.spawn( server( ex, acceptor, msg ) );
   try {
     CHECK_THROWS( ioc.run() );
   } catch ( ... ) {

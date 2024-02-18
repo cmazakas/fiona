@@ -13,7 +13,7 @@ submit_ring( io_uring* ring ) {
   io_uring_submit_and_get_events( ring );
 }
 
-inline io_uring_sqe*
+[[nodiscard]] inline io_uring_sqe*
 get_sqe( io_uring* ring ) {
   auto sqe = io_uring_get_sqe( ring );
   if ( sqe ) {

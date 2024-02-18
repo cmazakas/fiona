@@ -10,6 +10,7 @@
 
 #include <boost/assert.hpp>                       // for BOOST_ASSERT
 #include <boost/container_hash/hash.hpp>          // for hash
+#include <boost/core/exchange.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>      // for intrusive_ptr
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
@@ -31,15 +32,14 @@ namespace {
 struct pipe_awaitable {
   struct frame final : public fiona::detail::awaitable_base {
     fiona::executor ex_;
-    char buffer_[sizeof( std::coroutine_handle<> )] = {};
+    std::coroutine_handle<> h_ = nullptr;
+    alignas( std::coroutine_handle<> ) unsigned char buffer_[sizeof( std::coroutine_handle<> )] = {};
     int fd_ = -1;
     int count_ = 0;
 
     frame( fiona::executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
-    std::coroutine_handle<> h_ = nullptr;
-
-    void init() {
+    void schedule_recv() {
       auto ring = fiona::detail::executor_access_policy::ring( ex_ );
       fiona::detail::reserve_sqes( ring, 1 );
       auto sqe = io_uring_get_sqe( ring );
@@ -54,25 +54,35 @@ struct pipe_awaitable {
         fiona::detail::throw_errno_as_error_code( -cqe->res );
       }
 
-      void* addr = nullptr;
-      std::memcpy( &addr, buffer_, sizeof( addr ) );
+      std::uintptr_t data = 0;
+      std::memcpy( &data, buffer_, sizeof( data ) );
 
-      h_ = std::coroutine_handle<>::from_address( addr );
+      if ( data & fiona::detail::wake_mask ) {
+        data &= fiona::detail::ptr_mask;
+        h_ = std::coroutine_handle<>::from_address( reinterpret_cast<void*>( data ) );
 
-      {
-        auto ring = fiona::detail::executor_access_policy::ring( ex_ );
-        fiona::detail::reserve_sqes( ring, 1 );
-        auto sqe = io_uring_get_sqe( ring );
-        io_uring_prep_read( sqe, fd_, buffer_, sizeof( buffer_ ), 0 );
-        io_uring_sqe_set_data( sqe, this );
-        intrusive_ptr_add_ref( this );
+      } else if ( data & fiona::detail::post_mask ) {
+        // TODO: determine if tsan is just giving us false positives here and if we should remove lock/unlocking
+        // the mutex here
+        { auto guard = fiona::detail::executor_access_policy::lock_guard( ex_ ); }
+
+        data &= fiona::detail::ptr_mask;
+
+        auto& tasks = fiona::detail::executor_access_policy::tasks( ex_ );
+        auto& run_queue = fiona::detail::executor_access_policy::run_queue( ex_ );
+
+        auto task = fiona::task<void>::from_address( reinterpret_cast<void*>( data ) );
+        auto internal_task = fiona::detail::scheduler( tasks, std::move( task ) );
+        auto [it, b] = tasks.emplace( internal_task.h_, &internal_task.h_.promise().count_ );
+
+        BOOST_ASSERT( b );
+        run_queue.push_back( it->first );
       }
+
+      schedule_recv();
     }
 
-    std::coroutine_handle<> handle() noexcept override {
-      BOOST_ASSERT( h_ );
-      return h_;
-    }
+    std::coroutine_handle<> handle() noexcept override { return boost::exchange( h_, nullptr ); }
 
     void inc_ref() noexcept override { ++count_; }
     void dec_ref() noexcept override {
@@ -87,7 +97,7 @@ struct pipe_awaitable {
 
   boost::intrusive_ptr<frame> p_;
 
-  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) { p_->init(); }
+  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) { p_->schedule_recv(); }
 
   ~pipe_awaitable() { cancel(); }
 
@@ -174,9 +184,9 @@ io_context::get_executor() const noexcept {
 }
 
 void
-io_context::post( task<void> t ) {
+io_context::spawn( task<void> t ) {
   auto ex = get_executor();
-  ex.post( std::move( t ) );
+  ex.spawn( std::move( t ) );
 }
 
 void

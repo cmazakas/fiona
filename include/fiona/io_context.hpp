@@ -34,7 +34,7 @@ public:
   io_context_params params() const noexcept { return pframe_->params_; }
 
   FIONA_DECL
-  void post( task<void> t );
+  void spawn( task<void> t );
 
   void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size, std::uint16_t buffer_group_id ) {
     auto ring = &pframe_->io_ring_;

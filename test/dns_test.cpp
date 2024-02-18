@@ -22,7 +22,7 @@ TEST_CASE( "dns_test - fetching the list of remote IP addresses" ) {
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post( FIONA_TASK( fiona::executor ex ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto mentrylist = co_await resolver.async_resolve( "www.bing.com", "https" );
@@ -53,7 +53,7 @@ TEST_CASE( "dns_test - fetching a non-existent entry" ) {
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post( FIONA_TASK( fiona::executor ex ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto mentrylist = co_await resolver.async_resolve( "www.lmaobro.rawr", "https" );
@@ -74,7 +74,7 @@ TEST_CASE( "dns_test - connecting a client" ) {
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.post( FIONA_TASK( fiona::executor ex ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto mentrylist = co_await resolver.async_resolve( "www.google.com", "http" );
@@ -120,8 +120,6 @@ TEST_CASE( "dns_test - connecting a client" ) {
       }
 
       num_read += borrowed_buf.readable_bytes().size();
-
-      std::cout << borrowed_buf.as_str() << std::endl;
     }
 
     co_await client.async_close();

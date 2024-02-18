@@ -5,9 +5,7 @@
 #include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 
-CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
-  return ex.message();
-}
+CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) { return ex.message(); }
 
 void
 fiona_echo_bench() {
@@ -32,8 +30,7 @@ fiona_echo_bench() {
   fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
-  auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
-                            std::string_view msg ) -> fiona::task<void> {
+  auto handle_request = []( fiona::executor, fiona::tcp::stream stream, std::string_view msg ) -> fiona::task<void> {
     // stream.timeout( 5s );
 
     std::size_t num_bytes = 0;
@@ -44,8 +41,7 @@ fiona_echo_bench() {
       auto borrowed_buf = co_await rx.async_recv();
 
       auto octets = borrowed_buf.value().readable_bytes();
-      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() );
+      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ), octets.size() );
       REQUIRE( m == msg );
 
       auto num_written = co_await stream.async_send( octets );
@@ -61,20 +57,18 @@ fiona_echo_bench() {
     ++anum_runs;
   };
 
-  auto server = [handle_request]( fiona::executor ex,
-                                  fiona::tcp::acceptor acceptor,
+  auto server = [handle_request]( fiona::executor ex, fiona::tcp::acceptor acceptor,
                                   std::string_view msg ) -> fiona::task<void> {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await acceptor.async_accept();
-      ex.post( handle_request( ex, std::move( stream.value() ), msg ) );
+      ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
     ++anum_runs;
     co_return;
   };
 
-  auto client = []( fiona::executor ex, std::uint16_t port,
-                    std::string_view msg ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex, std::uint16_t port, std::string_view msg ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
     // client.timeout( 5s );
 
@@ -111,19 +105,18 @@ fiona_echo_bench() {
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {
-        ioc.post( client( ex, port, msg ) );
+        ioc.spawn( client( ex, port, msg ) );
       }
       ioc.run();
 
     } catch ( std::exception const& ex ) {
-      std::cout << "exception caught in client thread:\n"
-                << ex.what() << std::endl;
+      std::cout << "exception caught in client thread:\n" << ex.what() << std::endl;
     } catch ( ... ) {
       std::cout << "unidentified exception caught" << std::endl;
     }
   } );
 
-  ioc.post( server( ex, std::move( acceptor ), msg ) );
+  ioc.spawn( server( ex, std::move( acceptor ), msg ) );
   try {
     ioc.run();
   } catch ( ... ) {

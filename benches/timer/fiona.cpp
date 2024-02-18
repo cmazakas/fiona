@@ -17,7 +17,7 @@ fiona_timer_bench() {
   fiona::io_context ioc( params );
 
   for ( int i = 0; i < 10'000; ++i ) {
-    ioc.post( []( fiona::executor ex ) -> fiona::task<void> {
+    ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
       fiona::timer timer( ex );
       for ( int i = 0; i < 10'000; ++i ) {
         auto mokay = co_await timer.async_wait( 1ms );

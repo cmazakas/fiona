@@ -83,8 +83,8 @@ TEST_CASE( "recv_test - recv timeout" ) {
 
   auto port = acceptor.port();
 
-  ex.post( server( std::move( acceptor ) ) );
-  ex.post( client( ex, port ) );
+  ex.spawn( server( std::move( acceptor ) ) );
+  ex.spawn( client( ex, port ) );
 
   ioc.run();
 
@@ -102,7 +102,7 @@ TEST_CASE( "recv_test - recv cancel" ) {
     std::uint16_t buffer_group_id = 0;
 
     auto ex = session.get_executor();
-    fiona::post(
+    fiona::spawn(
         ex, FIONA_TASK( fiona::tcp::stream session ) {
           auto ex = session.get_executor();
           fiona::timer timer( ex );
@@ -150,8 +150,8 @@ TEST_CASE( "recv_test - recv cancel" ) {
 
   auto port = acceptor.port();
 
-  ex.post( server( std::move( acceptor ) ) );
-  ex.post( client( ex, port ) );
+  ex.spawn( server( std::move( acceptor ) ) );
+  ex.spawn( client( ex, port ) );
 
   ioc.run();
 
@@ -208,8 +208,8 @@ TEST_CASE( "recv_test - recv high traffic" ) {
 
   auto port = acceptor.port();
 
-  ex.post( server( std::move( acceptor ), ex ) );
-  ex.post( client( ex, port ) );
+  ex.spawn( server( std::move( acceptor ), ex ) );
+  ex.spawn( client( ex, port ) );
 
   ioc.run();
 
@@ -245,7 +245,7 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
 
   constexpr static std::string_view const msg = "rawr";
 
-  ioc.post( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+  ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
     auto mstream = co_await acceptor.async_accept();
     auto& stream = mstream.value();
     stream.timeout( 500ms );
@@ -287,7 +287,7 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
     ++num_runs;
   }( std::move( acceptor ) ) );
 
-  ioc.post( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+  ioc.spawn( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );

@@ -15,6 +15,7 @@
 #include <coroutine>                              // for coroutine_handle, noop_coroutine, suspend_always
 #include <cstdint>                                // for uint32_t
 #include <cstring>                                // for size_t
+#include <deque>
 #include <exception>                              // for exception_ptr, rethrow_exception, current_exception
 #include <memory>                                 // for shared_ptr, __shared_ptr_access, weak_ptr
 #include <mutex>                                  // for lock_guard, mutex
@@ -38,13 +39,17 @@ struct internal_promise;
 
 namespace fiona {
 template <class T>
-struct post_awaitable;
+struct spawn_awaitable;
 }
 
 struct io_uring;
-// clang-format on
 
 namespace fiona {
+namespace detail {
+inline constexpr std::uintptr_t const wake_mask = 0b01;
+inline constexpr std::uintptr_t const post_mask = 0b10;
+inline constexpr std::uintptr_t const ptr_mask = ~( wake_mask + post_mask );
+} // namespace detail
 
 struct waker {
   std::weak_ptr<void> p_;
@@ -53,17 +58,16 @@ struct waker {
   std::coroutine_handle<> h_;
 
   void wake() const {
-    void const* const ptr = h_.address();
-
     auto p = p_.lock();
     if ( !p ) {
       detail::throw_errno_as_error_code( EINVAL );
     }
 
-    std::lock_guard guard( m_ );
+    auto data = reinterpret_cast<std::uintptr_t>( h_.address() );
+    data |= detail::wake_mask;
 
     int ret = -1;
-    ret = write( fd_, &ptr, sizeof( ptr ) );
+    ret = write( fd_, &data, sizeof( data ) );
     if ( ret == -1 ) {
       detail::throw_errno_as_error_code( errno );
     }
@@ -73,16 +77,17 @@ struct waker {
 struct executor {
 private:
   friend struct detail::executor_access_policy;
-
   std::shared_ptr<detail::io_context_frame> pframe_;
 
 public:
   executor( std::shared_ptr<detail::io_context_frame> pframe ) noexcept : pframe_( std::move( pframe ) ) {}
 
   template <class T>
-  post_awaitable<T> post( task<T> t );
+  spawn_awaitable<T> spawn( task<T> t );
 
-  inline waker make_waker( std::coroutine_handle<> h );
+  inline void post( task<void> t ) const;
+  inline waker make_waker( std::coroutine_handle<> h ) const;
+
   void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size, std::uint16_t buffer_group_id ) {
     auto ring = &pframe_->io_ring_;
     pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size, buffer_group_id );
@@ -93,6 +98,14 @@ namespace detail {
 
 struct executor_access_policy {
   static inline io_uring* ring( executor ex ) noexcept { return &ex.pframe_->io_ring_; }
+
+  static inline task_map_type& tasks( executor ex ) noexcept { return ex.pframe_->tasks_; }
+
+  static inline std::deque<std::coroutine_handle<>>& run_queue( executor ex ) noexcept {
+    return ex.pframe_->run_queue_;
+  }
+
+  static inline std::lock_guard<std::mutex> lock_guard( executor ex ) { return std::lock_guard( ex.pframe_->m_ ); }
 
   static void unhandled_exception( executor ex, std::exception_ptr ep ) {
     if ( !ex.pframe_->exception_ptr_ ) {
@@ -364,14 +377,14 @@ struct internal_promise<void> : public internal_promise_base<void> {
 } // namespace detail
 
 template <class T>
-struct post_awaitable {
+struct spawn_awaitable {
   executor ex_;
   detail::internal_task<T> task_;
   bool was_awaited_ = false;
 
-  post_awaitable( executor ex, detail::internal_task<T> task ) : ex_{ ex }, task_{ task } {}
+  spawn_awaitable( executor ex, detail::internal_task<T> task ) : ex_{ ex }, task_{ task } {}
 
-  ~post_awaitable() {
+  ~spawn_awaitable() {
     auto& promise = task_.h_.promise();
     if ( promise.variant_.has_error() && !was_awaited_ ) {
       detail::executor_access_policy::unhandled_exception( ex_, promise.variant_.get_error() );
@@ -405,8 +418,8 @@ scheduler( detail::task_map_type& /* tasks */, task<T> t ) {
 } // namespace detail
 
 template <class T>
-post_awaitable<T>
-executor::post( task<T> t ) {
+spawn_awaitable<T>
+executor::spawn( task<T> t ) {
   auto internal_task = detail::scheduler( pframe_->tasks_, std::move( t ) );
   auto [it, b] = pframe_->tasks_.emplace( internal_task.h_, &internal_task.h_.promise().count_ );
 
@@ -416,15 +429,31 @@ executor::post( task<T> t ) {
   return { *this, internal_task };
 }
 
+void
+executor::post( task<void> t ) const {
+  auto fd = pframe_->pipefd_[1];
+  auto p = t.into_address();
+  auto data = reinterpret_cast<std::uintptr_t>( p );
+  data |= detail::post_mask;
+
+  int ret = -1;
+  ret = write( fd, &data, sizeof( data ) );
+  if ( ret == -1 ) {
+    detail::throw_errno_as_error_code( errno );
+  }
+
+  { auto guard = std::lock_guard( pframe_->m_ ); }
+}
+
 waker
-executor::make_waker( std::coroutine_handle<> h ) {
+executor::make_waker( std::coroutine_handle<> h ) const {
   return detail::executor_access_policy::get_waker( *this, h );
 }
 
 template <class T>
-post_awaitable<T>
-post( executor ex, task<T> t ) {
-  return ex.post( std::move( t ) );
+spawn_awaitable<T>
+spawn( executor ex, task<T> t ) {
+  return ex.spawn( std::move( t ) );
 }
 
 } // namespace fiona

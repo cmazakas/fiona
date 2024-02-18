@@ -41,7 +41,6 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
   bool close_notify_received_ = false;
 
   void tls_emit_data( std::span<std::uint8_t const> data ) override {
-    std::cout << "buffering send data now!" << std::endl;
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   };
 
@@ -360,8 +359,8 @@ TEST_CASE( "tls_test - botan hello world" ) {
 
   auto port = acceptor.port();
 
-  ioc.post( server( std::move( acceptor ) ) );
-  ioc.post( client( ioc.get_executor(), port ) );
+  ioc.spawn( server( std::move( acceptor ) ) );
+  ioc.spawn( client( ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );
