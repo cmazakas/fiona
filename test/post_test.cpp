@@ -294,7 +294,7 @@ TEST_CASE( "post_test - inter-thread posting" ) {
   int const num_threads = 8;
   int const num_tasks = 25'000;
   int const total_runs = num_threads * num_tasks;
-  static std::atomic_uint num_runs = 0;
+  static int num_runs = 0;
 
   auto ex = ioc.get_executor();
   fiona::timer timer( ex );
