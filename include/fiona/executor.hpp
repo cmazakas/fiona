@@ -442,6 +442,7 @@ executor::post( task<void> t ) const {
     detail::throw_errno_as_error_code( errno );
   }
 
+  // do this to make tsan happy
   { auto guard = std::lock_guard( pframe_->m_ ); }
 }
 
