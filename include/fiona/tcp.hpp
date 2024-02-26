@@ -18,6 +18,10 @@
 #include <string_view>                       // for string_view
 
 namespace fiona {
+namespace tls {
+struct client;
+}
+
 namespace tcp {
 
 namespace detail {
@@ -282,6 +286,7 @@ struct client {
 private:
   boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
 
+  FIONA_DECL
   client( boost::intrusive_ptr<detail::client_impl> pclient );
 
   FIONA_DECL
@@ -290,8 +295,10 @@ private:
   FIONA_DECL
   void cancel_timer();
 
+  friend ::fiona::tls::client;
+
 public:
-  client() = delete;
+  client() = default;
 
   FIONA_DECL
   client( executor ex );

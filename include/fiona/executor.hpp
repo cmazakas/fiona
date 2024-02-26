@@ -457,6 +457,12 @@ spawn( executor ex, task<T> t ) {
   return ex.spawn( std::move( t ) );
 }
 
+template <class T>
+void
+post( executor ex, task<T> t ) {
+  ex.post( std::move( t ) );
+}
+
 } // namespace fiona
 
 #endif // FIONA_EXECUTOR_HPP

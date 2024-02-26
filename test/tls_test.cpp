@@ -1,3 +1,4 @@
+#include "fiona/tls.hpp"
 #include "helpers.hpp"
 
 #include <botan/certstor.h>
@@ -188,7 +189,9 @@ server( fiona::tcp::acceptor acceptor ) {
   auto& send_buf = pcallbacks->send_buf_;
   auto& recv_buf = pcallbacks->recv_buf_;
 
+  std::cout << "starting async_accept now()" << std::endl;
   auto mstream = co_await acceptor.async_accept();
+  std::cout << "async_accept() completed!" << std::endl;
   auto& stream = mstream.value();
 
   auto ex = stream.get_executor();
@@ -349,6 +352,20 @@ client( fiona::executor ex, std::uint16_t const port ) {
   co_return;
 }
 
+fiona::task<void>
+tls_client( fiona::executor ex, std::uint16_t const port ) {
+  fiona::tls::client client( ex );
+
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+  auto mok = co_await client.as_tcp().async_connect( &addr );
+  std::cout << "completed async_connect() as tls/tcp client" << std::endl;
+  CHECK( mok.has_value() );
+
+  ++num_runs;
+
+  co_return;
+}
+
 TEST_CASE( "tls_test - botan hello world" ) {
   num_runs = 0;
 
@@ -361,6 +378,23 @@ TEST_CASE( "tls_test - botan hello world" ) {
 
   ioc.spawn( server( std::move( acceptor ) ) );
   ioc.spawn( client( ioc.get_executor(), port ) );
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tls_test - tls::client hello world" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+
+  auto server_addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), &server_addr );
+
+  auto port = acceptor.port();
+
+  ioc.spawn( server( std::move( acceptor ) ) );
+  ioc.spawn( tls_client( ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );

@@ -23,6 +23,7 @@ set(fiona_headers
   include/fiona/task.hpp
   include/fiona/tcp.hpp
   include/fiona/time.hpp
+  include/fiona/tls.hpp
 
   include/fiona/detail/awaitable_base.hpp
   include/fiona/detail/common.hpp
@@ -35,9 +36,10 @@ set(fiona_sources
   src/dns.cpp
   src/common.cpp
   src/io_context.cpp
+  src/ip.cpp
   src/time.cpp
   src/tcp.cpp
-  src/ip.cpp
+  src/tls.cpp
 )
 
 add_library(fiona ${fiona_sources})
