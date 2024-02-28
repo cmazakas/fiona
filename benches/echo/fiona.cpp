@@ -54,6 +54,8 @@ fiona_echo_bench() {
       // }
     }
 
+    co_await stream.async_close();
+
     ++anum_runs;
   };
 
@@ -95,6 +97,7 @@ fiona_echo_bench() {
       num_bytes += octets.size();
     }
 
+    co_await client.async_close();
     ++anum_runs;
   };
 
