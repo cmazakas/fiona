@@ -4,7 +4,6 @@
 #include <fiona/error.hpp>                   // for error_code, result, throw_errno_as_error_code
 #include <fiona/executor.hpp>                // for executor_access_policy, executor
 
-#include <fiona/detail/awaitable_base.hpp>   // for intrusive_ptr_add_ref, awaitable_base
 #include <fiona/detail/common.hpp>           // for buf_ring
 #include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/get_sqe.hpp>          // for reserve_sqes, submit_ring, get_sqe
@@ -28,6 +27,7 @@
 #include <sys/socket.h>                      // for AF_INET6, AF_INET, sockaddr, sockaddr_storage, bind, get...
 #include <unistd.h>                          // for close
 
+#include "awaitable_base.hpp"                // for intrusive_ptr_add_ref, awaitable_base
 #include "stream_impl.hpp"
 
 namespace fiona {
@@ -188,22 +188,6 @@ intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept {
 
 } // namespace detail
 
-namespace detail {
-
-void FIONA_DECL
-intrusive_ptr_add_ref( stream_impl* pstream ) noexcept {
-  ++pstream->count_;
-}
-
-void FIONA_DECL
-intrusive_ptr_release( stream_impl* pstream ) noexcept {
-  --pstream->count_;
-  if ( pstream->count_ == 0 ) {
-    delete pstream;
-  }
-}
-} // namespace detail
-
 inline constexpr int const static default_backlog = 256;
 
 acceptor::acceptor( executor ex, sockaddr const* addr )
@@ -283,6 +267,22 @@ accept_awaitable::await_resume() {
   s.pstream_->connected_ = true;
   return { std::move( s ) };
 }
+
+namespace detail {
+
+void FIONA_DECL
+intrusive_ptr_add_ref( stream_impl* pstream ) noexcept {
+  ++pstream->count_;
+}
+
+void FIONA_DECL
+intrusive_ptr_release( stream_impl* pstream ) noexcept {
+  --pstream->count_;
+  if ( pstream->count_ == 0 ) {
+    delete pstream;
+  }
+}
+} // namespace detail
 
 stream::stream( executor ex, int fd ) : pstream_{ new detail::stream_impl{ ex, fd } } {}
 
@@ -546,64 +546,7 @@ recv_awaitable::await_resume() {
   return buf;
 }
 
-namespace detail {
-
-void FIONA_DECL
-intrusive_ptr_add_ref( client_impl* pclient ) noexcept {
-  ++pclient->count_;
-}
-
-void FIONA_DECL
-intrusive_ptr_release( client_impl* pclient ) noexcept {
-  --pclient->count_;
-  if ( pclient->count_ == 0 ) {
-    delete pclient;
-  }
-}
-} // namespace detail
-
-client::client( executor ex ) : pclient_{ new detail::client_impl{ ex } } {}
-
-client::client( boost::intrusive_ptr<detail::client_impl> pclient ) : pclient_{ pclient } {
-  BOOST_ASSERT( pclient->count_ > 1 );
-}
-
-void
-client::timeout( __kernel_timespec ts ) {
-  pclient_->ts_ = ts;
-}
-
-void
-client::cancel_timer() {
-  if ( pclient_ && pclient_->timeout_frame_.initiated_ ) {
-    pclient_->timeout_frame_.cancelled_ = true;
-    auto ring = fiona::detail::executor_access_policy::ring( pclient_->ex_ );
-    fiona::detail::reserve_sqes( ring, 1 );
-    {
-      auto user_data = reinterpret_cast<std::uintptr_t>( &pclient_->timeout_frame_ );
-      auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_timeout_remove( sqe, user_data, 0 );
-      io_uring_sqe_set_data( sqe, nullptr );
-      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-      fiona::detail::submit_ring( ring );
-    }
-  }
-}
-
-executor
-client::get_executor() const noexcept {
-  return pclient_->ex_;
-}
-
-stream_close_awaitable
-client::async_close() {
-  return { pclient_ };
-}
-
-stream_cancel_awaitable
-client::async_cancel() {
-  return { pclient_ };
-}
+client::client( executor ex ) { pstream_ = new detail::client_impl( ex ); }
 
 connect_awaitable
 client::async_connect( sockaddr_in6 const* addr ) {
@@ -622,31 +565,20 @@ client::async_connect( sockaddr const* addr ) {
     fiona::detail::throw_errno_as_error_code( EINVAL );
   }
 
-  std::memcpy( &pclient_->addr_storage_, addr, is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
-  return { pclient_ };
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+
+  std::memcpy( &pclient->addr_storage_, addr, is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
+  return { pclient };
 }
 
-send_awaitable
-client::async_send( std::string_view msg ) {
-  return async_send( std::span{ reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
-}
-
-send_awaitable
-client::async_send( std::span<unsigned char const> buf ) {
-  return { buf, pclient_ };
-}
-
-receiver
-client::get_receiver( std::uint16_t buffer_group_id ) {
-  return { pclient_, buffer_group_id };
-}
-
-connect_awaitable::connect_awaitable( boost::intrusive_ptr<detail::client_impl> pclient ) : pclient_{ pclient } {}
+connect_awaitable::connect_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream ) : pstream_{ pstream } {}
 
 connect_awaitable::~connect_awaitable() {
-  auto ex = pclient_->ex_;
-  auto& sf = pclient_->socket_frame_;
-  auto& cf = pclient_->connect_frame_;
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+
+  auto ex = pclient->ex_;
+  auto& sf = pclient->socket_frame_;
+  auto& cf = pclient->connect_frame_;
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
@@ -670,7 +602,9 @@ connect_awaitable::~connect_awaitable() {
 
 bool
 connect_awaitable::await_ready() const {
-  if ( pclient_->socket_frame_.initiated_ ) {
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+
+  if ( pclient->socket_frame_.initiated_ ) {
     throw_busy();
   }
   return false;
@@ -678,54 +612,56 @@ connect_awaitable::await_ready() const {
 
 void
 connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
-  BOOST_ASSERT( !pclient_->socket_frame_.initiated_ );
-  BOOST_ASSERT( !pclient_->connect_frame_.initiated_ );
-  BOOST_ASSERT( !pclient_->socket_frame_.h_ );
-  BOOST_ASSERT( !pclient_->connect_frame_.h_ );
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
-  auto const* addr = &pclient_->addr_storage_;
+  BOOST_ASSERT( !pclient->socket_frame_.initiated_ );
+  BOOST_ASSERT( !pclient->connect_frame_.initiated_ );
+  BOOST_ASSERT( !pclient->socket_frame_.h_ );
+  BOOST_ASSERT( !pclient->connect_frame_.h_ );
+
+  auto const* addr = &pclient->addr_storage_;
   auto const is_ipv4 = ( addr->ss_family == AF_INET );
   BOOST_ASSERT( is_ipv4 || addr->ss_family == AF_INET6 );
 
   auto af = is_ipv4 ? AF_INET : AF_INET6;
-  auto ex = pclient_->ex_;
+  auto ex = pclient->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-  if ( pclient_->fd_ >= 0 && pclient_->connected_ ) {
+  if ( pclient->fd_ >= 0 && pclient->connected_ ) {
     fiona::detail::reserve_sqes( ring, 3 );
   } else {
-    if ( pclient_->fd_ == -1 ) {
+    if ( pclient->fd_ == -1 ) {
       auto const file_idx = fiona::detail::executor_access_policy::get_available_fd( ex );
 
-      pclient_->fd_ = file_idx;
+      pclient->fd_ = file_idx;
     }
 
     fiona::detail::reserve_sqes( ring, 4 );
 
     {
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP, pclient_->fd_, 0 );
-      io_uring_sqe_set_data( sqe, &pclient_->socket_frame_ );
+      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP, pclient->fd_, 0 );
+      io_uring_sqe_set_data( sqe, &pclient->socket_frame_ );
       io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
 
-      intrusive_ptr_add_ref( pclient_.get() );
+      intrusive_ptr_add_ref( pstream_.get() );
     }
 
-    pclient_->socket_frame_.h_ = h;
-    pclient_->socket_frame_.initiated_ = true;
+    pclient->socket_frame_.h_ = h;
+    pclient->socket_frame_.initiated_ = true;
   }
 
   {
-    auto addr = reinterpret_cast<sockaddr const*>( &pclient_->addr_storage_ );
+    auto addr = reinterpret_cast<sockaddr const*>( &pclient->addr_storage_ );
     auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
     auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
-    io_uring_sqe_set_data( sqe, &pclient_->connect_frame_ );
+    io_uring_prep_connect( sqe, pclient->fd_, addr, addrlen );
+    io_uring_sqe_set_data( sqe, &pclient->connect_frame_ );
     io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE | IOSQE_CQE_SKIP_SUCCESS );
   }
 
   {
-    auto ts = &pclient_->ts_;
+    auto ts = &pclient->ts_;
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_link_timeout( sqe, ts, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
@@ -733,23 +669,25 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   }
 
   {
-    auto addr = reinterpret_cast<sockaddr const*>( &pclient_->addr_storage_ );
+    auto addr = reinterpret_cast<sockaddr const*>( &pclient->addr_storage_ );
     auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
     auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_connect( sqe, pclient_->fd_, addr, addrlen );
-    io_uring_sqe_set_data( sqe, &pclient_->connect_frame_ );
+    io_uring_prep_connect( sqe, pclient->fd_, addr, addrlen );
+    io_uring_sqe_set_data( sqe, &pclient->connect_frame_ );
     io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
   }
 
-  intrusive_ptr_add_ref( pclient_.get() );
-  pclient_->connect_frame_.h_ = h;
-  pclient_->connect_frame_.initiated_ = true;
+  intrusive_ptr_add_ref( pstream_.get() );
+  pclient->connect_frame_.h_ = h;
+  pclient->connect_frame_.initiated_ = true;
 }
 
 result<void>
 connect_awaitable::await_resume() {
-  auto& socket_frame = pclient_->socket_frame_;
-  auto& connect_frame = pclient_->connect_frame_;
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+
+  auto& socket_frame = pclient->socket_frame_;
+  auto& connect_frame = pclient->connect_frame_;
 
   if ( socket_frame.res_ < 0 ) {
     BOOST_ASSERT( connect_frame.initiated_ );

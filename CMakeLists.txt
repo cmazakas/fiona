@@ -25,22 +25,21 @@ set(fiona_headers
   include/fiona/time.hpp
   include/fiona/tls.hpp
 
-  include/fiona/detail/awaitable_base.hpp
   include/fiona/detail/common.hpp
   include/fiona/detail/get_sqe.hpp
-  include/fiona/detail/time.hpp
-)
+  include/fiona/detail/time.hpp)
 
 set(fiona_sources
+
+  src/awaitable_base.hpp
+  src/stream_impl.hpp
 
   src/dns.cpp
   src/common.cpp
   src/io_context.cpp
   src/ip.cpp
   src/time.cpp
-  src/tcp.cpp
-  src/tls.cpp
-)
+  src/tcp.cpp)
 
 add_library(fiona ${fiona_sources})
 
@@ -68,9 +67,14 @@ endif()
 add_library(Fiona::fiona ALIAS fiona)
 
 if(Botan_FOUND)
-  add_library(fiona_tls INTERFACE)
-  target_link_libraries(fiona_tls INTERFACE fiona Botan::Botan)
+  add_library(fiona_tls src/tls.cpp)
+  target_link_libraries(fiona_tls PUBLIC fiona Botan::Botan)
   add_library(Fiona::tls ALIAS fiona_tls)
+
+  target_compile_definitions(fiona_tls PRIVATE FIONA_SOURCE)
+  if (BUILD_SHARED_LIBS)
+    target_compile_definitions(fiona_tls PRIVATE FIONA_DYN_LINK)
+  endif()
 endif()
 
 option(FIONA_BUILD_TESTING "" OFF)

@@ -981,6 +981,7 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
 
       auto octets = borrowed_buf.value().readable_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ), octets.size() );
+      CHECK( ( ( m == msg ) || m.empty() ) );
 
       num_bytes += octets.size();
     }

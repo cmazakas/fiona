@@ -3,7 +3,6 @@
 #include <fiona/error.hpp>                   // for error_code, throw_errno_as_error_code, result
 #include <fiona/executor.hpp>                // for executor, executor_access_policy
 
-#include <fiona/detail/awaitable_base.hpp>   // for awaitable_base
 #include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/get_sqe.hpp>          // for get_sqe, submit_ring
 
@@ -19,6 +18,8 @@
 #include <liburing.h>                        // for io_uring_sqe_set_data, io_uring_prep_cancel, io_uring_prep_timeout
 #include <liburing/io_uring.h>               // for io_uring_cqe
 #include <linux/time_types.h>                // for __kernel_timespec
+
+#include "awaitable_base.hpp"                // for awaitable_base
 
 namespace fiona {
 

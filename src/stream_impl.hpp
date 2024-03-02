@@ -4,12 +4,13 @@
 #include <fiona/borrowed_buffer.hpp>
 #include <fiona/executor.hpp>
 
-#include <fiona/detail/awaitable_base.hpp>
 #include <fiona/detail/get_sqe.hpp>
 
 #include <chrono>
 
 #include <liburing.h>
+
+#include "awaitable_base.hpp"
 
 namespace fiona {
 namespace tcp {
@@ -22,14 +23,6 @@ intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 
 void FIONA_DECL
 intrusive_ptr_release( stream_impl* pstream ) noexcept;
-
-struct client_impl;
-
-void FIONA_DECL
-intrusive_ptr_add_ref( client_impl* pclient ) noexcept;
-
-void FIONA_DECL
-intrusive_ptr_release( client_impl* pclient ) noexcept;
 
 struct stream_impl {
   using clock_type = std::chrono::steady_clock;
@@ -489,7 +482,7 @@ struct client_impl : public stream_impl {
   client_impl( client_impl const& ) = delete;
   client_impl( client_impl&& ) = delete;
   client_impl( executor ex ) : stream_impl{ ex } {}
-  ~client_impl() {}
+  virtual ~client_impl() override {}
 };
 
 } // namespace detail

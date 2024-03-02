@@ -65,12 +65,6 @@ intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 void FIONA_DECL
 intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
-void FIONA_DECL
-intrusive_ptr_add_ref( client_impl* pclient ) noexcept;
-
-void FIONA_DECL
-intrusive_ptr_release( client_impl* pclient ) noexcept;
-
 } // namespace detail
 } // namespace tcp
 } // namespace fiona
@@ -110,7 +104,7 @@ public:
 };
 
 struct stream {
-private:
+protected:
   friend struct accept_awaitable;
 
   boost::intrusive_ptr<detail::stream_impl> pstream_;
@@ -123,7 +117,7 @@ private:
   void cancel_timer();
 
 public:
-  stream() = delete;
+  stream() = default;
 
   stream( stream const& ) = default;
   stream& operator=( stream const& ) = default;
@@ -131,7 +125,7 @@ public:
   stream( stream&& ) = default;
   stream& operator=( stream&& ) = default;
 
-  ~stream() { cancel_timer(); }
+  virtual ~stream() { cancel_timer(); }
 
   bool operator==( stream const& ) const = default;
 
@@ -282,23 +276,9 @@ public:
   result<borrowed_buffer> await_resume();
 };
 
-struct client {
-private:
-  boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
-
-  FIONA_DECL
-  client( boost::intrusive_ptr<detail::client_impl> pclient );
-
-  FIONA_DECL
-  void timeout( __kernel_timespec ts );
-
-  FIONA_DECL
-  void cancel_timer();
-
-  friend ::fiona::tls::client;
-
+struct client : public stream {
 public:
-  client() = default;
+  client() {}
 
   FIONA_DECL
   client( executor ex );
@@ -309,7 +289,7 @@ public:
   client( client&& ) = default;
   client& operator=( client&& ) = default;
 
-  ~client() { cancel_timer(); }
+  virtual ~client() = default;
 
   bool operator==( client const& ) const = default;
 
@@ -321,30 +301,6 @@ public:
 
   FIONA_DECL
   connect_awaitable async_connect( sockaddr_in6 const* addr );
-
-  template <class Rep, class Period>
-  void timeout( std::chrono::duration<Rep, Period> const d ) {
-    auto ts = fiona::detail::duration_to_timespec( d );
-    timeout( ts );
-  }
-
-  FIONA_DECL
-  executor get_executor() const noexcept;
-
-  FIONA_DECL
-  stream_close_awaitable async_close();
-
-  FIONA_DECL
-  stream_cancel_awaitable async_cancel();
-
-  FIONA_DECL
-  send_awaitable async_send( std::string_view msg );
-
-  FIONA_DECL
-  send_awaitable async_send( std::span<unsigned char const> buf );
-
-  FIONA_DECL
-  receiver get_receiver( std::uint16_t buffer_group_id );
 };
 
 struct accept_awaitable {
@@ -377,9 +333,9 @@ struct connect_awaitable {
 private:
   friend struct client;
 
-  boost::intrusive_ptr<detail::client_impl> pclient_ = nullptr;
+  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
 
-  connect_awaitable( boost::intrusive_ptr<detail::client_impl> pclient );
+  connect_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
   FIONA_DECL

@@ -1,6 +1,5 @@
 #include <fiona/io_context.hpp>
 
-#include <fiona/detail/awaitable_base.hpp>        // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
 #include <fiona/detail/common.hpp>                // for io_context_frame, buf_ring, task_map_type
 #include <fiona/detail/get_sqe.hpp>               // for reserve_sqes, submit_ring
 #include <fiona/error.hpp>                        // for throw_errno_as_error_code
@@ -26,6 +25,8 @@
 #include <liburing.h>                             // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
 #include <liburing/io_uring.h>                    // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
 #include <unistd.h>                               // for close, pipe
+
+#include "awaitable_base.hpp"                     // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
 
 namespace {
 
