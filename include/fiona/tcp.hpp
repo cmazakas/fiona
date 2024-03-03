@@ -103,7 +103,7 @@ public:
   accept_awaitable async_accept();
 };
 
-struct stream {
+struct FIONA_DECL stream {
 protected:
   friend struct accept_awaitable;
 
@@ -116,6 +116,9 @@ protected:
   FIONA_DECL
   void cancel_timer();
 
+  FIONA_DECL
+  void cancel_recv();
+
 public:
   stream() = default;
 
@@ -125,7 +128,8 @@ public:
   stream( stream&& ) = default;
   stream& operator=( stream&& ) = default;
 
-  virtual ~stream() { cancel_timer(); }
+  FIONA_DECL
+  virtual ~stream();
 
   bool operator==( stream const& ) const = default;
 
@@ -137,6 +141,9 @@ public:
     auto ts = fiona::detail::duration_to_timespec( d );
     timeout( ts );
   }
+
+  FIONA_DECL
+  void set_buffer_group( std::uint16_t bgid );
 
   FIONA_DECL
   stream_close_awaitable async_close();
@@ -151,7 +158,7 @@ public:
   send_awaitable async_send( std::span<unsigned char const> buf );
 
   FIONA_DECL
-  receiver get_receiver( std::uint16_t buffer_group_id );
+  recv_awaitable async_recv();
 };
 
 struct stream_close_awaitable {
@@ -220,35 +227,9 @@ public:
   result<std::size_t> await_resume();
 };
 
-struct receiver {
-private:
-  friend struct stream;
-  friend struct client;
-
-  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
-  std::uint16_t buffer_group_id_ = -1;
-
-  receiver( boost::intrusive_ptr<detail::stream_impl> pstream, std::uint16_t buffer_group_id );
-
-public:
-  receiver() = delete;
-
-  receiver( receiver const& ) = delete;
-  receiver& operator=( receiver const& ) = delete;
-
-  receiver( receiver&& ) = delete;
-  receiver& operator=( receiver&& ) = delete;
-
-  FIONA_DECL
-  ~receiver();
-
-  FIONA_DECL
-  recv_awaitable async_recv();
-};
-
 struct recv_awaitable {
 private:
-  friend struct receiver;
+  friend struct stream;
 
   boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
 

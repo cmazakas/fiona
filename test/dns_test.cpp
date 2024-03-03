@@ -105,11 +105,11 @@ TEST_CASE( "dns_test - connecting a client" ) {
     co_await client.async_send( req );
 
     ex.register_buffer_sequence( 1024, 128, 0 );
-    auto rx = client.get_receiver( 0 );
+    client.set_buffer_group( 0 );
 
     std::size_t num_read = 0;
     while ( true ) {
-      auto mborrowed_buf = co_await rx.async_recv();
+      auto mborrowed_buf = co_await client.async_recv();
       if ( mborrowed_buf.has_error() ) {
         break;
       }

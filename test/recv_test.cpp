@@ -1,5 +1,8 @@
+#include "fiona/error.hpp"
 #include "helpers.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+#include <cerrno>
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/ip.hpp>
@@ -23,15 +26,15 @@ TEST_CASE( "recv_test - recv timeout" ) {
     session.timeout( server_timeout );
 
     std::uint16_t buffer_group_id = 0;
-    auto rx = session.get_receiver( buffer_group_id );
+    session.set_buffer_group( buffer_group_id );
 
     {
-      auto mbuf = co_await rx.async_recv();
+      auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_value() );
     }
 
     {
-      auto mbuf = co_await rx.async_recv();
+      auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_error() );
       CHECK( mbuf.error() == fiona::error_code::from_errno( ETIMEDOUT ) );
     }
@@ -40,7 +43,7 @@ TEST_CASE( "recv_test - recv timeout" ) {
     co_await timer.async_wait( server_timeout );
 
     {
-      auto mbuf = co_await rx.async_recv();
+      auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_value() );
       if ( mbuf.has_error() ) {
         CHECK( mbuf.error() == fiona::error_code::from_errno( EBADF ) );
@@ -113,9 +116,9 @@ TEST_CASE( "recv_test - recv cancel" ) {
           co_return;
         }( session ) );
 
-    auto rx = session.get_receiver( buffer_group_id );
+    session.set_buffer_group( buffer_group_id );
     {
-      auto mbuf = co_await rx.async_recv();
+      auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_error() );
       CHECK( mbuf.error() == std::errc::operation_canceled );
     }
@@ -166,10 +169,10 @@ TEST_CASE( "recv_test - recv high traffic" ) {
     auto& session = msession.value();
     session.timeout( std::chrono::seconds( 1 ) );
 
-    auto rx = session.get_receiver( 0 );
+    session.set_buffer_group( 0 );
 
     for ( int i = 0; i < 4; ++i ) {
-      auto mbuf = co_await rx.async_recv();
+      auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_value() );
 
       fiona::timer timer( session.get_executor() );
@@ -253,9 +256,9 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
     std::vector<fiona::borrowed_buffer> bufs;
 
     {
-      auto receiver = stream.get_receiver( 0 );
+      stream.set_buffer_group( 0 );
       for ( int i = 0; i < 2 * num_bufs; ++i ) {
-        auto mbuf = co_await receiver.async_recv();
+        auto mbuf = co_await stream.async_recv();
         if ( i >= num_bufs ) {
           CHECK( bufs.size() >= num_bufs );
           CHECK( mbuf.error() == std::errc::no_buffer_space );
@@ -271,9 +274,11 @@ TEST_CASE( "recv_test - buffer exhaustion" ) {
     ex.register_buffer_sequence( num_bufs, 64, 1 );
 
     {
-      auto receiver = stream.get_receiver( 1 );
+      CHECK_THROWS( stream.set_buffer_group( 1 ) );
+      bufs.clear();
+      stream.set_buffer_group( 1 );
       for ( int i = 0; i < num_bufs; ++i ) {
-        auto mbuf = co_await receiver.async_recv();
+        auto mbuf = co_await stream.async_recv();
         if ( mbuf.has_value() ) {
           CHECK( mbuf.value().readable_bytes().size() == num_bufs * msg.size() );
           bufs.push_back( std::move( mbuf.value() ) );

@@ -15,9 +15,9 @@ TEST_CASE( "ipv6 sanity check" ) {
     auto mstream = co_await acceptor.async_accept();
     auto& stream = mstream.value();
 
-    auto rx = stream.get_receiver( 0 );
+    stream.set_buffer_group( 0 );
 
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await stream.async_recv();
     auto& buf = mbuf.value();
 
     auto octets = buf.readable_bytes();
@@ -47,9 +47,9 @@ TEST_CASE( "ipv6 sanity check" ) {
     auto result = co_await client.async_send( msg );
     CHECK( result.value() == msg.size() );
 
-    auto rx = client.get_receiver( 0 );
+    client.set_buffer_group( 0 );
 
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await client.async_recv();
 
     CHECK( mbuf.has_value() );
 

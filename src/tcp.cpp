@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <fiona/tcp.hpp>
 
 #include <fiona/borrowed_buffer.hpp>         // for borrowed_buffer
@@ -286,6 +287,11 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
 
 stream::stream( executor ex, int fd ) : pstream_{ new detail::stream_impl{ ex, fd } } {}
 
+stream::~stream() {
+  cancel_timer();
+  cancel_recv();
+}
+
 void
 stream::timeout( __kernel_timespec ts ) {
   pstream_->ts_ = ts;
@@ -321,9 +327,34 @@ stream::cancel_timer() {
   }
 }
 
+void
+stream::cancel_recv() {
+  if ( pstream_ && pstream_->recv_frame_.initiated_ ) {
+    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    {
+      auto sqe = io_uring_get_sqe( ring );
+      io_uring_prep_cancel( sqe, &pstream_->recv_frame_, 0 );
+      io_uring_sqe_set_data( sqe, nullptr );
+      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+      fiona::detail::submit_ring( ring );
+    }
+  }
+}
+
 executor
 stream::get_executor() const {
   return pstream_->ex_;
+}
+
+void
+stream::set_buffer_group( std::uint16_t bgid ) {
+  auto& rf = pstream_->recv_frame_;
+  if ( rf.initiated_ || rf.num_bufs_ > 0 ) {
+    fiona::detail::throw_errno_as_error_code( EBUSY );
+  }
+
+  rf.buffer_group_id_ = bgid;
 }
 
 stream_close_awaitable
@@ -346,9 +377,10 @@ stream::async_send( std::span<unsigned char const> buf ) {
   return { buf, pstream_ };
 }
 
-receiver
-stream::get_receiver( std::uint16_t buffer_group_id ) {
-  return { pstream_, buffer_group_id };
+recv_awaitable
+stream::async_recv() {
+  BOOST_ASSERT( pstream_->recv_frame_.buffer_group_id_ >= 0 );
+  return { pstream_ };
 }
 
 stream_close_awaitable::stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream )
@@ -448,6 +480,13 @@ send_awaitable::send_awaitable( std::span<unsigned char const> buf, boost::intru
 
 send_awaitable::~send_awaitable() {
   if ( pstream_->send_frame_.initiated_ && !pstream_->send_frame_.done_ ) {
+    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel( sqe, &pstream_->send_frame_, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    fiona::detail::submit_ring( ring );
   }
 }
 
@@ -492,30 +531,6 @@ send_awaitable::await_resume() {
   return { res };
 }
 
-receiver::receiver( boost::intrusive_ptr<detail::stream_impl> pstream, std::uint16_t buffer_group_id )
-    : pstream_{ pstream }, buffer_group_id_{ buffer_group_id } {
-  pstream_->recv_frame_.buffer_group_id_ = buffer_group_id;
-}
-
-receiver::~receiver() {
-  if ( pstream_->recv_frame_.initiated_ ) {
-    pstream_->cancelled_ = true;
-    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
-    auto sqe = fiona::detail::get_sqe( ring );
-    io_uring_prep_cancel( sqe, &pstream_->recv_frame_, 0 );
-    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-    io_uring_sqe_set_data( sqe, nullptr );
-    fiona::detail::submit_ring( ring );
-
-    pstream_->recv_frame_.buffer_group_id_ = -1;
-  }
-}
-
-recv_awaitable
-receiver::async_recv() {
-  return { pstream_ };
-}
-
 recv_awaitable::recv_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream ) : pstream_{ pstream } {}
 
 recv_awaitable::~recv_awaitable() {}
@@ -531,6 +546,7 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   rf.h_ = h;
   if ( rf.initiated_ ) {
+    BOOST_ASSERT( rf.buffers_.empty() );
     return;
   }
 

@@ -35,10 +35,10 @@ fiona_echo_bench() {
 
     std::size_t num_bytes = 0;
 
-    auto rx = stream.get_receiver( bgid );
+    stream.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto borrowed_buf = co_await rx.async_recv();
+      auto borrowed_buf = co_await stream.async_recv();
 
       auto octets = borrowed_buf.value().readable_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ), octets.size() );
@@ -80,13 +80,13 @@ fiona_echo_bench() {
 
     std::size_t num_bytes = 0;
 
-    auto rx = client.get_receiver( bgid );
+    client.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto result = co_await client.async_send( msg );
       REQUIRE( result.value() == std::size( msg ) );
 
-      auto borrowed_buf = co_await rx.async_recv();
+      auto borrowed_buf = co_await client.async_recv();
 
       auto octets = borrowed_buf.value().readable_bytes();
       auto m = borrowed_buf.value().as_str();

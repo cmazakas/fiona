@@ -18,6 +18,7 @@ private:
   unsigned num_read_ = 0;
   std::size_t num_bufs_ = 0;
   std::uint16_t bid_ = 0;
+  int* pnum_bufs_ = nullptr;
 
 public:
   borrowed_buffer() = default;
@@ -25,29 +26,31 @@ public:
   borrowed_buffer( borrowed_buffer const& ) = delete;
   borrowed_buffer& operator=( borrowed_buffer const& ) = delete;
 
-  borrowed_buffer( io_uring_buf_ring* br, void* addr, unsigned len,
-                   std::size_t num_bufs, std::uint16_t bid, unsigned num_read )
-      : br_( br ), addr_( addr ), len_{ len }, num_read_{ num_read },
-        num_bufs_{ num_bufs }, bid_{ bid } {}
+  borrowed_buffer( io_uring_buf_ring* br, void* addr, unsigned len, std::size_t num_bufs, std::uint16_t bid,
+                   unsigned num_read, int* pnum_bufs )
+      : br_( br ), addr_( addr ), len_{ len }, num_read_{ num_read }, num_bufs_{ num_bufs }, bid_{ bid },
+        pnum_bufs_{ pnum_bufs } {
+    ++*pnum_bufs_;
+  }
 
   borrowed_buffer( borrowed_buffer&& rhs ) noexcept
-      : br_{ rhs.br_ }, addr_{ rhs.addr_ }, len_{ rhs.len_ },
-        num_read_{ rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
-        bid_{ rhs.bid_ } {
+      : br_{ rhs.br_ }, addr_{ rhs.addr_ }, len_{ rhs.len_ }, num_read_{ rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
+        bid_{ rhs.bid_ }, pnum_bufs_{ rhs.pnum_bufs_ } {
     rhs.br_ = nullptr;
     rhs.addr_ = nullptr;
     rhs.len_ = 0;
     rhs.num_read_ = 0;
     rhs.num_bufs_ = 0;
     rhs.bid_ = 0;
+    rhs.pnum_bufs_ = nullptr;
   }
 
   ~borrowed_buffer() {
     if ( br_ ) {
       auto buf_ring = br_;
-      io_uring_buf_ring_add( buf_ring, addr_, len_, bid_,
-                             io_uring_buf_ring_mask( num_bufs_ ), 0 );
+      io_uring_buf_ring_add( buf_ring, addr_, len_, bid_, io_uring_buf_ring_mask( num_bufs_ ), 0 );
       io_uring_buf_ring_advance( buf_ring, 1 );
+      --*pnum_bufs_;
     }
   }
 
@@ -55,9 +58,9 @@ public:
     if ( this != &rhs ) {
       if ( br_ ) {
         auto buf_ring = br_;
-        io_uring_buf_ring_add( buf_ring, addr_, len_, bid_,
-                               io_uring_buf_ring_mask( num_bufs_ ), 0 );
+        io_uring_buf_ring_add( buf_ring, addr_, len_, bid_, io_uring_buf_ring_mask( num_bufs_ ), 0 );
         io_uring_buf_ring_advance( buf_ring, 1 );
+        --*pnum_bufs_;
       }
 
       br_ = rhs.br_;
@@ -66,6 +69,7 @@ public:
       num_read_ = rhs.num_read_;
       num_bufs_ = rhs.num_bufs_;
       bid_ = rhs.bid_;
+      pnum_bufs_ = rhs.pnum_bufs_;
 
       rhs.br_ = nullptr;
       rhs.addr_ = nullptr;
@@ -73,6 +77,7 @@ public:
       rhs.num_read_ = 0;
       rhs.num_bufs_ = 0;
       rhs.bid_ = 0;
+      rhs.pnum_bufs_ = nullptr;
     }
     return *this;
   }
@@ -81,9 +86,7 @@ public:
     return { static_cast<unsigned char*>( addr_ ), num_read_ };
   }
 
-  std::string_view as_str() const noexcept {
-    return { static_cast<char*>( addr_ ), num_read_ };
-  }
+  std::string_view as_str() const noexcept { return { static_cast<char const*>( addr_ ), num_read_ }; }
 };
 } // namespace fiona
 
