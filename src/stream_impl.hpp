@@ -153,7 +153,6 @@ struct stream_impl {
     std::coroutine_handle<> h_ = nullptr;
     timepoint_type last_recv_ = clock_type::now();
     int res_ = 0;
-    int num_bufs_ = 0;
     std::uint16_t buffer_group_id_ = -1;
     bool initiated_ = false;
     bool done_ = false;
@@ -189,7 +188,7 @@ struct stream_impl {
         auto buffer = pbuf_ring_->get_buffer_view( buffer_id );
 
         buffers_.push_back( borrowed_buffer( pbuf_ring_->get(), buffer.data(), buffer.size(), pbuf_ring_->size(),
-                                             buffer_id, cqe->res, &num_bufs_ ) );
+                                             buffer_id, cqe->res ) );
       }
 
       if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {

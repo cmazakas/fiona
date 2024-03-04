@@ -350,7 +350,7 @@ stream::get_executor() const {
 void
 stream::set_buffer_group( std::uint16_t bgid ) {
   auto& rf = pstream_->recv_frame_;
-  if ( rf.initiated_ || rf.num_bufs_ > 0 ) {
+  if ( rf.initiated_ ) {
     fiona::detail::throw_errno_as_error_code( EBUSY );
   }
 
