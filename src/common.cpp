@@ -16,63 +16,37 @@
 namespace fiona {
 namespace detail {
 
-buf_ring::buf_ring( io_uring* ring, std::size_t num_bufs, std::size_t buf_size, std::uint16_t bgid )
+buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid )
     : bufs_( num_bufs ), ring_( ring ), bgid_{ bgid } {
+  int ret = 0;
 
-  struct posix_memalign_guard {
-    void* p = nullptr;
-    ~posix_memalign_guard() {
-      if ( p ) {
-        free( p );
-      }
-    }
-  };
-
-  int ret = -1;
-
-  posix_memalign_guard guard;
-
-  std::size_t n = sizeof( io_uring_buf ) * bufs_.size();
-  std::size_t pagesize = sysconf( _SC_PAGESIZE );
-  ret = posix_memalign( &guard.p, pagesize, n );
-  if ( ret != 0 ) {
-    throw std::bad_alloc();
+  auto* buf_ring = io_uring_setup_buf_ring( ring_, num_bufs, bgid, 0, &ret );
+  if ( buf_ring == nullptr ) {
+    throw_errno_as_error_code( -ret );
   }
 
+  buf_ring_ = buf_ring;
+}
+
+buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::size_t buf_size, std::uint16_t bgid )
+    : buf_ring( ring, num_bufs, bgid ) {
   for ( auto& buf : bufs_ ) {
-    buf.resize( buf_size );
+    buf = recv_buffer( buf_size );
   }
 
-  buf_ring_ = static_cast<io_uring_buf_ring*>( guard.p );
-  io_uring_buf_ring_init( buf_ring_ );
-
-  io_uring_buf_reg reg = {
-      .ring_addr = reinterpret_cast<std::uintptr_t>( buf_ring_ ),
-      .ring_entries = static_cast<std::uint32_t>( bufs_.size() ),
-      .bgid = bgid_,
-      .flags = 0,
-      .resv = { 0 },
-  };
-
-  ret = io_uring_register_buf_ring( ring_, &reg, 0 );
-  if ( ret != 0 ) {
-    fiona::detail::throw_errno_as_error_code( -ret );
-  }
-
+  auto mask = io_uring_buf_ring_mask( static_cast<unsigned>( bufs_.size() ) );
   for ( std::size_t i = 0; i < bufs_.size(); ++i ) {
     auto& buf = bufs_[i];
-    io_uring_buf_ring_add( buf_ring_, buf.data(), buf.size(), i, io_uring_buf_ring_mask( bufs_.size() ), i );
+    io_uring_buf_ring_add( buf_ring_, buf.data(), static_cast<unsigned>( buf.capacity() ),
+                           static_cast<unsigned short>( i ), mask, static_cast<int>( i ) );
   }
-  io_uring_buf_ring_advance( buf_ring_, bufs_.size() );
-
-  guard.p = nullptr;
+  io_uring_buf_ring_advance( buf_ring_, static_cast<int>( bufs_.size() ) );
 }
 
 buf_ring::~buf_ring() {
   if ( buf_ring_ ) {
     BOOST_ASSERT( ring_ );
-    io_uring_unregister_buf_ring( ring_, bgid_ );
-    free( buf_ring_ );
+    io_uring_free_buf_ring( ring_, buf_ring_, static_cast<unsigned>( bufs_.size() ), bgid_ );
   }
 }
 

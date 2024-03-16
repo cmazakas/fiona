@@ -1,21 +1,18 @@
-#include "fiona/tls.hpp"
 #include "helpers.hpp"
-
-#include <botan/certstor.h>
-#include <botan/pk_keys.h>
-#include <botan/pkix_enums.h>
-#include <botan/x509cert.h>
-#include <botan/x509path.h>
 
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
+#include <fiona/tls.hpp>
 
+#include <botan/certstor.h>
 #include <botan/credentials_manager.h>
 #include <botan/data_src.h>
+#include <botan/pk_keys.h>
 #include <botan/pkcs8.h>
+#include <botan/pkix_enums.h>
 #include <botan/system_rng.h>
 #include <botan/tls_alert.h>
 #include <botan/tls_callbacks.h>
@@ -26,6 +23,8 @@
 #include <botan/tls_session_manager.h>
 #include <botan/tls_session_manager_memory.h>
 #include <botan/x509_key.h>
+#include <botan/x509cert.h>
+#include <botan/x509path.h>
 #include <botan/x509self.h>
 
 #include <filesystem>
@@ -41,9 +40,11 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> recv_buf_;
   bool close_notify_received_ = false;
 
+  ~tls_callbacks() override;
+
   void tls_emit_data( std::span<std::uint8_t const> data ) override {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
-  };
+  }
 
   void tls_record_received( uint64_t seq_no, std::span<std::uint8_t const> data ) override {
     (void)seq_no;
@@ -80,7 +81,9 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
   }
 };
 
-struct tls_credentials_manager : public Botan::Credentials_Manager {
+tls_callbacks::~tls_callbacks() {}
+
+struct tls_credentials_manager final : public Botan::Credentials_Manager {
   struct cert_key_pair {
     Botan::X509_Certificate cert;
     std::shared_ptr<Botan::Private_Key> key;
@@ -88,6 +91,8 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
 
   std::vector<cert_key_pair> cert_key_pairs_;
   Botan::Certificate_Store_In_Memory cert_store_;
+
+  ~tls_credentials_manager() override;
 
   tls_credentials_manager() {
     {
@@ -172,6 +177,10 @@ struct tls_credentials_manager : public Botan::Credentials_Manager {
   }
 };
 
+tls_credentials_manager::~tls_credentials_manager() {}
+
+namespace {
+
 fiona::task<void>
 server( fiona::tcp::acceptor acceptor ) {
   auto prng = std::make_shared<Botan::System_RNG>();
@@ -197,9 +206,9 @@ server( fiona::tcp::acceptor acceptor ) {
   auto ex = stream.get_executor();
   ex.register_buffer_sequence( 1024, 128, 0 );
 
-  auto rx = stream.get_receiver( 0 );
+  stream.set_buffer_group( 0 );
   while ( !tls_server.is_handshake_complete() ) {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await stream.async_recv();
     auto& buf = mbuf.value();
 
     CHECK( buf.readable_bytes().size() > 0 );
@@ -207,6 +216,7 @@ server( fiona::tcp::acceptor acceptor ) {
     tls_server.received_data( buf.readable_bytes() );
 
     if ( !send_buf.empty() ) {
+      std::cout << "going to send: " << send_buf.size() << " octets to the client" << std::endl;
       co_await stream.async_send( send_buf );
       send_buf.clear();
     }
@@ -217,7 +227,7 @@ server( fiona::tcp::acceptor acceptor ) {
   CHECK( tls_server.is_handshake_complete() );
 
   {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await stream.async_recv();
     tls_server.received_data( mbuf.value().readable_bytes() );
   }
 
@@ -238,7 +248,7 @@ server( fiona::tcp::acceptor acceptor ) {
   CHECK( tls_server.is_active() );
 
   {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await stream.async_recv();
     tls_server.received_data( mbuf.value().readable_bytes() );
     CHECK( !send_buf.empty() );
     CHECK( pcallbacks->close_notify_received_ );
@@ -286,10 +296,10 @@ client( fiona::executor ex, std::uint16_t const port ) {
   send_buf.clear();
 
   ex.register_buffer_sequence( 1024, 128, 1 );
-  auto rx = client.get_receiver( 1 );
+  client.set_buffer_group( 1 );
 
   while ( !tls_client.is_handshake_complete() ) {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await client.async_recv();
     auto& buf = mbuf.value();
 
     auto data = buf.readable_bytes();
@@ -306,7 +316,7 @@ client( fiona::executor ex, std::uint16_t const port ) {
   CHECK( tls_client.is_active() );
   CHECK( tls_client.is_handshake_complete() );
 
-  tls_client.send( std::string_view( "hello, world! encryption is great!" ) );
+  tls_client.send( "hello, world! encryption is great!" );
   CHECK( !send_buf.empty() );
 
   auto mnbytes = co_await client.async_send( send_buf );
@@ -314,7 +324,7 @@ client( fiona::executor ex, std::uint16_t const port ) {
   send_buf.clear();
 
   while ( pcallbacks->recv_buf_.empty() ) {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await client.async_recv();
     tls_client.received_data( mbuf.value().readable_bytes() );
   }
 
@@ -336,7 +346,7 @@ client( fiona::executor ex, std::uint16_t const port ) {
   send_buf.clear();
 
   {
-    auto mbuf = co_await rx.async_recv();
+    auto mbuf = co_await client.async_recv();
     CHECK( !mbuf.value().readable_bytes().empty() );
     tls_client.received_data( mbuf.value().readable_bytes() );
     CHECK( send_buf.empty() );
@@ -356,15 +366,33 @@ fiona::task<void>
 tls_client( fiona::executor ex, std::uint16_t const port ) {
   fiona::tls::client client( ex );
 
+  ex.register_buffer_sequence( 4 * 1024, 32, 1 );
+  client.set_buffer_group( 1 );
+
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-  auto mok = co_await client.as_tcp().async_connect( &addr );
+  auto mok = co_await client.async_connect( &addr );
   std::cout << "completed async_connect() as tls/tcp client" << std::endl;
-  CHECK( mok.has_value() );
+  if ( mok.has_error() ) {
+    std::cout << mok.error().message() << std::endl;
+  }
+  REQUIRE( mok.has_value() );
+
+  co_await client.async_handshake();
+  std::cout << "completed tls::client::async_handshake()" << std::endl;
+
+  co_await client.async_send( "hello, world! encryption is great!" );
+  auto mnum_read = co_await client.async_recv();
+  CHECK( mnum_read.has_value() );
+
+  auto msg = std::string_view( reinterpret_cast<char const*>( client.buffer().data() ), client.buffer().size() );
+  CHECK( msg == "hello from the server!" );
 
   ++num_runs;
 
   co_return;
 }
+
+} // namespace
 
 TEST_CASE( "tls_test - botan hello world" ) {
   num_runs = 0;

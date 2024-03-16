@@ -66,7 +66,7 @@ struct waker {
     auto data = reinterpret_cast<std::uintptr_t>( h_.address() );
     data |= detail::wake_mask;
 
-    int ret = -1;
+    ssize_t ret = -1;
     ret = write( fd_, &data, sizeof( data ) );
     if ( ret == -1 ) {
       detail::throw_errno_as_error_code( errno );
@@ -105,7 +105,9 @@ struct executor_access_policy {
     return ex.pframe_->run_queue_;
   }
 
-  static inline std::lock_guard<std::mutex> lock_guard( executor ex ) { return std::lock_guard( ex.pframe_->m_ ); }
+  static inline std::lock_guard<std::mutex> lock_guard( executor ex ) {
+    return std::lock_guard<std::mutex>( ex.pframe_->m_ );
+  }
 
   static void unhandled_exception( executor ex, std::exception_ptr ep ) {
     if ( !ex.pframe_->exception_ptr_ ) {
@@ -353,7 +355,7 @@ struct internal_promise : public internal_promise_base<T> {
   internal_promise( task_map_type& tasks, Args&&... ) : internal_promise_base<T>( tasks ) {}
 
   internal_task<T> get_return_object() {
-    return internal_task( std::coroutine_handle<internal_promise>::from_promise( *this ) );
+    return internal_task<T>( std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
   template <class Expr>
@@ -368,7 +370,7 @@ struct internal_promise<void> : public internal_promise_base<void> {
   internal_promise( task_map_type& tasks, Args&&... ) : internal_promise_base( tasks ) {}
 
   internal_task<void> get_return_object() {
-    return internal_task( std::coroutine_handle<internal_promise>::from_promise( *this ) );
+    return internal_task<void>( std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
   void return_void() {}
@@ -436,14 +438,14 @@ executor::post( task<void> t ) const {
   auto data = reinterpret_cast<std::uintptr_t>( p );
   data |= detail::post_mask;
 
-  int ret = -1;
+  ssize_t ret = -1;
   ret = write( fd, &data, sizeof( data ) );
   if ( ret == -1 ) {
     detail::throw_errno_as_error_code( errno );
   }
 
   // do this to make tsan happy
-  { auto guard = std::lock_guard( pframe_->m_ ); }
+  { auto guard = std::lock_guard<std::mutex>( pframe_->m_ ); }
 }
 
 waker

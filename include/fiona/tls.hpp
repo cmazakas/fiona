@@ -1,6 +1,7 @@
 #ifndef FIONA_TLS_HPP
 #define FIONA_TLS_HPP
 
+#include <fiona/borrowed_buffer.hpp>
 #include <fiona/executor.hpp>
 #include <fiona/task.hpp>
 #include <fiona/tcp.hpp>
@@ -12,28 +13,9 @@
 namespace fiona {
 namespace tls {
 
-struct connect_awaitable;
-
-namespace detail {
-
-struct client_impl;
-
-void FIONA_DECL
-intrusive_ptr_add_ref( client_impl* pclient ) noexcept;
-
-void FIONA_DECL
-intrusive_ptr_release( client_impl* pclient ) noexcept;
-
-} // namespace detail
-
-struct client {
-private:
-  boost::intrusive_ptr<detail::client_impl> pclient_;
-
+struct FIONA_DECL client : private tcp::client {
 public:
   client() = default;
-
-  FIONA_DECL
   client( executor ex );
 
   client( client const& ) = default;
@@ -42,15 +24,18 @@ public:
   client( client&& ) = default;
   client& operator=( client&& ) = default;
 
-  ~client() = default;
+  virtual ~client() override;
 
   bool operator==( client const& ) const = default;
 
-  FIONA_DECL
-  tcp::client as_tcp() const noexcept;
+  using tcp::client::async_connect;
+  using tcp::stream::set_buffer_group;
 
-  FIONA_DECL
-  task<void> async_handshake();
+  task<result<void>> async_handshake();
+  task<result<std::size_t>> async_send( std::span<unsigned char const> buf );
+  task<result<std::size_t>> async_send( std::string_view msg );
+  task<result<std::size_t>> async_recv();
+  std::span<unsigned char> buffer() const noexcept;
 };
 
 } // namespace tls

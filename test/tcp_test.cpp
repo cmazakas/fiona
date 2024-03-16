@@ -5,9 +5,15 @@
 #include <fiona/tcp.hpp>
 #include <fiona/time.hpp>
 
+#include <boost/config.hpp>
+
 #include <atomic>
 #include <random>
 #include <thread>
+
+#if BOOST_CLANG
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#endif
 
 static int num_runs = 0;
 

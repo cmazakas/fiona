@@ -31,6 +31,7 @@ throw_busy() {
 } // namespace
 
 namespace detail {
+
 struct timer_impl {
 private:
   friend struct fiona::timer_awaitable;
@@ -47,7 +48,7 @@ private:
     bool done_ = false;
 
     timeout_frame( executor ex, timer_impl* ptimer );
-    ~timeout_frame();
+    ~timeout_frame() override;
 
     void reset();
 
@@ -70,7 +71,7 @@ private:
 
     cancel_frame( executor ex, timer_impl* ptimer );
 
-    ~cancel_frame();
+    ~cancel_frame() override;
 
     void reset();
 
@@ -240,7 +241,7 @@ timer_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto sqe = detail::get_sqe( ring );
 
   io_uring_prep_timeout( sqe, &frame.ts_, 0, 0 );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &frame ).detach() );
+  io_uring_sqe_set_data( sqe, boost::intrusive_ptr<detail::timer_impl::timeout_frame>( &frame ).detach() );
 
   frame.initiated_ = true;
 }
@@ -288,7 +289,7 @@ timer_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ring = detail::executor_access_policy::ring( frame.ex_ );
   auto sqe = detail::get_sqe( ring );
   io_uring_prep_cancel( sqe, &ptimer_->tf_, 0 );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &frame ).detach() );
+  io_uring_sqe_set_data( sqe, boost::intrusive_ptr<detail::timer_impl::cancel_frame>( &frame ).detach() );
 
   frame.h_ = h;
   frame.initiated_ = true;

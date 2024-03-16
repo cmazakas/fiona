@@ -1,6 +1,7 @@
 #ifndef FIONA_TASK_HPP
 #define FIONA_TASK_HPP
 
+#include <boost/config.hpp>
 #include <boost/core/exchange.hpp>
 #include <coroutine>        // for coroutine_handle, suspend_always
 #include <exception>        // for exception_ptr, rethrow_exception, curren...
@@ -82,7 +83,11 @@ private:
       return coro.promise().continuation_;
     }
 
-    void await_resume() noexcept { BOOST_ASSERT( false ); }
+    BOOST_NORETURN
+    void await_resume() noexcept {
+      BOOST_ASSERT( false );
+      __builtin_unreachable();
+    }
   };
 
   std::coroutine_handle<> continuation_ = nullptr;
@@ -122,7 +127,7 @@ public:
       exception_.~exception_ptr();
       break;
 
-    default:
+    case result_type::uninit:
       break;
     }
   }

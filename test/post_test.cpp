@@ -12,9 +12,15 @@
 #include <string>
 #include <thread>
 
+#if BOOST_CLANG
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#endif
+
 static std::atomic_int num_runs = 0;
 
 inline constexpr std::chrono::milliseconds sleep_dur( 25 );
+
+namespace {
 
 fiona::task<std::string>
 make_string( fiona::executor ex ) {
@@ -48,6 +54,8 @@ throw_exception( fiona::executor ex ) {
 
   co_return 1337;
 }
+
+} // namespace
 
 TEST_CASE( "post_test - awaiting a sibling coro" ) {
   num_runs = 0;
@@ -228,6 +236,8 @@ TEST_CASE( "post_test - void returning function" ) {
 
 #if defined( RUN_SYMMETRIC_TRANSFER_TESTS )
 
+namespace {
+
 fiona::task<void>
 empty_task() {
   co_return;
@@ -241,6 +251,8 @@ symmetric_transfer_test() {
   ++num_runs;
   co_return;
 }
+
+} // namespace
 
 TEST_CASE( "post_test - symmetric transfer" ) {
   num_runs = 0;

@@ -159,8 +159,7 @@ struct guard {
 
       blacklist.insert( p );
 
-      auto q = boost::intrusive_ptr( static_cast<fiona::detail::awaitable_base*>( p ), false );
-      (void)q;
+      intrusive_ptr_release( static_cast<fiona::detail::awaitable_base*>( p ) );
     }
   }
 };
@@ -192,15 +191,15 @@ io_context::spawn( task<void> t ) {
 
 void
 io_context::run() {
-  struct advance_guard {
-    io_uring* ring = nullptr;
-    unsigned count = 0;
-    ~advance_guard() {
-      if ( ring ) {
-        io_uring_cq_advance( ring, count );
-      }
-    }
-  };
+  // struct advance_guard {
+  //   io_uring* ring = nullptr;
+  //   unsigned count = 0;
+  //   ~advance_guard() {
+  //     if ( ring ) {
+  //       io_uring_cq_advance( ring, count );
+  //     }
+  //   }
+  // };
 
   auto on_cqe = []( io_uring_cqe* cqe ) {
     auto p = io_uring_cqe_get_data( cqe );
@@ -209,7 +208,7 @@ io_context::run() {
       return;
     }
 
-    auto q = boost::intrusive_ptr( static_cast<detail::awaitable_base*>( p ), false );
+    auto q = boost::intrusive_ptr<detail::awaitable_base>( static_cast<detail::awaitable_base*>( p ), false );
     BOOST_ASSERT( q->use_count() >= 1 );
 
     q->await_process_cqe( cqe );
@@ -288,7 +287,7 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params ) : p
   int ret = -1;
   auto ring = &io_ring_;
 
-  ret = pipe( pipefd_ );
+  ret = pipe( pipefd_.data() );
   if ( ret == -1 ) {
     detail::throw_errno_as_error_code( errno );
   }

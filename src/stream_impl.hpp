@@ -11,6 +11,7 @@
 #include <liburing.h>
 
 #include "awaitable_base.hpp"
+#include "fiona/detail/common.hpp"
 
 namespace fiona {
 namespace tcp {
@@ -24,13 +25,13 @@ intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 void FIONA_DECL
 intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
-struct stream_impl {
+struct FIONA_DECL stream_impl {
   using clock_type = std::chrono::steady_clock;
   using timepoint_type = std::chrono::time_point<clock_type>;
 
   struct nop_frame final : public fiona::detail::awaitable_base {
     nop_frame( stream_impl* pstream ) : pstream_{ pstream } {}
-    ~nop_frame() override {}
+    ~nop_frame() override;
 
     stream_impl* pstream_ = nullptr;
 
@@ -55,7 +56,7 @@ struct stream_impl {
 
     cancel_frame() = delete;
     cancel_frame( stream_impl* pstream ) : pstream_{ pstream } {}
-    ~cancel_frame() override {}
+    ~cancel_frame() override;
 
     void reset() {
       h_ = nullptr;
@@ -89,6 +90,7 @@ struct stream_impl {
   };
 
   struct close_frame : public cancel_frame {
+    ~close_frame() override;
     using cancel_frame::cancel_frame;
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
@@ -114,7 +116,7 @@ struct stream_impl {
 
     send_frame( stream_impl* pstream ) : pstream_{ pstream } {}
 
-    ~send_frame() override {}
+    ~send_frame() override;
 
     void reset() {
       h_ = nullptr;
@@ -147,19 +149,19 @@ struct stream_impl {
   };
 
   struct recv_frame final : public fiona::detail::awaitable_base {
-    std::deque<result<borrowed_buffer>> buffers_;
+    std::deque<result<recv_buffer>> buffers_;
     fiona::detail::buf_ring* pbuf_ring_ = nullptr;
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
     timepoint_type last_recv_ = clock_type::now();
     int res_ = 0;
-    std::uint16_t buffer_group_id_ = -1;
+    int buffer_group_id_ = -1;
     bool initiated_ = false;
     bool done_ = false;
 
     recv_frame( stream_impl* pstream ) : pstream_{ pstream } {}
 
-    ~recv_frame() override {}
+    ~recv_frame() override;
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
       bool const cancelled_by_timer = ( cqe->res == -ECANCELED && !pstream_->cancelled_ );
@@ -175,7 +177,7 @@ struct stream_impl {
 
       if ( cqe->res == 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
-        buffers_.push_back( borrowed_buffer() );
+        buffers_.push_back( recv_buffer() );
       }
 
       if ( cqe->res > 0 ) {
@@ -185,10 +187,19 @@ struct stream_impl {
         last_recv_ = clock_type::now();
 
         auto buffer_id = cqe->flags >> 16;
-        auto buffer = pbuf_ring_->get_buffer_view( buffer_id );
 
-        buffers_.push_back( borrowed_buffer( pbuf_ring_->get(), buffer.data(), buffer.size(), pbuf_ring_->size(),
-                                             buffer_id, cqe->res ) );
+        auto& buf = pbuf_ring_->get_buf( buffer_id );
+        auto buffer = std::move( buf );
+        buffer.set_len( static_cast<std::size_t>( cqe->res ) );
+        buf = recv_buffer( buffer.capacity() );
+
+        buffers_.push_back( std::move( buffer ) );
+
+        auto* br = pbuf_ring_->get();
+        io_uring_buf_ring_add( br, buf.data(), static_cast<unsigned>( buf.capacity() ),
+                               static_cast<unsigned short>( buffer_id ), io_uring_buf_ring_mask( pbuf_ring_->size() ),
+                               0 );
+        io_uring_buf_ring_advance( br, 1 );
       }
 
       if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {
@@ -228,7 +239,7 @@ struct stream_impl {
         io_uring_sqe_set_data( sqe, this );
         io_uring_sqe_set_flags( sqe, flags );
         sqe->ioprio |= IORING_RECVSEND_POLL_FIRST;
-        sqe->buf_group = buffer_group_id_;
+        sqe->buf_group = static_cast<unsigned short>( buffer_group_id_ );
       }
 
       initiated_ = true;
@@ -245,7 +256,7 @@ struct stream_impl {
 
     timeout_frame() = delete;
     timeout_frame( stream_impl* pstream ) : pstream_{ pstream } {}
-    virtual ~timeout_frame() override {}
+    ~timeout_frame() override;
 
     void reset() {
       initiated_ = false;
@@ -367,21 +378,10 @@ struct stream_impl {
 
   stream_impl( executor ex, int fd ) : stream_impl( ex ) { fd_ = fd; }
 
-  virtual ~stream_impl() {
-    if ( fd_ >= 0 ) {
-      auto ring = fiona::detail::executor_access_policy::ring( ex_ );
-      auto sqe = fiona::detail::get_sqe( ring );
-      io_uring_prep_close_direct( sqe, fd_ );
-      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-      io_uring_sqe_set_data( sqe, nullptr );
-      fiona::detail::submit_ring( ring );
-
-      fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
-    }
-  }
+  virtual ~stream_impl();
 };
 
-struct client_impl : public stream_impl {
+struct FIONA_DECL client_impl : public stream_impl {
   struct socket_frame final : public fiona::detail::awaitable_base {
     client_impl* pclient_ = nullptr;
     std::coroutine_handle<> h_;
@@ -391,7 +391,7 @@ struct client_impl : public stream_impl {
 
     socket_frame( client_impl* pclient ) : pclient_{ pclient } {}
 
-    virtual ~socket_frame() override {}
+    ~socket_frame() override;
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
       done_ = true;
@@ -437,7 +437,7 @@ struct client_impl : public stream_impl {
 
     connect_frame( client_impl* pclient ) : pclient_{ pclient } {}
 
-    virtual ~connect_frame() override {}
+    ~connect_frame() override;
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
       done_ = true;
@@ -482,7 +482,7 @@ struct client_impl : public stream_impl {
   client_impl( client_impl const& ) = delete;
   client_impl( client_impl&& ) = delete;
   client_impl( executor ex ) : stream_impl{ ex } {}
-  virtual ~client_impl() override {}
+  virtual ~client_impl() override;
 };
 
 } // namespace detail

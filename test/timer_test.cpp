@@ -5,10 +5,19 @@
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 
+#include <boost/config.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
-#include <iostream>
+
+#if BOOST_CLANG
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#endif
+
+std::chrono::milliseconds
+get_sleep_duration();
 
 static int num_runs = 0;
 
@@ -16,7 +25,7 @@ struct seeder {
   seeder( unsigned seed ) { std::srand( seed ); }
 };
 
-seeder initialize_seed( 4122023 );
+static seeder initialize_seed( 4122023 );
 
 std::chrono::milliseconds
 get_sleep_duration() {

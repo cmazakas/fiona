@@ -3,9 +3,15 @@
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 
+#include <boost/config.hpp>
+
 #include <atomic>
 #include <thread>
 #include <vector>
+
+#if BOOST_CLANG
+#pragma clang diagnostic ignored "-Wunreachable-code"
+#endif
 
 static std::atomic_int num_runs = 0;
 
@@ -37,7 +43,7 @@ struct custom_awaitable {
     t = std::thread( [nums = this->nums, m = this->m, should_detach = this->should_detach, waker]() mutable {
       std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
       {
-        std::lock_guard lg{ *m };
+        std::lock_guard<std::mutex> lg{ *m };
         *nums = std::vector{ 1, 2, 3, 4 };
       }
       ++num_runs;
@@ -55,7 +61,7 @@ struct custom_awaitable {
   }
 
   std::vector<int> await_resume() {
-    std::lock_guard lg{ *m };
+    std::lock_guard<std::mutex> lg{ *m };
     return std::move( *nums );
   }
 };

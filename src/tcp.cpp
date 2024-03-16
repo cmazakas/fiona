@@ -43,6 +43,26 @@ throw_busy() {
 
 namespace detail {
 
+stream_impl::~stream_impl() {
+  if ( fd_ >= 0 ) {
+    auto ring = fiona::detail::executor_access_policy::ring( ex_ );
+    auto sqe = fiona::detail::get_sqe( ring );
+    io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd_ ) );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_sqe_set_data( sqe, nullptr );
+    fiona::detail::submit_ring( ring );
+
+    fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
+  }
+}
+
+stream_impl::nop_frame::~nop_frame() {}
+stream_impl::cancel_frame::~cancel_frame() {}
+stream_impl::close_frame::~close_frame() {}
+stream_impl::send_frame::~send_frame() {}
+stream_impl::recv_frame::~recv_frame() {}
+stream_impl::timeout_frame::~timeout_frame() {}
+
 struct acceptor_impl {
   struct accept_frame final : public fiona::detail::awaitable_base {
     acceptor_impl* pacceptor_ = nullptr;
@@ -53,7 +73,7 @@ struct acceptor_impl {
 
     accept_frame() = delete;
     accept_frame( acceptor_impl* pacceptor ) : pacceptor_{ pacceptor } {}
-    ~accept_frame() = default;
+    ~accept_frame() override;
 
     void reset() {
       h_ = nullptr;
@@ -96,7 +116,8 @@ struct acceptor_impl {
   bool is_ipv4_ = true;
 
   acceptor_impl( executor ex, sockaddr const* addr, int const backlog ) : ex_{ ex } {
-    auto const addrlen = addr->sa_family == AF_INET6 ? sizeof( sockaddr_in6 ) : sizeof( sockaddr_in );
+    auto const addrlen =
+        static_cast<socklen_t>( addr->sa_family == AF_INET6 ? sizeof( sockaddr_in6 ) : sizeof( sockaddr_in ) );
 
     auto const is_ipv4 = ( addr->sa_family == AF_INET );
     BOOST_ASSERT( is_ipv4 || addr->sa_family == AF_INET6 );
@@ -174,6 +195,8 @@ public:
   }
 };
 
+acceptor_impl::accept_frame::~accept_frame() {}
+
 void
 intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept {
   ++pacceptor->count_;
@@ -245,8 +268,8 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto file_idx = fiona::detail::executor_access_policy::get_available_fd( ex );
   auto sqe = fiona::detail::get_sqe( ring );
 
-  io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0, file_idx );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &f ).detach() );
+  io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0, static_cast<unsigned>( file_idx ) );
+  io_uring_sqe_set_data( sqe, boost::intrusive_ptr<detail::acceptor_impl::accept_frame>( &f ).detach() );
 
   f.peer_fd_ = file_idx;
   f.initiated_ = true;
@@ -406,7 +429,7 @@ stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
   {
     auto fd = pstream_->fd_;
     auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_close_direct( sqe, fd );
+    io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd ) );
     io_uring_sqe_set_data( sqe, &pstream_->close_frame_ );
   }
 
@@ -450,7 +473,8 @@ stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   auto sqe = io_uring_get_sqe( ring );
   io_uring_prep_cancel_fd( sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
-  io_uring_sqe_set_data( sqe, boost::intrusive_ptr( &pstream_->cancel_frame_ ).detach() );
+  io_uring_sqe_set_data( sqe,
+                         boost::intrusive_ptr<detail::stream_impl::cancel_frame>( &pstream_->cancel_frame_ ).detach() );
 
   cf.initiated_ = true;
   cf.h_ = h;
@@ -550,19 +574,33 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
     return;
   }
 
+  auto bgid = pstream_->recv_frame_.buffer_group_id_;
+  if ( bgid == -1 ) {
+    fiona::detail::throw_errno_as_error_code( EINVAL );
+  }
+
   rf.pbuf_ring_ =
-      fiona::detail::executor_access_policy::get_buffer_group( pstream_->ex_, pstream_->recv_frame_.buffer_group_id_ );
+      fiona::detail::executor_access_policy::get_buffer_group( pstream_->ex_, static_cast<unsigned>( bgid ) );
   rf.schedule_recv();
 }
 
-result<borrowed_buffer>
+result<recv_buffer>
 recv_awaitable::await_resume() {
   auto buf = std::move( pstream_->recv_frame_.buffers_.front() );
   pstream_->recv_frame_.buffers_.pop_front();
   return buf;
 }
 
+namespace detail {
+
+client_impl::~client_impl() {}
+client_impl::socket_frame::~socket_frame() {}
+client_impl::connect_frame::~connect_frame() {}
+
+} // namespace detail
+
 client::client( executor ex ) { pstream_ = new detail::client_impl( ex ); }
+client::~client() {}
 
 connect_awaitable
 client::async_connect( sockaddr_in6 const* addr ) {
@@ -598,7 +636,7 @@ connect_awaitable::~connect_awaitable() {
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-  auto reserve_size = static_cast<int>( sf.initiated_ ) + static_cast<int>( cf.initiated_ );
+  unsigned reserve_size = sf.initiated_ + cf.initiated_;
   fiona::detail::reserve_sqes( ring, reserve_size );
 
   if ( sf.initiated_ && !sf.done_ ) {
@@ -644,19 +682,17 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   if ( pclient->fd_ >= 0 && pclient->connected_ ) {
-    fiona::detail::reserve_sqes( ring, 3 );
+    fiona::detail::reserve_sqes( ring, 2 );
   } else {
     if ( pclient->fd_ == -1 ) {
-      auto const file_idx = fiona::detail::executor_access_policy::get_available_fd( ex );
-
-      pclient->fd_ = file_idx;
+      pclient->fd_ = fiona::detail::executor_access_policy::get_available_fd( ex );
     }
 
-    fiona::detail::reserve_sqes( ring, 4 );
+    fiona::detail::reserve_sqes( ring, 3 );
 
     {
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP, pclient->fd_, 0 );
+      io_uring_prep_socket_direct( sqe, af, SOCK_STREAM, IPPROTO_TCP, static_cast<unsigned>( pclient->fd_ ), 0 );
       io_uring_sqe_set_data( sqe, &pclient->socket_frame_ );
       io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK );
 
@@ -669,11 +705,11 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   {
     auto addr = reinterpret_cast<sockaddr const*>( &pclient->addr_storage_ );
-    auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
+    socklen_t addrlen = is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 );
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_connect( sqe, pclient->fd_, addr, addrlen );
     io_uring_sqe_set_data( sqe, &pclient->connect_frame_ );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE | IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
   }
 
   {
@@ -681,16 +717,7 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_link_timeout( sqe, ts, 0 );
     io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_CQE_SKIP_SUCCESS );
-  }
-
-  {
-    auto addr = reinterpret_cast<sockaddr const*>( &pclient->addr_storage_ );
-    auto addrlen = ( is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );
-    auto sqe = io_uring_get_sqe( ring );
-    io_uring_prep_connect( sqe, pclient->fd_, addr, addrlen );
-    io_uring_sqe_set_data( sqe, &pclient->connect_frame_ );
-    io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
   }
 
   intrusive_ptr_add_ref( pstream_.get() );

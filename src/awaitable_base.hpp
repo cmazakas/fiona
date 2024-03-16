@@ -1,6 +1,8 @@
 #ifndef FIONA_DETAIL_AWAITABLE_BASE_HPP
 #define FIONA_DETAIL_AWAITABLE_BASE_HPP
 
+#include <fiona/detail/config.hpp>
+
 #include <coroutine>
 
 struct io_uring_cqe;
@@ -8,8 +10,8 @@ struct io_uring_cqe;
 namespace fiona {
 namespace detail {
 
-struct awaitable_base {
-  virtual ~awaitable_base() {}
+struct FIONA_DECL awaitable_base {
+  virtual ~awaitable_base();
   virtual void await_process_cqe( io_uring_cqe* cqe ) = 0;
   virtual std::coroutine_handle<> handle() noexcept = 0;
   virtual void inc_ref() noexcept = 0;

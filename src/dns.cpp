@@ -14,7 +14,7 @@ namespace fiona {
 
 struct dns_frame {
   std::mutex m_;
-  std::jthread t_;
+  std::thread t_;
   char const* node_ = nullptr;
   char const* service_ = nullptr;
   addrinfo const* hints_ = nullptr;
@@ -56,14 +56,14 @@ void
 dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto waker = ex_.make_waker( h );
   auto& frame = *pframe_;
-  frame.t_ = std::jthread( [pframe = pframe_, waker] {
+  frame.t_ = std::thread( [pframe = pframe_, waker] {
     int res = -1;
 
     addrinfo* addrlist = nullptr;
     res = getaddrinfo( pframe->node_, pframe->service_, pframe->hints_, &addrlist );
 
     {
-      std::lock_guard guard{ pframe->m_ };
+      std::lock_guard<std::mutex> guard{ pframe->m_ };
       pframe->res_ = res;
       pframe->addrlist_ = addrlist;
     }
@@ -75,7 +75,8 @@ dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
 result<dns_entry_list>
 dns_awaitable::await_resume() {
   auto& frame = *pframe_;
-  std::lock_guard guard( frame.m_ );
+  frame.t_.join();
+  std::lock_guard<std::mutex> guard( frame.m_ );
 
   if ( frame.res_ != 0 ) {
     return { fiona::error_code::from_errno( frame.res_ ) };

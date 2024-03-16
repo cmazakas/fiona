@@ -254,14 +254,12 @@ public:
   void await_suspend( std::coroutine_handle<> h );
 
   FIONA_DECL
-  result<borrowed_buffer> await_resume();
+  result<recv_buffer> await_resume();
 };
 
-struct client : public stream {
+struct FIONA_DECL client : public stream {
 public:
   client() {}
-
-  FIONA_DECL
   client( executor ex );
 
   client( client const& ) = default;
@@ -270,17 +268,12 @@ public:
   client( client&& ) = default;
   client& operator=( client&& ) = default;
 
-  virtual ~client() = default;
+  virtual ~client() override;
 
   bool operator==( client const& ) const = default;
 
-  FIONA_DECL
   connect_awaitable async_connect( sockaddr const* addr );
-
-  FIONA_DECL
   connect_awaitable async_connect( sockaddr_in const* addr );
-
-  FIONA_DECL
   connect_awaitable async_connect( sockaddr_in6 const* addr );
 };
 
