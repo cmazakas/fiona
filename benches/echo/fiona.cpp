@@ -5,6 +5,9 @@
 #include <fiona/ip.hpp>
 #include <fiona/tcp.hpp>
 
+#include <iostream>
+#include <thread>
+
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) { return ex.message(); }
 
 void

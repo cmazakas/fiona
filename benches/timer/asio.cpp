@@ -21,6 +21,10 @@ asio_timer_bench() {
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
 void
 asio_timer_bench() {
   static std::atomic_int anums = 0;

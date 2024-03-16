@@ -5,6 +5,9 @@
 #include <fiona/time.hpp>
 
 #include <atomic>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 void
 fiona_timer_bench() {
