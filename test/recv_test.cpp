@@ -13,41 +13,6 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "recv_test - owned buffer sequence" ) {
-  fiona::recv_buffer_sequence buf_seq;
-
-  fiona::recv_buffer buf1( 1024 );
-  fiona::recv_buffer buf2( 1024 );
-  fiona::recv_buffer buf3( 1024 );
-  fiona::recv_buffer buf4( 1024 );
-
-  buf_seq.push_back( std::move( buf1 ) );
-  buf_seq.push_back( std::move( buf2 ) );
-  buf_seq.push_back( std::move( buf3 ) );
-  buf_seq.push_back( std::move( buf4 ) );
-
-  auto pos = buf_seq.begin();
-
-  fiona::recv_buffer_view buf_view = *pos;
-  CHECK( buf_view.capacity() == 1024 );
-  CHECK( buf_view.size() == 0 );
-  CHECK( buf_view.readable_bytes().empty() );
-  CHECK( buf_view.spare_capacity_mut().size() == 1024 );
-
-  {
-    auto bytes = buf_view.spare_capacity_mut();
-    for ( auto& b : bytes ) {
-      b = 0xff;
-    }
-    buf_view.set_len( bytes.size() );
-  }
-
-  CHECK( buf_view.size() == buf_view.capacity() );
-  auto c = static_cast<std::size_t>(
-      std::count( buf_view.readable_bytes().begin(), buf_view.readable_bytes().end(), 0xff ) );
-  CHECK( c == buf_view.size() );
-}
-
 TEST_CASE( "recv_test - recv timeout" ) {
   num_runs = 0;
 

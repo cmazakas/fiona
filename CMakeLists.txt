@@ -14,6 +14,7 @@ find_package(Botan 3.3.0 COMPONENTS tls)
 set(fiona_headers
 
   include/fiona/borrowed_buffer.hpp
+  include/fiona/buffer.hpp
   include/fiona/dns.hpp
   include/fiona/error.hpp
   include/fiona/executor.hpp

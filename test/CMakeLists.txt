@@ -1,5 +1,6 @@
 set(fiona_test_sources
 
+  test/buffer_test.cpp
   test/timer_test.cpp
   test/ipv6_test.cpp
   test/recv_test.cpp
