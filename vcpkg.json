@@ -3,6 +3,7 @@
     "boost-asio",
     "boost-assert",
     "boost-beast",
+    "boost-buffers",
     "boost-config",
     "boost-container-hash",
     "boost-core",

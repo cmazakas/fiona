@@ -366,7 +366,7 @@ fiona::task<void>
 tls_client( fiona::executor ex, std::uint16_t const port ) {
   fiona::tls::client client( ex );
 
-  ex.register_buffer_sequence( 4 * 1024, 32, 1 );
+  ex.register_buffer_sequence( 4 * 1024, 8, 1 );
   client.set_buffer_group( 1 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -386,6 +386,8 @@ tls_client( fiona::executor ex, std::uint16_t const port ) {
 
   auto msg = std::string_view( reinterpret_cast<char const*>( client.buffer().data() ), client.buffer().size() );
   CHECK( msg == "hello from the server!" );
+
+  std::cout << "msg: " << msg << std::endl;
 
   ++num_runs;
 

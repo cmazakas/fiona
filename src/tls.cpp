@@ -1,9 +1,15 @@
-#include <botan/tls_alert.h>
-#include <cerrno>
-#include <cstring>
+#include <boost/buffers/detail/type_traits.hpp>
+#include <boost/buffers/type_traits.hpp>
+#include <fiona/buffer.hpp>
 #include <fiona/dns.hpp>
+#include <fiona/error.hpp>
 #include <fiona/executor.hpp>
 #include <fiona/tls.hpp>
+
+#include <boost/buffers/buffer.hpp>
+#include <boost/buffers/buffer_copy.hpp>
+#include <boost/buffers/const_buffer.hpp>
+#include <boost/buffers/mutable_buffer.hpp>
 
 #include <botan/certstor.h>
 #include <botan/credentials_manager.h>
@@ -25,10 +31,10 @@
 #include <botan/x509path.h>
 #include <botan/x509self.h>
 
-#include "fiona/borrowed_buffer.hpp"
-#include "fiona/error.hpp"
 #include "stream_impl.hpp"
 
+#include <cerrno>
+#include <cstring>
 #include <ios>
 #include <memory>
 #include <vector>
@@ -40,9 +46,68 @@ namespace tls {
 
 namespace detail {
 
+struct buffers_iterator : public recv_buffer_sequence_view::iterator {
+  using value_type = boost::buffers::mutable_buffer;
+  using reference = boost::buffers::mutable_buffer;
+
+  auto as_base() noexcept {
+    return static_cast<recv_buffer_sequence_view::iterator*>( this );
+  }
+  auto as_base() const noexcept {
+    return static_cast<recv_buffer_sequence_view::iterator const*>( this );
+  }
+
+  boost::buffers::mutable_buffer operator*() const noexcept {
+    auto buf_view = **as_base();
+    return { buf_view.data(), buf_view.size() };
+  }
+
+  buffers_iterator& operator++() {
+    as_base()->operator++();
+    return *this;
+  }
+
+  buffers_iterator operator++( int ) {
+    auto old = *this;
+    as_base()->operator++( 0 );
+    return old;
+  }
+
+  buffers_iterator& operator--() {
+    as_base()->operator--();
+    return *this;
+  }
+
+  buffers_iterator operator--( int ) {
+    auto old = *this;
+    as_base()->operator--( 0 );
+    return old;
+  }
+};
+
+struct buffers_adapter {
+  using value_type = boost::buffers::mutable_buffer;
+  using const_iterator = buffers_iterator;
+
+  recv_buffer_sequence_view buf_seq_view_;
+
+  buffers_iterator begin() const noexcept { return { buf_seq_view_.begin() }; }
+  buffers_iterator end() const noexcept { return { buf_seq_view_.end() }; }
+};
+
+static_assert( boost::buffers::detail::is_bidirectional_iterator<
+               fiona::recv_buffer_sequence_view::iterator>::value );
+
+static_assert( boost::buffers::detail::is_bidirectional_iterator<
+               buffers_iterator>::value );
+
+static_assert(
+    boost::buffers::is_mutable_buffer_sequence<buffers_adapter>::value );
+
 struct client_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> recv_buf_;
   std::vector<unsigned char> send_buf_;
+  recv_buffer_sequence recv_seq_;
 
   bool close_notify_received_ = false;
   bool failed_cert_verification_ = false;
@@ -53,8 +118,19 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_record_received( std::uint64_t /* seq_no */, std::span<std::uint8_t const> data ) override {
+  void tls_record_received( std::uint64_t /* seq_no */,
+                            std::span<std::uint8_t const> data ) override {
     std::cout << "tls client received application data" << std::endl;
+
+    boost::buffers::buffer_copy(
+        buffers_adapter{ recv_seq_ },
+        boost::buffers::buffer( data.data(), data.size() ) );
+
+    std::cout << "yay, Buffers!" << std::endl;
+    for ( auto const v : recv_seq_ ) {
+      std::cout << v.as_str() << std::endl;
+    }
+
     recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
   }
 
@@ -67,15 +143,19 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
     }
   }
 
-  void tls_verify_cert_chain( const std::vector<Botan::X509_Certificate>& cert_chain,
-                              const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
-                              const std::vector<Botan::Certificate_Store*>& trusted_roots, Botan::Usage_Type usage,
-                              std::string_view hostname, const Botan::TLS::Policy& policy ) override {
+  void tls_verify_cert_chain(
+      const std::vector<Botan::X509_Certificate>& cert_chain,
+      const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
+      const std::vector<Botan::Certificate_Store*>& trusted_roots,
+      Botan::Usage_Type usage, std::string_view hostname,
+      const Botan::TLS::Policy& policy ) override {
 
-    Botan::Path_Validation_Restrictions restrictions( false, policy.minimum_signature_strength() );
+    Botan::Path_Validation_Restrictions restrictions(
+        false, policy.minimum_signature_strength() );
 
     Botan::Path_Validation_Result result = Botan::x509_path_validate(
-        cert_chain, restrictions, trusted_roots, hostname, usage, tls_current_timestamp(), 0ms, ocsp_responses );
+        cert_chain, restrictions, trusted_roots, hostname, usage,
+        tls_current_timestamp(), 0ms, ocsp_responses );
 
     if ( !result.successful_validation() ) {
       failed_cert_verification_ = true;
@@ -101,9 +181,10 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
 
   ~tls_credentials_manager() override;
 
-  std::shared_ptr<Botan::Private_Key> private_key_for( const Botan::X509_Certificate& cert,
-                                                       const std::string& /* type */,
-                                                       const std::string& /* context */ ) override {
+  std::shared_ptr<Botan::Private_Key>
+  private_key_for( const Botan::X509_Certificate& cert,
+                   const std::string& /* type */,
+                   const std::string& /* context */ ) override {
     for ( auto const& [mcert, pkey] : cert_key_pairs_ ) {
       if ( cert == mcert ) {
         return pkey;
@@ -113,11 +194,12 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
     return nullptr;
   }
 
-  std::vector<Botan::X509_Certificate>
-  find_cert_chain( const std::vector<std::string>& /* algos */,
-                   const std::vector<Botan::AlgorithmIdentifier>& /* cert_signature_schemes */,
-                   const std::vector<Botan::X509_DN>& acceptable_cas, const std::string& type,
-                   const std::string& /* hostname */ ) override {
+  std::vector<Botan::X509_Certificate> find_cert_chain(
+      const std::vector<std::string>& /* algos */,
+      const std::vector<
+          Botan::AlgorithmIdentifier>& /* cert_signature_schemes */,
+      const std::vector<Botan::X509_DN>& acceptable_cas,
+      const std::string& type, const std::string& /* hostname */ ) override {
     if ( type == "tls-server" ) {
       throw "corruption!!!!";
     }
@@ -135,8 +217,9 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
     return {};
   }
 
-  std::vector<Botan::Certificate_Store*> trusted_certificate_authorities( const std::string& type,
-                                                                          const std::string& context ) override {
+  std::vector<Botan::Certificate_Store*>
+  trusted_certificate_authorities( const std::string& type,
+                                   const std::string& context ) override {
     BOTAN_UNUSED( type, context );
     // return a list of certificates of CAs we trust for tls server certificates
     // ownership of the pointers remains with Credentials_Manager
@@ -161,12 +244,16 @@ struct client_impl : public tcp::detail::client_impl {
   client_impl( client_impl&& ) = delete;
 
   client_impl( executor ex )
-      : tcp::detail::client_impl( ex ), pcallbacks_( std::make_shared<client_callbacks>() ),
+      : tcp::detail::client_impl( ex ),
+        pcallbacks_( std::make_shared<client_callbacks>() ),
         prng_( std::make_shared<Botan::System_RNG>() ),
-        psession_mgr_( std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng_ ) ),
+        psession_mgr_(
+            std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng_ ) ),
         pcreds_mgr_( std::make_shared<tls_credentials_manager>() ),
-        ptls_policy_( std::make_shared<Botan::TLS::Policy const>() ), server_info_( "localhost", 0 ),
-        tls_client_( pcallbacks_, psession_mgr_, pcreds_mgr_, ptls_policy_, prng_, server_info_ ) {}
+        ptls_policy_( std::make_shared<Botan::TLS::Policy const>() ),
+        server_info_( "localhost", 0 ),
+        tls_client_( pcallbacks_, psession_mgr_, pcreds_mgr_, ptls_policy_,
+                     prng_, server_info_ ) {}
 
   virtual ~client_impl() override;
 };
@@ -233,7 +320,8 @@ client::async_send( std::span<unsigned char const> data ) {
 
 task<result<std::size_t>>
 client::async_send( std::string_view msg ) {
-  return async_send( { reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
+  return async_send(
+      { reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
 }
 
 task<result<std::size_t>>
@@ -250,6 +338,7 @@ client::async_recv() {
     }
 
     tls_client.received_data( mbuf->readable_bytes() );
+    f.pcallbacks_->recv_seq_.push_back( std::move( mbuf ).value() );
   }
 
   co_return recv_buf.size();
