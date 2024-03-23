@@ -3,6 +3,8 @@
 #include <fiona/buffer.hpp>
 
 #include <algorithm>
+#include <iterator>
+#include <vector>
 
 TEST_CASE( "buffer_test - recv_buffer" ) {
   {
@@ -91,7 +93,8 @@ TEST_CASE( "buffer_test - owned buffer sequence" ) {
   std::string_view str1 = "hello, world!";
   std::string_view str2 = "I love C++!";
   std::string_view str3 = "io_uring is pretty great too.";
-  std::string_view str4 = "Asio was the inspiration for Fiona. It was a true pioneer of its time and Fiona can only "
+  std::string_view str4 = "Asio was the inspiration for Fiona. It was a true "
+                          "pioneer of its time and Fiona can only "
                           "hope to hold a candle to its immense success.";
 
   std::array<std::string_view, 4> strs = { str1, str2, str3, str4 };
@@ -146,4 +149,46 @@ TEST_CASE( "buffer_test - end() stability" ) {
   CHECK( end == buf_seq.end() );
   CHECK( ( *--end ).capacity() == 128 );
   CHECK( end == buf_seq.begin() );
+}
+
+TEST_CASE( "buffer_test - move stability" ) {
+  fiona::recv_buffer_sequence buf_seq;
+  for ( int i = 0; i < 16; ++i ) {
+    buf_seq.push_back( fiona::recv_buffer( 128 ) );
+  }
+
+  CHECK( std::ranges::distance( buf_seq ) == 16 );
+  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf ) {
+    CHECK( buf.capacity() == 128 );
+  } );
+
+  std::vector<unsigned char*> old_addrs( 16 );
+  std::ranges::transform( buf_seq, old_addrs.begin(),
+                          []( fiona::recv_buffer_view b ) {
+    return b.data();
+  } );
+
+  auto pos = buf_seq.begin();
+
+  fiona::recv_buffer_sequence buf_seq2( std::move( buf_seq ) );
+  while ( pos != buf_seq2.end() ) {
+    CHECK( ( *pos ).capacity() == 128 );
+    ++pos;
+  }
+
+  CHECK( std::ranges::equal( old_addrs, buf_seq2, {}, {},
+                             []( fiona::recv_buffer_view b ) {
+    return b.data();
+  } ) );
+
+  CHECK( buf_seq.end() != buf_seq2.end() );
+
+  for ( int i = 0; i < 8; ++i ) {
+    buf_seq.push_back( fiona::recv_buffer( 256 ) );
+  }
+
+  CHECK( std::ranges::distance( buf_seq ) == 8 );
+  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf ) {
+    CHECK( buf.capacity() == 256 );
+  } );
 }

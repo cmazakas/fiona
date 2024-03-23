@@ -5,6 +5,7 @@
 #include <boost/core/exchange.hpp>
 
 #include <cstddef>
+#include <iostream>
 #include <iterator>
 #include <new>
 #include <span>
@@ -75,9 +76,11 @@ public:
   std::span<unsigned char> readable_bytes() noexcept {
     return { data(), size() };
   }
+
   std::string_view as_str() const noexcept {
     return { reinterpret_cast<char const*>( data() ), size() };
   }
+
   std::span<unsigned char> spare_capacity_mut() noexcept {
     return { data() + size(), capacity() - size() };
   }
@@ -137,12 +140,15 @@ public:
 
 struct recv_buffer_sequence_view {
 protected:
-  detail::buf_header_impl sentry_;
+  detail::buf_header_impl* psentry_;
   unsigned char* head_ = nullptr;
   unsigned char* tail_ = nullptr;
 
+  recv_buffer_sequence_view( detail::buf_header_impl* psentry )
+      : psentry_( psentry ) {}
+
 public:
-  recv_buffer_sequence_view() = default;
+  recv_buffer_sequence_view() = delete;
 
   recv_buffer_sequence_view( recv_buffer_sequence_view const& ) = default;
   recv_buffer_sequence_view&
@@ -214,19 +220,43 @@ public:
   iterator begin() const {
     return { reinterpret_cast<detail::buf_header_impl*>( head_ ) };
   }
+
   iterator end() const {
-    return { const_cast<detail::buf_header_impl*>( &sentry_ ) };
+    return { const_cast<detail::buf_header_impl*>( psentry_ ) };
   }
 };
 
 struct recv_buffer_sequence : public recv_buffer_sequence_view {
+private:
+  detail::buf_header_impl sentry_;
+
 public:
-  recv_buffer_sequence() = default;
+  recv_buffer_sequence() : recv_buffer_sequence_view( &sentry_ ) {}
 
   recv_buffer_sequence( recv_buffer_sequence const& ) = delete;
   recv_buffer_sequence& operator=( recv_buffer_sequence const& ) = delete;
 
-  recv_buffer_sequence( recv_buffer_sequence&& rhs ) noexcept = delete;
+  recv_buffer_sequence( recv_buffer_sequence&& rhs ) noexcept
+      : recv_buffer_sequence_view( &sentry_ ) {
+    head_ = rhs.head_;
+    tail_ = rhs.tail_;
+
+    if ( tail_ ) {
+      recv_buffer_view tail_view( tail_ );
+      tail_view.header().next_ = reinterpret_cast<unsigned char*>( psentry_ );
+      psentry_->prev_ = tail_;
+    }
+
+    if ( head_ ) {
+      recv_buffer_view head_view( head_ );
+      head_view.header().prev_ = reinterpret_cast<unsigned char*>( psentry_ );
+      psentry_->next_ = head_;
+    }
+
+    rhs.head_ = nullptr;
+    rhs.tail_ = nullptr;
+  }
+
   recv_buffer_sequence& operator=( recv_buffer_sequence&& ) = delete;
 
   ~recv_buffer_sequence() {
@@ -244,8 +274,9 @@ public:
   }
 
   void push_back( recv_buffer rbuf ) {
-    auto p = rbuf.to_raw_parts();
+    BOOST_ASSERT( rbuf.capacity() > 0 );
 
+    auto p = rbuf.to_raw_parts();
     recv_buffer_view p_view( p );
     if ( tail_ ) {
       recv_buffer_view tail_view( tail_ );
