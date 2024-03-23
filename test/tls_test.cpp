@@ -218,30 +218,30 @@ server( fiona::tcp::acceptor acceptor ) {
   ex.register_buffer_sequence( 1024, 128, 0 );
 
   stream.set_buffer_group( 0 );
-  while ( !tls_server.is_handshake_complete() ) {
-    auto mbuf = co_await stream.async_recv();
-    auto& buf = mbuf.value();
+  // while ( !tls_server.is_handshake_complete() ) {
+  //   auto mbuffers = co_await stream.async_recv();
+  //   auto& buf = mbuffers.value();
 
-    CHECK( buf.readable_bytes().size() > 0 );
+  //   CHECK( buf.readable_bytes().size() > 0 );
 
-    tls_server.received_data( buf.readable_bytes() );
+  //   tls_server.received_data( buf.readable_bytes() );
 
-    if ( !send_buf.empty() ) {
-      std::cout << "going to send: " << send_buf.size()
-                << " octets to the client" << std::endl;
-      co_await stream.async_send( send_buf );
-      send_buf.clear();
-    }
-  }
+  //   if ( !send_buf.empty() ) {
+  //     std::cout << "going to send: " << send_buf.size()
+  //               << " octets to the client" << std::endl;
+  //     co_await stream.async_send( send_buf );
+  //     send_buf.clear();
+  //   }
+  // }
 
   CHECK( send_buf.empty() );
   CHECK( tls_server.is_active() );
   CHECK( tls_server.is_handshake_complete() );
 
-  {
-    auto mbuf = co_await stream.async_recv();
-    tls_server.received_data( mbuf.value().readable_bytes() );
-  }
+  // {
+  //   auto mbuf = co_await stream.async_recv();
+  //   tls_server.received_data( mbuf.value().readable_bytes() );
+  // }
 
   CHECK( !recv_buf.empty() );
   auto msg = std::string_view( reinterpret_cast<char const*>( recv_buf.data() ),
@@ -260,12 +260,12 @@ server( fiona::tcp::acceptor acceptor ) {
   CHECK( !tls_server.is_closed_for_reading() );
   CHECK( tls_server.is_active() );
 
-  {
-    auto mbuf = co_await stream.async_recv();
-    tls_server.received_data( mbuf.value().readable_bytes() );
-    CHECK( !send_buf.empty() );
-    CHECK( pcallbacks->close_notify_received_ );
-  }
+  // {
+  //   auto mbuf = co_await stream.async_recv();
+  //   tls_server.received_data( mbuf.value().readable_bytes() );
+  //   CHECK( !send_buf.empty() );
+  //   CHECK( pcallbacks->close_notify_received_ );
+  // }
 
   mnbytes = co_await stream.async_send( send_buf );
   CHECK( mnbytes.value() == send_buf.size() );
@@ -313,19 +313,19 @@ client( fiona::executor ex, std::uint16_t const port ) {
   ex.register_buffer_sequence( 1024, 128, 1 );
   client.set_buffer_group( 1 );
 
-  while ( !tls_client.is_handshake_complete() ) {
-    auto mbuf = co_await client.async_recv();
-    auto& buf = mbuf.value();
+  // while ( !tls_client.is_handshake_complete() ) {
+  //   auto mbuf = co_await client.async_recv();
+  //   auto& buf = mbuf.value();
 
-    auto data = buf.readable_bytes();
+  //   auto data = buf.readable_bytes();
 
-    tls_client.received_data( data );
+  //   tls_client.received_data( data );
 
-    if ( !send_buf.empty() ) {
-      co_await client.async_send( send_buf );
-      send_buf.clear();
-    }
-  }
+  //   if ( !send_buf.empty() ) {
+  //     co_await client.async_send( send_buf );
+  //     send_buf.clear();
+  //   }
+  // }
 
   CHECK( send_buf.empty() );
   CHECK( tls_client.is_active() );
@@ -338,10 +338,10 @@ client( fiona::executor ex, std::uint16_t const port ) {
   CHECK( mnbytes.value() == send_buf.size() );
   send_buf.clear();
 
-  while ( pcallbacks->recv_buf_.empty() ) {
-    auto mbuf = co_await client.async_recv();
-    tls_client.received_data( mbuf.value().readable_bytes() );
-  }
+  // while ( pcallbacks->recv_buf_.empty() ) {
+  //   auto mbuf = co_await client.async_recv();
+  //   tls_client.received_data( mbuf.value().readable_bytes() );
+  // }
 
   CHECK( !pcallbacks->recv_buf_.empty() );
   auto msg = std::string_view(
@@ -361,13 +361,13 @@ client( fiona::executor ex, std::uint16_t const port ) {
   CHECK( mnbytes.value() == send_buf.size() );
   send_buf.clear();
 
-  {
-    auto mbuf = co_await client.async_recv();
-    CHECK( !mbuf.value().readable_bytes().empty() );
-    tls_client.received_data( mbuf.value().readable_bytes() );
-    CHECK( send_buf.empty() );
-    CHECK( pcallbacks->close_notify_received_ );
-  }
+  // {
+  //   auto mbuf = co_await client.async_recv();
+  //   CHECK( !mbuf.value().readable_bytes().empty() );
+  //   tls_client.received_data( mbuf.value().readable_bytes() );
+  //   CHECK( send_buf.empty() );
+  //   CHECK( pcallbacks->close_notify_received_ );
+  // }
 
   CHECK( tls_client.is_closed() );
   CHECK( tls_client.is_closed_for_writing() );

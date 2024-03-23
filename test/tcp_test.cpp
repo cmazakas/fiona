@@ -440,11 +440,11 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
 
     stream.set_buffer_group( 0 );
 
-    auto mbuffer = co_await stream.async_recv();
-    CHECK( mbuffer.has_value() );
+    auto mbuffers = co_await stream.async_recv();
+    CHECK( mbuffers.has_value() );
 
-    auto& buffer = mbuffer.value();
-    auto msg = buffer.as_str();
+    auto& buffer = mbuffers.value();
+    auto msg = buffer.to_string();
     CHECK( msg == client_msg );
 
     ++num_runs;
@@ -463,11 +463,11 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
            client_msg.size() );
 
     client.set_buffer_group( 0 );
-    auto mbuffer = co_await client.async_recv();
-    CHECK( mbuffer.has_value() );
+    auto mbuffers = co_await client.async_recv();
+    CHECK( mbuffers.has_value() );
 
-    auto& buffer = mbuffer.value();
-    auto msg = buffer.as_str();
+    auto& buffer = mbuffers.value();
+    auto msg = buffer.to_string();
     CHECK( msg == server_msg );
 
     ++num_runs;
@@ -592,10 +592,10 @@ TEST_CASE( "tcp_test - tcp echo" ) {
     stream.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto borrowed_buf = co_await stream.async_recv();
-      CHECK( borrowed_buf.has_value() );
+      auto mbuffers = co_await stream.async_recv();
+      CHECK( mbuffers.has_value() );
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -644,9 +644,9 @@ TEST_CASE( "tcp_test - tcp echo" ) {
       auto result = co_await client.async_send( msg );
       CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
 
-      auto borrowed_buf = co_await client.async_recv();
+      auto mbuffers = co_await client.async_recv();
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -719,10 +719,10 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
     stream.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto borrowed_buf = co_await stream.async_recv();
-      CHECK( borrowed_buf.has_value() );
+      auto mbuffers = co_await stream.async_recv();
+      CHECK( mbuffers.has_value() );
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -771,9 +771,9 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
       auto result = co_await client.async_send( msg );
       CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
 
-      auto borrowed_buf = co_await client.async_recv();
+      auto mbuffers = co_await client.async_recv();
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -863,15 +863,15 @@ TEST_CASE( "tcp_test - fd reuse" ) {
       stream.timeout( std::chrono::seconds( 3 ) );
 
       stream.set_buffer_group( 0 );
-      auto mbuf = co_await stream.async_recv();
+      auto mbuffers = co_await stream.async_recv();
 
-      CHECK( mbuf.has_value() );
-      if ( mbuf.has_error() ) {
+      CHECK( mbuffers.has_value() );
+      if ( mbuffers.has_error() ) {
         co_return;
       }
 
-      auto& buf = mbuf.value();
-      auto octets = buf.readable_bytes();
+      auto& buf = mbuffers.value();
+      auto octets = buf.to_bytes();
       CHECK( !octets.empty() );
       if ( octets.empty() ) {
         co_return;
@@ -969,10 +969,10 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
 
     while ( num_bytes < num_msgs * msg.size() ) {
 
-      auto borrowed_buf = co_await stream.async_recv();
-      CHECK( borrowed_buf.has_value() );
+      auto mbuffers = co_await stream.async_recv();
+      CHECK( mbuffers.has_value() );
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -1020,9 +1020,9 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
     while ( num_bytes < num_msgs * msg.size() ) {
       co_await client.async_send( msg );
 
-      auto borrowed_buf = co_await client.async_recv();
+      auto mbuffers = co_await client.async_recv();
 
-      auto octets = borrowed_buf.value().readable_bytes();
+      auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( ( ( m == msg ) || m.empty() ) );

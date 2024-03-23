@@ -12,6 +12,7 @@
 
 #include "awaitable_base.hpp"
 #include "fiona/detail/common.hpp"
+#include "fiona/error.hpp"
 
 namespace fiona {
 namespace tcp {
@@ -149,7 +150,8 @@ struct FIONA_DECL stream_impl {
   };
 
   struct recv_frame final : public fiona::detail::awaitable_base {
-    std::deque<result<recv_buffer>> buffers_;
+    fiona::recv_buffer_sequence buffers_;
+    fiona::error_code ec_;
     fiona::detail::buf_ring* pbuf_ring_ = nullptr;
     stream_impl* pstream_ = nullptr;
     std::coroutine_handle<> h_ = nullptr;
@@ -169,16 +171,17 @@ struct FIONA_DECL stream_impl {
 
       if ( cqe->res < 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
+        BOOST_ASSERT( !ec_ );
         if ( cancelled_by_timer ) {
-          buffers_.push_back( error_code::from_errno( ETIMEDOUT ) );
+          ec_ = error_code::from_errno( ETIMEDOUT );
         } else {
-          buffers_.push_back( error_code::from_errno( -cqe->res ) );
+          ec_ = error_code::from_errno( -cqe->res );
         }
       }
 
       if ( cqe->res == 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
-        buffers_.push_back( recv_buffer() );
+        buffers_.push_back( recv_buffer( 0 ) );
       }
 
       if ( cqe->res > 0 ) {
@@ -191,6 +194,7 @@ struct FIONA_DECL stream_impl {
 
         auto& buf = pbuf_ring_->get_buf( buffer_id );
         auto cap = buf.capacity();
+
         auto buffer = std::move( buf );
         buffer.set_len( static_cast<std::size_t>( cqe->res ) );
         buffers_.push_back( std::move( buffer ) );
@@ -199,11 +203,13 @@ struct FIONA_DECL stream_impl {
         // that can happen and then if so, how we handle back-filling the buffer
         // group's buffer list
         buf = recv_buffer( cap );
+
         auto* br = pbuf_ring_->get();
         io_uring_buf_ring_add(
             br, buf.data(), static_cast<unsigned>( buf.capacity() ),
             static_cast<unsigned short>( buffer_id ),
             io_uring_buf_ring_mask( pbuf_ring_->size() ), 0 );
+
         io_uring_buf_ring_advance( br, 1 );
       }
 

@@ -112,17 +112,18 @@ TEST_CASE( "dns_test - connecting a client" ) {
 
     std::size_t num_read = 0;
     while ( true ) {
-      auto mborrowed_buf = co_await client.async_recv();
-      if ( mborrowed_buf.has_error() ) {
+      auto mbufs = co_await client.async_recv();
+      if ( mbufs.has_error() ) {
         break;
       }
 
-      auto& borrowed_buf = mborrowed_buf.value();
-      if ( borrowed_buf.readable_bytes().empty() ) {
+      auto& bufs = mbufs.value();
+      auto octets = bufs.to_bytes();
+      if ( octets.empty() ) {
         break;
       }
 
-      num_read += borrowed_buf.readable_bytes().size();
+      num_read += octets.size();
     }
 
     co_await client.async_close();

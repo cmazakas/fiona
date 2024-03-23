@@ -18,11 +18,11 @@ TEST_CASE( "ipv6 sanity check" ) {
 
     stream.set_buffer_group( 0 );
 
-    auto mbuf = co_await stream.async_recv();
-    auto& buf = mbuf.value();
+    auto mbufs = co_await stream.async_recv();
+    auto bufs = std::move( mbufs ).value();
 
-    auto octets = buf.readable_bytes();
-    auto str = buf.as_str();
+    auto octets = bufs.to_bytes();
+    auto str = bufs.to_string();
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
 
@@ -51,14 +51,11 @@ TEST_CASE( "ipv6 sanity check" ) {
 
     client.set_buffer_group( 0 );
 
-    auto mbuf = co_await client.async_recv();
+    auto mbufs = co_await client.async_recv();
+    auto bufs = std::move( mbufs ).value();
 
-    CHECK( mbuf.has_value() );
-
-    auto& buf = mbuf.value();
-
-    auto octets = buf.readable_bytes();
-    auto str = buf.as_str();
+    auto octets = bufs.to_bytes();
+    auto str = bufs.to_string();
     CHECK( octets.size() > 0 );
     CHECK( str == "hello, world!" );
 

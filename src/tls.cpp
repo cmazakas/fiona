@@ -1,17 +1,16 @@
-#include <boost/buffers/detail/type_traits.hpp>
-#include <boost/buffers/tag_invoke.hpp>
-#include <boost/buffers/type_traits.hpp>
+#include <fiona/tls.hpp>
+
 #include <fiona/buffer.hpp>
 #include <fiona/dns.hpp>
 #include <fiona/error.hpp>
 #include <fiona/executor.hpp>
-#include <fiona/tls.hpp>
 
 #include <boost/buffers/algorithm.hpp>
 #include <boost/buffers/buffer.hpp>
 #include <boost/buffers/buffer_copy.hpp>
 #include <boost/buffers/const_buffer.hpp>
 #include <boost/buffers/mutable_buffer.hpp>
+#include <boost/buffers/type_traits.hpp>
 
 #include <botan/certstor.h>
 #include <botan/credentials_manager.h>
@@ -33,6 +32,7 @@
 #include <botan/x509path.h>
 #include <botan/x509self.h>
 
+#include "buffers_adapter.hpp"
 #include "stream_impl.hpp"
 
 #include <cerrno>
@@ -47,97 +47,6 @@ namespace fiona {
 namespace tls {
 
 namespace detail {
-
-struct buffers_iterator : public recv_buffer_sequence_view::iterator {
-  using value_type = boost::buffers::mutable_buffer;
-  using reference = boost::buffers::mutable_buffer;
-
-  auto as_base() noexcept {
-    return static_cast<recv_buffer_sequence_view::iterator*>( this );
-  }
-  auto as_base() const noexcept {
-    return static_cast<recv_buffer_sequence_view::iterator const*>( this );
-  }
-
-  boost::buffers::mutable_buffer operator*() const noexcept {
-    auto buf_view = **as_base();
-    return { buf_view.data(), buf_view.size() };
-  }
-
-  buffers_iterator& operator++() {
-    as_base()->operator++();
-    return *this;
-  }
-
-  buffers_iterator operator++( int ) {
-    auto old = *this;
-    as_base()->operator++( 0 );
-    return old;
-  }
-
-  buffers_iterator& operator--() {
-    as_base()->operator--();
-    return *this;
-  }
-
-  buffers_iterator operator--( int ) {
-    auto old = *this;
-    as_base()->operator--( 0 );
-    return old;
-  }
-};
-
-struct buffers_adapter {
-  using value_type = boost::buffers::mutable_buffer;
-  using const_iterator = buffers_iterator;
-
-  recv_buffer_sequence_view buf_seq_view_;
-
-  buffers_iterator begin() const noexcept { return { buf_seq_view_.begin() }; }
-  buffers_iterator end() const noexcept { return { buf_seq_view_.end() }; }
-};
-
-static_assert( boost::buffers::detail::is_bidirectional_iterator<
-               fiona::recv_buffer_sequence_view::iterator>::value );
-
-static_assert( boost::buffers::detail::is_bidirectional_iterator<
-               buffers_iterator>::value );
-
-static_assert(
-    boost::buffers::is_mutable_buffer_sequence<buffers_adapter>::value );
-
-static_assert(
-    boost::buffers::is_const_buffer_sequence<buffers_adapter>::value );
-
-recv_buffer_sequence_view
-tag_invoke( boost::buffers::prefix_tag, buffers_adapter const& seq,
-            std::size_t n );
-
-recv_buffer_sequence_view
-tag_invoke( boost::buffers::prefix_tag, buffers_adapter const& seq,
-            std::size_t n ) {
-
-  std::size_t total_len = 0;
-  auto seq_view = seq.buf_seq_view_;
-  auto end = seq_view.end();
-
-  for ( auto pos = seq_view.begin(); pos != end; ++pos ) {
-    auto buf = *pos;
-    auto new_len = total_len + buf.size();
-    if ( new_len > n ) {
-      buf.set_len( buf.size() - ( new_len - n ) );
-    }
-
-    if ( total_len == n ) {
-      buf.set_len( 0 );
-      continue;
-    }
-
-    total_len += buf.size();
-  }
-
-  return seq_view;
-}
 
 struct client_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> recv_buf_;
@@ -158,11 +67,12 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
     std::cout << "tls client received application data" << std::endl;
 
     auto n = boost::buffers::buffer_copy(
-        buffers_adapter{ recv_seq_ },
+        fiona::detail::buffers_adapter{ recv_seq_ },
         boost::buffers::buffer( data.data(), data.size() ) );
 
     std::cout << "yay, Buffers!" << std::endl;
-    auto seq = boost::buffers::prefix( buffers_adapter{ recv_seq_ }, n );
+    auto seq = boost::buffers::prefix(
+        fiona::detail::buffers_adapter{ recv_seq_ }, n );
     for ( auto const v : seq ) {
       if ( v.empty() ) {
         continue;
@@ -322,13 +232,13 @@ client::async_handshake() {
   send_buf.clear();
 
   while ( !tls_client.is_handshake_complete() ) {
-    auto mbuf = co_await tcp::stream::async_recv();
-    if ( mbuf.has_error() ) {
-      co_return mbuf.error();
+    auto mbuffers = co_await tcp::stream::async_recv();
+    if ( mbuffers.has_error() ) {
+      co_return mbuffers.error();
     }
 
-    auto& buf = mbuf.value();
-    auto data = buf.readable_bytes();
+    auto& buf = mbuffers.value();
+    auto data = buf.to_bytes();
     tls_client.received_data( data );
 
     if ( !send_buf.empty() ) {
@@ -371,16 +281,16 @@ client::async_recv() {
 
   while ( recv_buf.empty() ) {
     std::cout << "doing a looping read..." << std::endl;
-    auto mbuf = co_await tcp::stream::async_recv();
-    if ( mbuf.has_error() ) {
-      co_return mbuf.error();
+    auto mbuffers = co_await tcp::stream::async_recv();
+    if ( mbuffers.has_error() ) {
+      co_return mbuffers.error();
     }
 
-    auto& buf = mbuf.value();
-    auto data = buf.readable_bytes();
-    BOOST_ASSERT( buf.capacity() > 0 );
+    auto& buf = mbuffers.value();
+    auto data = buf.to_bytes();
+    // BOOST_ASSERT( buf.capacity() > 0 );
 
-    f.pcallbacks_->recv_seq_.push_back( std::move( buf ) );
+    // f.pcallbacks_->recv_seq_.push_back( std::move( buf ) );
     tls_client.received_data( data );
   }
 

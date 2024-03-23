@@ -612,11 +612,20 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
   rf.schedule_recv();
 }
 
-result<recv_buffer>
+result<recv_buffer_sequence>
 recv_awaitable::await_resume() {
-  auto buf = std::move( pstream_->recv_frame_.buffers_.front() );
-  pstream_->recv_frame_.buffers_.pop_front();
-  return buf;
+  auto& rf = pstream_->recv_frame_;
+
+  BOOST_ASSERT( !rf.buffers_.empty() || rf.ec_ );
+
+  if ( rf.buffers_.empty() ) {
+    auto ec = std::move( rf.ec_ );
+    rf.ec_.clear();
+    return ec;
+  }
+
+  auto buffers = std::move( rf.buffers_ );
+  return buffers;
 }
 
 namespace detail {

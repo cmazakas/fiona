@@ -1,6 +1,7 @@
 #ifndef FIONA_TCP_HPP
 #define FIONA_TCP_HPP
 
+#include "fiona/buffer.hpp"
 #include <fiona/borrowed_buffer.hpp>         // for borrowed_buffer
 #include <fiona/error.hpp>                   // for result
 #include <fiona/executor.hpp>                // for executor
@@ -257,7 +258,7 @@ public:
   void await_suspend( std::coroutine_handle<> h );
 
   FIONA_DECL
-  result<recv_buffer> await_resume();
+  result<recv_buffer_sequence> await_resume();
 };
 
 struct FIONA_DECL client : public stream {

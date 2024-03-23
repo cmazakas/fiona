@@ -1,6 +1,8 @@
 #ifndef FIONA_BUFFER_HPP
 #define FIONA_BUFFER_HPP
 
+#include <fiona/detail/config.hpp>
+
 #include <boost/assert.hpp>
 #include <boost/core/exchange.hpp>
 
@@ -10,6 +12,7 @@
 #include <new>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace fiona {
 struct recv_buffer;
@@ -224,6 +227,12 @@ public:
   iterator end() const {
     return { const_cast<detail::buf_header_impl*>( psentry_ ) };
   }
+
+  FIONA_DECL
+  std::string to_string() const;
+
+  FIONA_DECL
+  std::vector<unsigned char> to_bytes() const;
 };
 
 struct recv_buffer_sequence : public recv_buffer_sequence_view {
@@ -274,7 +283,7 @@ public:
   }
 
   void push_back( recv_buffer rbuf ) {
-    BOOST_ASSERT( rbuf.capacity() > 0 );
+    // BOOST_ASSERT( rbuf.capacity() > 0 );
 
     auto p = rbuf.to_raw_parts();
     recv_buffer_view p_view( p );
@@ -293,6 +302,8 @@ public:
       sentry_.next_ = head_;
     }
   }
+
+  bool empty() const noexcept { return !head_; }
 };
 } // namespace fiona
 

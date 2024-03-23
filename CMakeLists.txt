@@ -33,9 +33,12 @@ set(fiona_headers
 set(fiona_sources
 
   src/awaitable_base.hpp
+  src/buffers_adapter.hpp
   src/stream_impl.hpp
 
   src/awaitable_base.cpp
+  src/buffer.cpp
+  src/buffers_adapter.cpp
   src/dns.cpp
   src/common.cpp
   src/io_context.cpp
