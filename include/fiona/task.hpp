@@ -26,7 +26,8 @@ private:
 
     bool await_ready() const noexcept { return !h_ || h_.done(); }
 
-    std::coroutine_handle<> await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept;
+    std::coroutine_handle<>
+    await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept;
 
     decltype( auto ) await_resume() {
       BOOST_ASSERT( h_ );
@@ -70,7 +71,9 @@ public:
     return p;
   }
 
-  static task<void> from_address( void* p ) { return { std::coroutine_handle<promise<void>>::from_address( p ) }; }
+  static task<void> from_address( void* p ) {
+    return { std::coroutine_handle<promise<void>>::from_address( p ) };
+  }
 };
 
 struct promise_base {
@@ -79,7 +82,8 @@ private:
     bool await_ready() const noexcept { return false; }
 
     template <class Promise>
-    std::coroutine_handle<> await_suspend( std::coroutine_handle<Promise> coro ) noexcept {
+    std::coroutine_handle<>
+    await_suspend( std::coroutine_handle<Promise> coro ) noexcept {
       return coro.promise().continuation_;
     }
 
@@ -132,7 +136,9 @@ public:
     }
   }
 
-  task<T> get_return_object() { return { std::coroutine_handle<promise>::from_promise( *this ) }; }
+  task<T> get_return_object() {
+    return { std::coroutine_handle<promise>::from_promise( *this ) };
+  }
 
   template <class Expr>
   void return_value( Expr&& expr ) {
@@ -141,7 +147,8 @@ public:
   }
 
   void unhandled_exception() {
-    new ( std::addressof( exception_ ) ) std::exception_ptr( std::current_exception() );
+    new ( std::addressof( exception_ ) )
+        std::exception_ptr( std::current_exception() );
     rt = result_type::err;
   }
 
@@ -168,11 +175,15 @@ private:
   std::exception_ptr exception_;
 
 public:
-  task<void> get_return_object() { return { std::coroutine_handle<promise>::from_promise( *this ) }; }
+  task<void> get_return_object() {
+    return { std::coroutine_handle<promise>::from_promise( *this ) };
+  }
 
   void return_void() {}
 
-  void unhandled_exception() { exception_ = std::exception_ptr( std::current_exception() ); }
+  void unhandled_exception() {
+    exception_ = std::exception_ptr( std::current_exception() );
+  }
 
   void result() {
     if ( exception_ ) {
@@ -183,7 +194,8 @@ public:
 
 template <class T>
 std::coroutine_handle<>
-task<T>::awaitable::await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept {
+task<T>::awaitable::await_suspend(
+    std::coroutine_handle<> awaiting_coro ) noexcept {
   /*
    * because this awaitable is created using the coroutine_handle of a
    * child coroutine, awaiting_coro is the parent

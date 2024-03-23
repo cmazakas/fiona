@@ -164,7 +164,8 @@ struct FIONA_DECL stream_impl {
     ~recv_frame() override;
 
     void await_process_cqe( io_uring_cqe* cqe ) override {
-      bool const cancelled_by_timer = ( cqe->res == -ECANCELED && !pstream_->cancelled_ );
+      bool const cancelled_by_timer =
+          ( cqe->res == -ECANCELED && !pstream_->cancelled_ );
 
       if ( cqe->res < 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
@@ -186,19 +187,23 @@ struct FIONA_DECL stream_impl {
         // TODO: find out if we should potentially set this when we see the EOF
         last_recv_ = clock_type::now();
 
-        auto buffer_id = cqe->flags >> 16;
+        auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 
         auto& buf = pbuf_ring_->get_buf( buffer_id );
+        auto cap = buf.capacity();
         auto buffer = std::move( buf );
         buffer.set_len( static_cast<std::size_t>( cqe->res ) );
-        buf = recv_buffer( buffer.capacity() );
-
         buffers_.push_back( std::move( buffer ) );
 
+        // TODO: we need somehow set an upper limit on the amount of allocations
+        // that can happen and then if so, how we handle back-filling the buffer
+        // group's buffer list
+        buf = recv_buffer( cap );
         auto* br = pbuf_ring_->get();
-        io_uring_buf_ring_add( br, buf.data(), static_cast<unsigned>( buf.capacity() ),
-                               static_cast<unsigned short>( buffer_id ), io_uring_buf_ring_mask( pbuf_ring_->size() ),
-                               0 );
+        io_uring_buf_ring_add(
+            br, buf.data(), static_cast<unsigned>( buf.capacity() ),
+            static_cast<unsigned short>( buffer_id ),
+            io_uring_buf_ring_mask( pbuf_ring_->size() ), 0 );
         io_uring_buf_ring_advance( br, 1 );
       }
 
@@ -272,13 +277,15 @@ struct FIONA_DECL stream_impl {
 
       auto const timeout_adjusted = ( cqe->res == -ECANCELED );
       if ( timeout_adjusted ) {
-        auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+        auto ring =
+            fiona::detail::executor_access_policy::ring( pstream_->ex_ );
 
         fiona::detail::reserve_sqes( ring, 1 );
 
         {
           auto sqe = io_uring_get_sqe( ring );
-          io_uring_prep_timeout( sqe, &pstream_->ts_, 0, IORING_TIMEOUT_MULTISHOT );
+          io_uring_prep_timeout( sqe, &pstream_->ts_, 0,
+                                 IORING_TIMEOUT_MULTISHOT );
           io_uring_sqe_set_data( sqe, &pstream_->timeout_frame_ );
         }
 
@@ -296,14 +303,16 @@ struct FIONA_DECL stream_impl {
       auto ex = pstream_->ex_;
       auto ring = fiona::detail::executor_access_policy::ring( ex );
       auto now = clock_type::now();
-      auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } + std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
+      auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } +
+                      std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
 
       if ( pstream_->recv_frame_.initiated_ ) {
         auto diff = now - pstream_->recv_frame_.last_recv_;
         if ( diff >= max_diff ) {
           fiona::detail::reserve_sqes( ring, 1 );
           auto sqe = io_uring_get_sqe( ring );
-          io_uring_prep_cancel( sqe, &pstream_->recv_frame_, IORING_ASYNC_CANCEL_ALL );
+          io_uring_prep_cancel( sqe, &pstream_->recv_frame_,
+                                IORING_ASYNC_CANCEL_ALL );
           io_uring_sqe_set_data( sqe, &pstream_->recv_cancel_frame_ );
           intrusive_ptr_add_ref( &pstream_->recv_cancel_frame_ );
         }
@@ -314,7 +323,8 @@ struct FIONA_DECL stream_impl {
         if ( diff >= max_diff ) {
           fiona::detail::reserve_sqes( ring, 1 );
           auto sqe = io_uring_get_sqe( ring );
-          io_uring_prep_cancel( sqe, &pstream_->send_frame_, IORING_ASYNC_CANCEL_ALL );
+          io_uring_prep_cancel( sqe, &pstream_->send_frame_,
+                                IORING_ASYNC_CANCEL_ALL );
           io_uring_sqe_set_data( sqe, &pstream_->send_cancel_frame_ );
           intrusive_ptr_add_ref( &pstream_->send_cancel_frame_ );
         }
@@ -324,7 +334,8 @@ struct FIONA_DECL stream_impl {
         fiona::detail::reserve_sqes( ring, 1 );
         {
           auto sqe = io_uring_get_sqe( ring );
-          io_uring_prep_timeout( sqe, &pstream_->ts_, 0, IORING_TIMEOUT_MULTISHOT );
+          io_uring_prep_timeout( sqe, &pstream_->ts_, 0,
+                                 IORING_TIMEOUT_MULTISHOT );
           io_uring_sqe_set_data( sqe, &pstream_->timeout_frame_ );
         }
         pstream_->timeout_frame_.initiated_ = true;
@@ -397,7 +408,8 @@ struct FIONA_DECL client_impl : public stream_impl {
       done_ = true;
       if ( cqe->res < 0 ) {
         res_ = cqe->res;
-        fiona::detail::executor_access_policy::release_fd( pclient_->ex_, pclient_->fd_ );
+        fiona::detail::executor_access_policy::release_fd( pclient_->ex_,
+                                                           pclient_->fd_ );
         pclient_->fd_ = -1;
       }
     }

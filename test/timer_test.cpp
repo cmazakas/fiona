@@ -114,7 +114,9 @@ recursion_test( fiona::executor ex, int n ) {
 
 fiona::task<void>
 return_value_test() {
-  auto f = []() -> fiona::task<std::vector<int>> { co_return std::vector<int>{ 1, 2, 3, 4 }; };
+  auto f = []() -> fiona::task<std::vector<int>> {
+    co_return std::vector<int>{ 1, 2, 3, 4 };
+  };
 
   auto vec = co_await f();
   CHECK_EQ( vec.size(), 4u );

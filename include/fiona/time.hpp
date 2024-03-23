@@ -35,7 +35,8 @@ private:
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
   FIONA_DECL
-  timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer, __kernel_timespec ts );
+  timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer,
+                   __kernel_timespec ts );
 
 public:
   FIONA_DECL

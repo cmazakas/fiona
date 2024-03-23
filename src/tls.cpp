@@ -1,4 +1,5 @@
 #include <boost/buffers/detail/type_traits.hpp>
+#include <boost/buffers/tag_invoke.hpp>
 #include <boost/buffers/type_traits.hpp>
 #include <fiona/buffer.hpp>
 #include <fiona/dns.hpp>
@@ -6,6 +7,7 @@
 #include <fiona/executor.hpp>
 #include <fiona/tls.hpp>
 
+#include <boost/buffers/algorithm.hpp>
 #include <boost/buffers/buffer.hpp>
 #include <boost/buffers/buffer_copy.hpp>
 #include <boost/buffers/const_buffer.hpp>
@@ -104,6 +106,39 @@ static_assert( boost::buffers::detail::is_bidirectional_iterator<
 static_assert(
     boost::buffers::is_mutable_buffer_sequence<buffers_adapter>::value );
 
+static_assert(
+    boost::buffers::is_const_buffer_sequence<buffers_adapter>::value );
+
+recv_buffer_sequence_view
+tag_invoke( boost::buffers::prefix_tag, buffers_adapter const& seq,
+            std::size_t n );
+
+recv_buffer_sequence_view
+tag_invoke( boost::buffers::prefix_tag, buffers_adapter const& seq,
+            std::size_t n ) {
+
+  std::size_t total_len = 0;
+  auto seq_view = seq.buf_seq_view_;
+  auto end = seq_view.end();
+
+  for ( auto pos = seq_view.begin(); pos != end; ++pos ) {
+    auto buf = *pos;
+    auto new_len = total_len + buf.size();
+    if ( new_len > n ) {
+      buf.set_len( buf.size() - ( new_len - n ) );
+    }
+
+    if ( total_len == n ) {
+      buf.set_len( 0 );
+      continue;
+    }
+
+    total_len += buf.size();
+  }
+
+  return seq_view;
+}
+
 struct client_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> recv_buf_;
   std::vector<unsigned char> send_buf_;
@@ -122,12 +157,16 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
                             std::span<std::uint8_t const> data ) override {
     std::cout << "tls client received application data" << std::endl;
 
-    boost::buffers::buffer_copy(
+    auto n = boost::buffers::buffer_copy(
         buffers_adapter{ recv_seq_ },
         boost::buffers::buffer( data.data(), data.size() ) );
 
     std::cout << "yay, Buffers!" << std::endl;
-    for ( auto const v : recv_seq_ ) {
+    auto seq = boost::buffers::prefix( buffers_adapter{ recv_seq_ }, n );
+    for ( auto const v : seq ) {
+      if ( v.empty() ) {
+        continue;
+      }
       std::cout << v.as_str() << std::endl;
     }
 
@@ -337,8 +376,12 @@ client::async_recv() {
       co_return mbuf.error();
     }
 
-    tls_client.received_data( mbuf->readable_bytes() );
-    f.pcallbacks_->recv_seq_.push_back( std::move( mbuf ).value() );
+    auto& buf = mbuf.value();
+    auto data = buf.readable_bytes();
+    BOOST_ASSERT( buf.capacity() > 0 );
+
+    f.pcallbacks_->recv_seq_.push_back( std::move( buf ) );
+    tls_client.received_data( data );
   }
 
   co_return recv_buf.size();

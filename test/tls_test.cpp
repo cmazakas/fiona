@@ -46,7 +46,8 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_record_received( uint64_t seq_no, std::span<std::uint8_t const> data ) override {
+  void tls_record_received( uint64_t seq_no,
+                            std::span<std::uint8_t const> data ) override {
     (void)seq_no;
 
     REQUIRE( !data.empty() );
@@ -65,17 +66,22 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
 
   void tls_session_activated() override {}
 
-  void tls_session_established( const Botan::TLS::Session_Summary& /* session */ ) override {}
+  void tls_session_established(
+      const Botan::TLS::Session_Summary& /* session */ ) override {}
 
-  void tls_verify_cert_chain( const std::vector<Botan::X509_Certificate>& cert_chain,
-                              const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
-                              const std::vector<Botan::Certificate_Store*>& trusted_roots, Botan::Usage_Type usage,
-                              std::string_view hostname, const Botan::TLS::Policy& policy ) override {
+  void tls_verify_cert_chain(
+      const std::vector<Botan::X509_Certificate>& cert_chain,
+      const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
+      const std::vector<Botan::Certificate_Store*>& trusted_roots,
+      Botan::Usage_Type usage, std::string_view hostname,
+      const Botan::TLS::Policy& policy ) override {
 
-    Botan::Path_Validation_Restrictions restrictions( false, policy.minimum_signature_strength() );
+    Botan::Path_Validation_Restrictions restrictions(
+        false, policy.minimum_signature_strength() );
 
     Botan::Path_Validation_Result result = Botan::x509_path_validate(
-        cert_chain, restrictions, trusted_roots, hostname, usage, tls_current_timestamp(), 0ms, ocsp_responses );
+        cert_chain, restrictions, trusted_roots, hostname, usage,
+        tls_current_timestamp(), 0ms, ocsp_responses );
 
     CHECK( result.successful_validation() );
   }
@@ -119,12 +125,14 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
     cert_data_source.discard_next( cert_data_source.get_bytes_read() );
     CHECK( cert_data_source.end_of_data() );
 
-    cert_key_pairs_.emplace_back( cert_key_pair{ std::move( cert ), std::move( pkey ) } );
+    cert_key_pairs_.emplace_back(
+        cert_key_pair{ std::move( cert ), std::move( pkey ) } );
   }
 
-  std::shared_ptr<Botan::Private_Key> private_key_for( const Botan::X509_Certificate& cert,
-                                                       const std::string& /* type */,
-                                                       const std::string& /* context */ ) override {
+  std::shared_ptr<Botan::Private_Key>
+  private_key_for( const Botan::X509_Certificate& cert,
+                   const std::string& /* type */,
+                   const std::string& /* context */ ) override {
     for ( auto const& [mcert, pkey] : cert_key_pairs_ ) {
       if ( cert == mcert ) {
         return pkey;
@@ -134,11 +142,11 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
     return nullptr;
   }
 
-  std::vector<Botan::X509_Certificate>
-  find_cert_chain( const std::vector<std::string>& algos,
-                   const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
-                   const std::vector<Botan::X509_DN>& acceptable_cas, const std::string& type,
-                   const std::string& hostname ) override {
+  std::vector<Botan::X509_Certificate> find_cert_chain(
+      const std::vector<std::string>& algos,
+      const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
+      const std::vector<Botan::X509_DN>& acceptable_cas,
+      const std::string& type, const std::string& hostname ) override {
     BOTAN_UNUSED( cert_signature_schemes );
     BOTAN_UNUSED( acceptable_cas );
 
@@ -168,8 +176,9 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
     return {};
   }
 
-  std::vector<Botan::Certificate_Store*> trusted_certificate_authorities( const std::string& type,
-                                                                          const std::string& context ) override {
+  std::vector<Botan::Certificate_Store*>
+  trusted_certificate_authorities( const std::string& type,
+                                   const std::string& context ) override {
     BOTAN_UNUSED( type, context );
     // return a list of certificates of CAs we trust for tls server certificates
     // ownership of the pointers remains with Credentials_Manager
@@ -185,12 +194,14 @@ fiona::task<void>
 server( fiona::tcp::acceptor acceptor ) {
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
-  auto psession_mgr = std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
+  auto psession_mgr =
+      std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
 
   auto pcreds_mgr = std::make_shared<tls_credentials_manager>();
   auto ptls_policy = std::make_shared<Botan::TLS::Policy const>();
 
-  Botan::TLS::Server tls_server( pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng );
+  Botan::TLS::Server tls_server( pcallbacks, psession_mgr, pcreds_mgr,
+                                 ptls_policy, prng );
 
   CHECK( !tls_server.is_active() );
   CHECK( !tls_server.is_closed() );
@@ -216,7 +227,8 @@ server( fiona::tcp::acceptor acceptor ) {
     tls_server.received_data( buf.readable_bytes() );
 
     if ( !send_buf.empty() ) {
-      std::cout << "going to send: " << send_buf.size() << " octets to the client" << std::endl;
+      std::cout << "going to send: " << send_buf.size()
+                << " octets to the client" << std::endl;
       co_await stream.async_send( send_buf );
       send_buf.clear();
     }
@@ -232,7 +244,8 @@ server( fiona::tcp::acceptor acceptor ) {
   }
 
   CHECK( !recv_buf.empty() );
-  auto msg = std::string_view( reinterpret_cast<char const*>( recv_buf.data() ), recv_buf.size() );
+  auto msg = std::string_view( reinterpret_cast<char const*>( recv_buf.data() ),
+                               recv_buf.size() );
   CHECK( msg == "hello, world! encryption is great!" );
 
   tls_server.send( "hello from the server!" );
@@ -271,14 +284,16 @@ fiona::task<void>
 client( fiona::executor ex, std::uint16_t const port ) {
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
-  auto psession_mgr = std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
+  auto psession_mgr =
+      std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng );
 
   auto pcreds_mgr = std::make_shared<tls_credentials_manager>();
   auto ptls_policy = std::make_shared<Botan::TLS::Policy const>();
 
   auto server_info = Botan::TLS::Server_Information( "localhost", 0 );
 
-  Botan::TLS::Client tls_client( pcallbacks, psession_mgr, pcreds_mgr, ptls_policy, prng, server_info );
+  Botan::TLS::Client tls_client( pcallbacks, psession_mgr, pcreds_mgr,
+                                 ptls_policy, prng, server_info );
 
   auto& send_buf = pcallbacks->send_buf_;
 
@@ -329,8 +344,9 @@ client( fiona::executor ex, std::uint16_t const port ) {
   }
 
   CHECK( !pcallbacks->recv_buf_.empty() );
-  auto msg =
-      std::string_view( reinterpret_cast<char const*>( pcallbacks->recv_buf_.data() ), pcallbacks->recv_buf_.size() );
+  auto msg = std::string_view(
+      reinterpret_cast<char const*>( pcallbacks->recv_buf_.data() ),
+      pcallbacks->recv_buf_.size() );
   CHECK( msg == "hello from the server!" );
 
   CHECK( !tls_client.is_closed() );
@@ -384,7 +400,9 @@ tls_client( fiona::executor ex, std::uint16_t const port ) {
   auto mnum_read = co_await client.async_recv();
   CHECK( mnum_read.has_value() );
 
-  auto msg = std::string_view( reinterpret_cast<char const*>( client.buffer().data() ), client.buffer().size() );
+  auto msg =
+      std::string_view( reinterpret_cast<char const*>( client.buffer().data() ),
+                        client.buffer().size() );
   CHECK( msg == "hello from the server!" );
 
   std::cout << "msg: " << msg << std::endl;

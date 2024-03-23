@@ -40,7 +40,8 @@ struct custom_awaitable {
   void await_suspend( std::coroutine_handle<> h ) {
     auto waker = ex.make_waker( h );
 
-    t = std::thread( [nums = this->nums, m = this->m, should_detach = this->should_detach, waker]() mutable {
+    t = std::thread( [nums = this->nums, m = this->m,
+                      should_detach = this->should_detach, waker]() mutable {
       std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
       {
         std::lock_guard<std::mutex> lg{ *m };

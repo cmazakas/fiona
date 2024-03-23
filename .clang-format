@@ -3,7 +3,7 @@ PointerAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
 SpacesInParentheses: true
 LambdaBodyIndentation: OuterScope
-ColumnLimit: 120
+ColumnLimit: 80
 BinPackArguments: true
 BinPackParameters: true
 AllowAllArgumentsOnNextLine: true

@@ -9,7 +9,7 @@
 #include <cstdint>                 // for uint16_t
 #include <cstring>                 // for size_t
 #include <list>                    // for list
-#include <memory>                  // for shared_ptr, __shared_ptr_access, make_shared
+#include <memory> // for shared_ptr, __shared_ptr_access, make_shared
 
 namespace fiona {
 struct executor;
@@ -36,9 +36,11 @@ public:
   FIONA_DECL
   void spawn( task<void> t );
 
-  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size, std::uint16_t buffer_group_id ) {
+  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size,
+                                 std::uint16_t buffer_group_id ) {
     auto ring = &pframe_->io_ring_;
-    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size, buffer_group_id );
+    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,
+                                      buffer_group_id );
   }
 
   FIONA_DECL

@@ -27,7 +27,6 @@
 struct io_uring_buf_ring;
 
 namespace fiona {
-
 namespace detail {
 
 struct buf_ring {
@@ -50,14 +49,18 @@ public:
   buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid );
 
   FIONA_DECL
-  buf_ring( io_uring* ring, std::uint32_t num_bufs, std::size_t buf_size, std::uint16_t bgid );
+  buf_ring( io_uring* ring, std::uint32_t num_bufs, std::size_t buf_size,
+            std::uint16_t bgid );
 
-  // TODO: this probably needs to be exported but we currently lack test coverage for this
+  // TODO: this probably needs to be exported but we currently lack test
+  // coverage for this
   ~buf_ring();
 
   recv_buffer& get_buf( std::size_t idx ) noexcept { return bufs_[idx]; }
   io_uring_buf_ring* get() const noexcept { return buf_ring_; }
-  std::uint32_t size() const noexcept { return static_cast<std::uint32_t>( bufs_.size() ); }
+  std::uint32_t size() const noexcept {
+    return static_cast<std::uint32_t>( bufs_.size() );
+  }
   std::uint16_t bgid() const noexcept { return bgid_; }
 };
 
@@ -79,22 +82,26 @@ struct key_equal {
   using is_transparent = void;
 
   template <class Promise1, class Promise2>
-  bool operator()( std::coroutine_handle<Promise1> const h1, std::coroutine_handle<Promise2> const h2 ) const noexcept {
+  bool operator()( std::coroutine_handle<Promise1> const h1,
+                   std::coroutine_handle<Promise2> const h2 ) const noexcept {
     return h1.address() == h2.address();
   }
 
   template <class Promise>
-  bool operator()( std::coroutine_handle<Promise> const h, void* p ) const noexcept {
+  bool operator()( std::coroutine_handle<Promise> const h,
+                   void* p ) const noexcept {
     return h.address() == p;
   }
 
   template <class Promise>
-  bool operator()( void* p, std::coroutine_handle<Promise> const h ) const noexcept {
+  bool operator()( void* p,
+                   std::coroutine_handle<Promise> const h ) const noexcept {
     return h.address() == p;
   }
 };
 
-using task_map_type = boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
+using task_map_type =
+    boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
 
 struct io_context_frame {
   io_uring io_ring_;

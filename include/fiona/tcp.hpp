@@ -88,8 +88,10 @@ public:
   FIONA_DECL
   acceptor( executor ex, sockaddr const* addr );
 
-  acceptor( executor ex, sockaddr_in const* addr ) : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
-  acceptor( executor ex, sockaddr_in6 const* addr ) : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
+  acceptor( executor ex, sockaddr_in const* addr )
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
+  acceptor( executor ex, sockaddr_in6 const* addr )
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
 
   bool operator==( acceptor const& ) const = default;
 
@@ -212,7 +214,8 @@ private:
   std::span<unsigned char const> buf_;
   boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
 
-  send_awaitable( std::span<unsigned char const> buf, boost::intrusive_ptr<detail::stream_impl> pstream );
+  send_awaitable( std::span<unsigned char const> buf,
+                  boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
   FIONA_DECL

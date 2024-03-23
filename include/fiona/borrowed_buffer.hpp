@@ -25,12 +25,15 @@ namespace fiona {
 //   borrowed_buffer( borrowed_buffer const& ) = delete;
 //   borrowed_buffer& operator=( borrowed_buffer const& ) = delete;
 
-//   borrowed_buffer( io_uring_buf_ring* br, void* addr, unsigned len, unsigned num_bufs, std::uint16_t bid,
+//   borrowed_buffer( io_uring_buf_ring* br, void* addr, unsigned len, unsigned
+//   num_bufs, std::uint16_t bid,
 //                    unsigned num_read )
-//       : br_( br ), addr_( addr ), len_{ len }, num_read_{ num_read }, num_bufs_{ num_bufs }, bid_{ bid } {}
+//       : br_( br ), addr_( addr ), len_{ len }, num_read_{ num_read },
+//       num_bufs_{ num_bufs }, bid_{ bid } {}
 
 //   borrowed_buffer( borrowed_buffer&& rhs ) noexcept
-//       : br_{ rhs.br_ }, addr_{ rhs.addr_ }, len_{ rhs.len_ }, num_read_{ rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
+//       : br_{ rhs.br_ }, addr_{ rhs.addr_ }, len_{ rhs.len_ }, num_read_{
+//       rhs.num_read_ }, num_bufs_{ rhs.num_bufs_ },
 //         bid_{ rhs.bid_ } {
 //     rhs.br_ = nullptr;
 //     rhs.addr_ = nullptr;
@@ -43,8 +46,9 @@ namespace fiona {
 //   ~borrowed_buffer() {
 //     if ( br_ ) {
 //       auto buf_ring = br_;
-//       io_uring_buf_ring_add( buf_ring, addr_, len_, bid_, io_uring_buf_ring_mask( num_bufs_ ), 0 );
-//       io_uring_buf_ring_advance( buf_ring, 1 );
+//       io_uring_buf_ring_add( buf_ring, addr_, len_, bid_,
+//       io_uring_buf_ring_mask( num_bufs_ ), 0 ); io_uring_buf_ring_advance(
+//       buf_ring, 1 );
 //     }
 //   }
 
@@ -52,8 +56,9 @@ namespace fiona {
 //     if ( this != &rhs ) {
 //       if ( br_ ) {
 //         auto buf_ring = br_;
-//         io_uring_buf_ring_add( buf_ring, addr_, len_, bid_, io_uring_buf_ring_mask( num_bufs_ ), 0 );
-//         io_uring_buf_ring_advance( buf_ring, 1 );
+//         io_uring_buf_ring_add( buf_ring, addr_, len_, bid_,
+//         io_uring_buf_ring_mask( num_bufs_ ), 0 ); io_uring_buf_ring_advance(
+//         buf_ring, 1 );
 //       }
 
 //       br_ = rhs.br_;
@@ -79,7 +84,8 @@ namespace fiona {
 //     return { static_cast<unsigned char*>( addr_ ), num_read_ };
 //   }
 
-//   std::string_view as_str() const noexcept { return { static_cast<char const*>( addr_ ), num_read_ }; }
+//   std::string_view as_str() const noexcept { return { static_cast<char
+//   const*>( addr_ ), num_read_ }; }
 // };
 } // namespace fiona
 

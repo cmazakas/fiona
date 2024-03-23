@@ -12,8 +12,10 @@
 namespace fiona {
 
 struct error_code : public std::error_code {
-  inline friend std::ostream& operator<<( std::ostream& os, error_code const& ec ) {
-    os << static_cast<std::error_code const&>( ec ) << ":" << std::strerror( ec.value() );
+  inline friend std::ostream& operator<<( std::ostream& os,
+                                          error_code const& ec ) {
+    os << static_cast<std::error_code const&>( ec ) << ":"
+       << std::strerror( ec.value() );
     return os;
   }
 

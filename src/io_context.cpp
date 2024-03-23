@@ -1,14 +1,14 @@
 #include <fiona/io_context.hpp>
 
-#include <fiona/detail/common.hpp>                // for io_context_frame, buf_ring, task_map_type
-#include <fiona/detail/get_sqe.hpp>               // for reserve_sqes, submit_ring
-#include <fiona/error.hpp>                        // for throw_errno_as_error_code
-#include <fiona/executor.hpp>                     // for executor, executor_access_policy
-#include <fiona/params.hpp>                       // for io_context_params
-#include <fiona/task.hpp>                         // for task
+#include <fiona/detail/common.hpp> // for io_context_frame, buf_ring, task_map_type
+#include <fiona/detail/get_sqe.hpp>      // for reserve_sqes, submit_ring
+#include <fiona/error.hpp>               // for throw_errno_as_error_code
+#include <fiona/executor.hpp>            // for executor, executor_access_policy
+#include <fiona/params.hpp>              // for io_context_params
+#include <fiona/task.hpp>                // for task
 
-#include <boost/assert.hpp>                       // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp>          // for hash
+#include <boost/assert.hpp>              // for BOOST_ASSERT
+#include <boost/container_hash/hash.hpp> // for hash
 #include <boost/core/exchange.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>      // for intrusive_ptr
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
@@ -16,17 +16,17 @@
 #include <coroutine>                              // for coroutine_handle
 #include <cstring>                                // for memcpy, size_t
 #include <deque>                                  // for deque
-#include <exception>                              // for rethrow_exception, exception_ptr
-#include <memory>                                 // for shared_ptr, __shared_ptr_access
-#include <utility>                                // for move
-#include <vector>                                 // for vector
+#include <exception> // for rethrow_exception, exception_ptr
+#include <memory>    // for shared_ptr, __shared_ptr_access
+#include <utility>   // for move
+#include <vector>    // for vector
 
-#include <errno.h>                                // for errno
-#include <liburing.h>                             // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
-#include <liburing/io_uring.h>                    // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
-#include <unistd.h>                               // for close, pipe
+#include <errno.h>   // for errno
+#include <liburing.h> // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
+#include <liburing/io_uring.h> // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
+#include <unistd.h> // for close, pipe
 
-#include "awaitable_base.hpp"                     // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
+#include "awaitable_base.hpp" // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
 
 namespace {
 
@@ -34,7 +34,8 @@ struct pipe_awaitable {
   struct frame final : public fiona::detail::awaitable_base {
     fiona::executor ex_;
     std::coroutine_handle<> h_ = nullptr;
-    alignas( std::coroutine_handle<> ) unsigned char buffer_[sizeof( std::coroutine_handle<> )] = {};
+    alignas( std::coroutine_handle<> ) unsigned char buffer_[sizeof(
+        std::coroutine_handle<> )] = {};
     int fd_ = -1;
     int count_ = 0;
 
@@ -60,21 +61,28 @@ struct pipe_awaitable {
 
       if ( data & fiona::detail::wake_mask ) {
         data &= fiona::detail::ptr_mask;
-        h_ = std::coroutine_handle<>::from_address( reinterpret_cast<void*>( data ) );
+        h_ = std::coroutine_handle<>::from_address(
+            reinterpret_cast<void*>( data ) );
 
       } else if ( data & fiona::detail::post_mask ) {
-        // TODO: determine if tsan is just giving us false positives here and if we should remove lock/unlocking
-        // the mutex here
-        { auto guard = fiona::detail::executor_access_policy::lock_guard( ex_ ); }
+        // TODO: determine if tsan is just giving us false positives here and if
+        // we should remove lock/unlocking the mutex here
+        {
+          auto guard = fiona::detail::executor_access_policy::lock_guard( ex_ );
+        }
 
         data &= fiona::detail::ptr_mask;
 
         auto& tasks = fiona::detail::executor_access_policy::tasks( ex_ );
-        auto& run_queue = fiona::detail::executor_access_policy::run_queue( ex_ );
+        auto& run_queue =
+            fiona::detail::executor_access_policy::run_queue( ex_ );
 
-        auto task = fiona::task<void>::from_address( reinterpret_cast<void*>( data ) );
-        auto internal_task = fiona::detail::scheduler( tasks, std::move( task ) );
-        auto [it, b] = tasks.emplace( internal_task.h_, &internal_task.h_.promise().count_ );
+        auto task =
+            fiona::task<void>::from_address( reinterpret_cast<void*>( data ) );
+        auto internal_task =
+            fiona::detail::scheduler( tasks, std::move( task ) );
+        auto [it, b] = tasks.emplace( internal_task.h_,
+                                      &internal_task.h_.promise().count_ );
 
         BOOST_ASSERT( b );
         run_queue.push_back( it->first );
@@ -83,7 +91,9 @@ struct pipe_awaitable {
       schedule_recv();
     }
 
-    std::coroutine_handle<> handle() noexcept override { return boost::exchange( h_, nullptr ); }
+    std::coroutine_handle<> handle() noexcept override {
+      return boost::exchange( h_, nullptr );
+    }
 
     void inc_ref() noexcept override { ++count_; }
     void dec_ref() noexcept override {
@@ -98,7 +108,9 @@ struct pipe_awaitable {
 
   boost::intrusive_ptr<frame> p_;
 
-  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) { p_->schedule_recv(); }
+  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) {
+    p_->schedule_recv();
+  }
 
   ~pipe_awaitable() { cancel(); }
 
@@ -117,7 +129,8 @@ struct cqe_guard {
   io_uring* ring;
   io_uring_cqe* cqe;
 
-  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ ) : ring{ ring_ }, cqe{ cqe_ } {}
+  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ )
+      : ring{ ring_ }, cqe{ cqe_ } {}
   ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
 };
 
@@ -208,7 +221,8 @@ io_context::run() {
       return;
     }
 
-    auto q = boost::intrusive_ptr<detail::awaitable_base>( static_cast<detail::awaitable_base*>( p ), false );
+    auto q = boost::intrusive_ptr<detail::awaitable_base>(
+        static_cast<detail::awaitable_base*>( p ), false );
     BOOST_ASSERT( q->use_count() >= 1 );
 
     q->await_process_cqe( cqe );
@@ -225,7 +239,8 @@ io_context::run() {
   guard g{ tasks, ring };
 
   {
-    auto pipe_awaiter = pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
+    auto pipe_awaiter =
+        pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
 
     while ( !tasks.empty() ) {
       if ( pframe_->exception_ptr_ ) {
@@ -282,7 +297,8 @@ io_context::run() {
 
 namespace detail {
 
-io_context_frame::io_context_frame( io_context_params const& io_ctx_params ) : params_( io_ctx_params ) {
+io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
+    : params_( io_ctx_params ) {
 
   int ret = -1;
   auto ring = &io_ring_;

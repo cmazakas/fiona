@@ -1,28 +1,28 @@
 #ifndef FIONA_EXECUTOR_HPP
 #define FIONA_EXECUTOR_HPP
 
-#include <fiona/error.hpp>                        // for throw_errno_as_error_code
-#include <fiona/params.hpp>                       // for io_context_params
-#include <fiona/task.hpp>                         // for task
+#include <fiona/error.hpp>         // for throw_errno_as_error_code
+#include <fiona/params.hpp>        // for io_context_params
+#include <fiona/task.hpp>          // for task
 
-#include <fiona/detail/common.hpp>                // for io_context_frame, task_map_type, buf_ring
+#include <fiona/detail/common.hpp> // for io_context_frame, task_map_type, buf_ring
 #include <fiona/detail/config.hpp>
 
-#include <boost/assert.hpp>                       // for BOOST_ASSERT
+#include <boost/assert.hpp>        // for BOOST_ASSERT
 #include <boost/container_hash/hash.hpp>          // for hash
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
-#include <coroutine>                              // for coroutine_handle, noop_coroutine, suspend_always
-#include <cstdint>                                // for uint32_t
-#include <cstring>                                // for size_t
+#include <coroutine> // for coroutine_handle, noop_coroutine, suspend_always
+#include <cstdint>   // for uint32_t
+#include <cstring>   // for size_t
 #include <deque>
-#include <exception>                              // for exception_ptr, rethrow_exception, current_exception
-#include <memory>                                 // for shared_ptr, __shared_ptr_access, weak_ptr
-#include <mutex>                                  // for lock_guard, mutex
-#include <utility>                                // for move, addressof, forward, pair
+#include <exception> // for exception_ptr, rethrow_exception, current_exception
+#include <memory>    // for shared_ptr, __shared_ptr_access, weak_ptr
+#include <mutex>     // for lock_guard, mutex
+#include <utility>   // for move, addressof, forward, pair
 
-#include <errno.h>                                // for EINVAL, errno
-#include <unistd.h>                               // for write
+#include <errno.h>   // for EINVAL, errno
+#include <unistd.h>  // for write
 
 namespace fiona {
 namespace detail {
@@ -80,7 +80,8 @@ private:
   std::shared_ptr<detail::io_context_frame> pframe_;
 
 public:
-  executor( std::shared_ptr<detail::io_context_frame> pframe ) noexcept : pframe_( std::move( pframe ) ) {}
+  executor( std::shared_ptr<detail::io_context_frame> pframe ) noexcept
+      : pframe_( std::move( pframe ) ) {}
 
   template <class T>
   spawn_awaitable<T> spawn( task<T> t );
@@ -88,20 +89,27 @@ public:
   inline void post( task<void> t ) const;
   inline waker make_waker( std::coroutine_handle<> h ) const;
 
-  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size, std::uint16_t buffer_group_id ) {
+  void register_buffer_sequence( std::size_t num_bufs, std::size_t buf_size,
+                                 std::uint16_t buffer_group_id ) {
     auto ring = &pframe_->io_ring_;
-    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size, buffer_group_id );
+    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,
+                                      buffer_group_id );
   }
 };
 
 namespace detail {
 
 struct executor_access_policy {
-  static inline io_uring* ring( executor ex ) noexcept { return &ex.pframe_->io_ring_; }
+  static inline io_uring* ring( executor ex ) noexcept {
+    return &ex.pframe_->io_ring_;
+  }
 
-  static inline task_map_type& tasks( executor ex ) noexcept { return ex.pframe_->tasks_; }
+  static inline task_map_type& tasks( executor ex ) noexcept {
+    return ex.pframe_->tasks_;
+  }
 
-  static inline std::deque<std::coroutine_handle<>>& run_queue( executor ex ) noexcept {
+  static inline std::deque<std::coroutine_handle<>>&
+  run_queue( executor ex ) noexcept {
     return ex.pframe_->run_queue_;
   }
 
@@ -125,7 +133,8 @@ struct executor_access_policy {
     fds.erase( pos );
 
     BOOST_ASSERT( fd >= 0 );
-    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) < ex.pframe_->params_.num_files );
+    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
+                  ex.pframe_->params_.num_files );
     return fd;
   }
 
@@ -134,7 +143,8 @@ struct executor_access_policy {
       return;
     }
 
-    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) < ex.pframe_->params_.num_files );
+    BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
+                  ex.pframe_->params_.num_files );
 
     auto& fds = ex.pframe_->fds_;
     auto itb = fds.insert( fd );
@@ -142,7 +152,8 @@ struct executor_access_policy {
     BOOST_ASSERT( itb.second );
   }
 
-  static inline buf_ring* get_buffer_group( executor ex, std::size_t bgid ) noexcept {
+  static inline buf_ring* get_buffer_group( executor ex,
+                                            std::size_t bgid ) noexcept {
     for ( auto& bg : ex.pframe_->buf_rings_ ) {
       if ( bgid == bg.bgid() ) {
         return &bg;
@@ -193,7 +204,9 @@ struct internal_task {
     return *this;
   }
 
-  internal_task( internal_task&& rhs ) noexcept : h_( rhs.h_ ) { rhs.h_ = nullptr; }
+  internal_task( internal_task&& rhs ) noexcept : h_( rhs.h_ ) {
+    rhs.h_ = nullptr;
+  }
 
   internal_task& operator=( internal_task&& rhs ) noexcept {
     if ( this != &rhs ) {
@@ -238,7 +251,8 @@ struct promise_variant {
   }
 
   void set_error() {
-    new ( std::addressof( s_.exception_ ) ) std::exception_ptr( std::current_exception() );
+    new ( std::addressof( s_.exception_ ) )
+        std::exception_ptr( std::current_exception() );
     rt_ = result_type::error;
   }
 
@@ -300,7 +314,8 @@ private:
     bool await_ready() const noexcept { return false; }
 
     template <class Promise>
-    std::coroutine_handle<> await_suspend( std::coroutine_handle<Promise> h ) noexcept {
+    std::coroutine_handle<>
+    await_suspend( std::coroutine_handle<Promise> h ) noexcept {
       auto& tasks = h.promise().tasks_;
       auto continuation = h.promise().continuation_;
 
@@ -352,10 +367,12 @@ public:
 template <class T>
 struct internal_promise : public internal_promise_base<T> {
   template <class... Args>
-  internal_promise( task_map_type& tasks, Args&&... ) : internal_promise_base<T>( tasks ) {}
+  internal_promise( task_map_type& tasks, Args&&... )
+      : internal_promise_base<T>( tasks ) {}
 
   internal_task<T> get_return_object() {
-    return internal_task<T>( std::coroutine_handle<internal_promise>::from_promise( *this ) );
+    return internal_task<T>(
+        std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
   template <class Expr>
@@ -367,10 +384,12 @@ struct internal_promise : public internal_promise_base<T> {
 template <>
 struct internal_promise<void> : public internal_promise_base<void> {
   template <class... Args>
-  internal_promise( task_map_type& tasks, Args&&... ) : internal_promise_base( tasks ) {}
+  internal_promise( task_map_type& tasks, Args&&... )
+      : internal_promise_base( tasks ) {}
 
   internal_task<void> get_return_object() {
-    return internal_task<void>( std::coroutine_handle<internal_promise>::from_promise( *this ) );
+    return internal_task<void>(
+        std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
   void return_void() {}
@@ -384,12 +403,14 @@ struct spawn_awaitable {
   detail::internal_task<T> task_;
   bool was_awaited_ = false;
 
-  spawn_awaitable( executor ex, detail::internal_task<T> task ) : ex_{ ex }, task_{ task } {}
+  spawn_awaitable( executor ex, detail::internal_task<T> task )
+      : ex_{ ex }, task_{ task } {}
 
   ~spawn_awaitable() {
     auto& promise = task_.h_.promise();
     if ( promise.variant_.has_error() && !was_awaited_ ) {
-      detail::executor_access_policy::unhandled_exception( ex_, promise.variant_.get_error() );
+      detail::executor_access_policy::unhandled_exception(
+          ex_, promise.variant_.get_error() );
     }
   }
 
@@ -423,7 +444,8 @@ template <class T>
 spawn_awaitable<T>
 executor::spawn( task<T> t ) {
   auto internal_task = detail::scheduler( pframe_->tasks_, std::move( t ) );
-  auto [it, b] = pframe_->tasks_.emplace( internal_task.h_, &internal_task.h_.promise().count_ );
+  auto [it, b] = pframe_->tasks_.emplace( internal_task.h_,
+                                          &internal_task.h_.promise().count_ );
 
   BOOST_ASSERT( b );
   pframe_->run_queue_.push_back( it->first );

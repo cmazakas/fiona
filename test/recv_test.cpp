@@ -57,7 +57,8 @@ TEST_CASE( "recv_test - recv timeout" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -130,7 +131,8 @@ TEST_CASE( "recv_test - recv cancel" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -166,7 +168,8 @@ TEST_CASE( "recv_test - recv cancel" ) {
 TEST_CASE( "recv_test - recv high traffic" ) {
   num_runs = 0;
 
-  auto server = []( fiona::tcp::acceptor acceptor, fiona::executor /* ex */ ) -> fiona::task<void> {
+  auto server = []( fiona::tcp::acceptor acceptor,
+                    fiona::executor /* ex */ ) -> fiona::task<void> {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( std::chrono::seconds( 1 ) );
@@ -185,7 +188,8 @@ TEST_CASE( "recv_test - recv high traffic" ) {
     co_return;
   };
 
-  auto client = []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex,
+                    std::uint16_t port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -304,8 +308,10 @@ TEST_CASE( "recv_test - double registering same buffer group" ) {
 //         if ( mbuf.has_value() ) {
 //           num_read += mbuf.value().readable_bytes().size();
 //         } else {
-//           // interesting to note that we can't seem to avoid the interruption to the scheduled recv operation
-//           // this could be a ux flaw in the library itself but maybe it's useful for the user to know if their buffer
+//           // interesting to note that we can't seem to avoid the interruption
+//           to the scheduled recv operation
+//           // this could be a ux flaw in the library itself but maybe it's
+//           useful for the user to know if their buffer
 //           // group overflowed
 //           CHECK( mbuf.error() == std::errc::no_buffer_space );
 //         }
