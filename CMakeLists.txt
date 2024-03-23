@@ -9,7 +9,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(liburing 2.5 REQUIRED)
 find_package(Boost 1.84 REQUIRED buffers)
-find_package(Botan 3.3.0 COMPONENTS tls)
+find_package(Botan 3.3.0 CONFIG COMPONENTS tls)
 
 set(fiona_headers
 
@@ -71,7 +71,7 @@ add_library(Fiona::fiona ALIAS fiona)
 
 if(Botan_FOUND)
   add_library(fiona_tls src/tls.cpp)
-  target_link_libraries(fiona_tls PUBLIC fiona Botan::Botan)
+  target_link_libraries(fiona_tls PUBLIC fiona Botan::Botan-static)
   add_library(Fiona::tls ALIAS fiona_tls)
 
   target_compile_definitions(fiona_tls PRIVATE FIONA_SOURCE)

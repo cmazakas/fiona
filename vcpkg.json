@@ -11,6 +11,7 @@
     "boost-smart-ptr",
     "boost-system",
     "boost-unordered",
+    "botan",
     "catch2",
     "liburing"
   ]
