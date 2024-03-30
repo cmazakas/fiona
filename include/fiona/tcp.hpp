@@ -255,7 +255,7 @@ public:
   bool await_ready() const;
 
   FIONA_DECL
-  void await_suspend( std::coroutine_handle<> h );
+  bool await_suspend( std::coroutine_handle<> h );
 
   FIONA_DECL
   result<recv_buffer_sequence> await_resume();
@@ -323,7 +323,7 @@ public:
   bool await_ready() const;
 
   FIONA_DECL
-  void await_suspend( std::coroutine_handle<> h );
+  bool await_suspend( std::coroutine_handle<> h );
 
   FIONA_DECL
   result<void> await_resume();

@@ -1,25 +1,22 @@
 #ifndef FIONA_DETAIL_COMMON_HPP
 #define FIONA_DETAIL_COMMON_HPP
 
-#include <fiona/buffer.hpp>
-#include <fiona/params.hpp> // for io_context_params
-
-#include <fiona/detail/config.hpp>
+#include <fiona/buffer.hpp>                       // for recv_buffer
+#include <fiona/detail/config.hpp>                // for FIONA_DECL
+#include <fiona/params.hpp>                       // for io_context_params
 
 #include <boost/container_hash/hash.hpp>          // for hash
-#include <boost/core/exchange.hpp>
 #include <boost/unordered/unordered_flat_map.hpp> // for unordered_flat_map
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
+#include <array>                                  // for array
 #include <coroutine>                              // for coroutine_handle
-#include <cstdint>                                // for uint16_t
+#include <cstdint>                                // for uint16_t, uint32_t
 #include <cstring>                                // for size_t
 #include <deque>                                  // for deque
 #include <exception>                              // for exception_ptr
-#include <list>
+#include <list>                                   // for list
 #include <mutex>                                  // for mutex
-#include <new>
-#include <span>                                   // for span
 #include <vector>                                 // for vector
 
 #include <liburing.h>                             // for io_uring
@@ -30,13 +27,15 @@ namespace fiona {
 namespace detail {
 
 struct buf_ring {
-private:
+public:
   std::vector<recv_buffer> bufs_;
+  std::vector<std::size_t> buf_ids_;
+  std::vector<std::size_t>::iterator buf_id_pos_;
+  std::size_t buf_size_ = 0;
   io_uring* ring_ = nullptr;
   io_uring_buf_ring* buf_ring_ = nullptr;
   std::uint16_t bgid_ = 0;
 
-public:
   buf_ring() = delete;
 
   buf_ring( buf_ring const& ) = delete;

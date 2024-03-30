@@ -81,6 +81,8 @@ TEST_CASE( "buffer_test - recv_buffer" ) {
 
 TEST_CASE( "buffer_test - owned buffer sequence" ) {
   fiona::recv_buffer_sequence buf_seq;
+  CHECK( buf_seq.size() == 0 );
+  CHECK( buf_seq.empty() );
 
   auto register_buffer = [&buf_seq]( std::string_view str ) {
     fiona::recv_buffer buf( 1024 );
@@ -102,6 +104,8 @@ TEST_CASE( "buffer_test - owned buffer sequence" ) {
   for ( auto str : strs ) {
     register_buffer( str );
   }
+
+  CHECK( buf_seq.size() == strs.size() );
 
   auto pos = buf_seq.begin();
 
@@ -191,4 +195,93 @@ TEST_CASE( "buffer_test - move stability" ) {
   std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf ) {
     CHECK( buf.capacity() == 256 );
   } );
+}
+
+TEST_CASE( "buffer_test - push_back empty" ) {
+  fiona::recv_buffer_sequence bs;
+  bs.push_back( fiona::recv_buffer( 0 ) );
+  CHECK( bs.size() == 1 );
+}
+
+TEST_CASE( "buffer_test - concat" ) {
+  {
+    fiona::recv_buffer_sequence bs1, bs2;
+    bs1.concat( std::move( bs2 ) );
+    CHECK( bs1.empty() );
+    CHECK( bs2.empty() );
+  }
+
+  {
+    fiona::recv_buffer_sequence bs1, bs2;
+    bs1.push_back( fiona::recv_buffer( 1 ) );
+    bs1.push_back( fiona::recv_buffer( 2 ) );
+
+    bs1.concat( std::move( bs2 ) );
+    {
+      CHECK( bs1.size() == 2 );
+      CHECK( bs2.size() == 0 );
+
+      unsigned cap = 0;
+      for ( auto bv : bs1 ) {
+        CHECK( bv.capacity() == ++cap );
+      }
+    }
+  }
+
+  {
+    fiona::recv_buffer_sequence bs1, bs2;
+    bs2.push_back( fiona::recv_buffer( 1 ) );
+    bs2.push_back( fiona::recv_buffer( 2 ) );
+
+    bs1.concat( std::move( bs2 ) );
+    {
+      CHECK( bs1.size() == 2 );
+      CHECK( bs2.size() == 0 );
+
+      unsigned cap = 0;
+      for ( auto bv : bs1 ) {
+        CHECK( bv.capacity() == ++cap );
+      }
+    }
+  }
+
+  {
+    fiona::recv_buffer_sequence bs1, bs2;
+    bs1.push_back( fiona::recv_buffer( 1 ) );
+    bs1.push_back( fiona::recv_buffer( 2 ) );
+    bs2.push_back( fiona::recv_buffer( 3 ) );
+    bs2.push_back( fiona::recv_buffer( 4 ) );
+
+    auto p1 = bs1.begin();
+    auto p2 = bs2.begin();
+
+    auto end1 = bs1.end();
+
+    bs1.concat( std::move( bs2 ) );
+
+    {
+      CHECK( bs1.size() == 4 );
+      CHECK( bs2.size() == 0 );
+
+      unsigned cap = 0;
+      for ( auto bv : bs1 ) {
+        CHECK( bv.capacity() == ++cap );
+      }
+    }
+
+    {
+      CHECK( ( *--end1 ).capacity() == 4 );
+
+      CHECK( ( *p2 ).capacity() == 3 );
+      --p2;
+      --p2;
+      CHECK( p1 == p2 );
+
+      CHECK( ( *p1 ).capacity() == 1 );
+      ++p1;
+      CHECK( ( *++p1 ).capacity() == 3 );
+      CHECK( ( *++p1 ).capacity() == 4 );
+      CHECK( ++p1 == bs1.end() );
+    }
+  }
 }

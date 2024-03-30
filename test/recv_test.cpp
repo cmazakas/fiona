@@ -238,110 +238,128 @@ TEST_CASE( "recv_test - double registering same buffer group" ) {
   }
 }
 
-// TEST_CASE( "recv_test - buffer exhaustion" ) {
-//   num_runs = 0;
+TEST_CASE( "recv_test - buffer exhaustion" ) {
+  num_runs = 0;
 
-//   fiona::io_context ioc;
-//   auto ex = ioc.get_executor();
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
 
-//   constexpr static int const num_bufs = 8;
+  constexpr static int const num_bufs = 8;
 
-//   ioc.register_buffer_sequence( num_bufs, 64, 0 );
+  ioc.register_buffer_sequence( num_bufs, 64, 0 );
 
-//   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
-//   fiona::tcp::acceptor acceptor( ex, &addr );
-//   auto const port = acceptor.port();
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
+  auto const port = acceptor.port();
 
-//   static std::array<unsigned char, 64> const msg = { '\x12' };
+  static std::array<unsigned char, 64> const msg = { '\x12' };
 
-//   ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
-//     auto mstream = co_await acceptor.async_accept();
-//     auto& stream = mstream.value();
-//     stream.timeout( 500ms );
+  ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+    auto mstream = co_await acceptor.async_accept();
+    auto& stream = mstream.value();
+    stream.timeout( 500ms );
 
-//     auto mstream2 = co_await acceptor.async_accept();
-//     auto& stream2 = mstream2.value();
-//     stream2.timeout( 500ms );
+    auto mstream2 = co_await acceptor.async_accept();
+    auto& stream2 = mstream2.value();
+    stream2.timeout( 500ms );
 
-//     stream.set_buffer_group( 0 );
-//     stream2.set_buffer_group( 0 );
+    stream.set_buffer_group( 0 );
+    stream2.set_buffer_group( 0 );
 
-//     std::vector<fiona::borrowed_buffer> bufs;
+    std::vector<fiona::recv_buffer_sequence> buffer_sequences;
 
-//     {
-//       for ( int i = 0; i < 2 * num_bufs; ++i ) {
-//         auto mbuf = co_await stream.async_recv();
-//         if ( i >= num_bufs ) {
-//           CHECK( bufs.size() >= num_bufs );
-//           CHECK( mbuf.error() == std::errc::no_buffer_space );
-//         } else {
-//           CHECK( mbuf.has_value() );
-//           bufs.push_back( std::move( mbuf.value() ) );
-//         }
-//       }
-//     }
+    {
+      // resumption should replenish the buf ring
+      auto mbufs = co_await stream.async_recv();
+      auto bufs = std::move( mbufs ).value();
+      CHECK( std::distance( bufs.begin(), bufs.end() ) == num_bufs );
+      for ( auto buf_view : bufs ) {
+        CHECK( buf_view.size() == 64 );
+      }
 
-//     auto ex = stream.get_executor();
-//     ex.register_buffer_sequence( num_bufs, 64, 1 );
+      buffer_sequences.push_back( std::move( bufs ) );
+    }
 
-//     {
-//       auto mbuf = co_await stream2.async_recv();
-//       CHECK( mbuf.has_error() );
-//       CHECK( mbuf.error() == std::errc::no_buffer_space );
-//     }
+    {
+      // attempting to co_await again should at least propagate the error that
+      // we, at one point in time, ran out of buffer space
+      auto mbufs = co_await stream.async_recv();
+      CHECK( mbufs.error() == std::errc::no_buffer_space );
+    }
 
-//     stream.set_buffer_group( 1 );
-//     {
-//       std::size_t num_read = 0;
-//       while ( num_read < msg.size() * num_bufs ) {
-//         auto mbuf = co_await stream.async_recv();
-//         CHECK( mbuf.has_value() );
-//         num_read += mbuf.value().readable_bytes().size();
-//       }
-//     }
+    auto ex = stream.get_executor();
+    ex.register_buffer_sequence( num_bufs, 64, 1 );
 
-//     bufs.clear();
-//     {
-//       std::size_t num_read = 0;
-//       while ( num_read < msg.size() * 2 * num_bufs ) {
-//         auto mbuf = co_await stream2.async_recv();
-//         if ( mbuf.has_value() ) {
-//           num_read += mbuf.value().readable_bytes().size();
-//         } else {
-//           // interesting to note that we can't seem to avoid the interruption
-//           to the scheduled recv operation
-//           // this could be a ux flaw in the library itself but maybe it's
-//           useful for the user to know if their buffer
-//           // group overflowed
-//           CHECK( mbuf.error() == std::errc::no_buffer_space );
-//         }
-//       }
-//     }
+    {
+      // a recv here should succeed with the replenished buffers
+      auto mbufs = co_await stream2.async_recv();
+      auto bufs = std::move( mbufs ).value();
+      CHECK( std::distance( bufs.begin(), bufs.end() ) == num_bufs );
+      for ( auto buf_view : bufs ) {
+        CHECK( buf_view.size() == 64 );
+      }
 
-//     ++num_runs;
-//   }( std::move( acceptor ) ) );
+      buffer_sequences.push_back( std::move( bufs ) );
+    }
 
-//   auto client = FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
-//     fiona::tcp::client client( ex );
+    stream.set_buffer_group( 1 );
+    {
+      auto mbufs = co_await stream.async_recv();
+      auto bufs = std::move( mbufs ).value();
+      CHECK( std::distance( bufs.begin(), bufs.end() ) == num_bufs );
+      for ( auto buf_view : bufs ) {
+        CHECK( buf_view.size() == 64 );
+      }
+      buffer_sequences.push_back( std::move( bufs ) );
+    }
 
-//     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-//     co_await client.async_connect( &addr );
+    {
+      // attempting to co_await again should at least propagate the error that
+      // we, at one point in time, ran out of buffer space
+      auto mbufs = co_await stream2.async_recv();
+      CHECK( mbufs.error() == std::errc::no_buffer_space );
+    }
 
-//     for ( int i = 0; i < 2 * num_bufs; ++i ) {
-//       auto mbytes_transferred = co_await client.async_send( msg );
-//       CHECK( mbytes_transferred.value() == msg.size() );
-//     }
+    {
+      // a recv here should succeed with the replenished buffers
+      auto mbufs = co_await stream2.async_recv();
+      auto bufs = std::move( mbufs ).value();
+      CHECK( std::distance( bufs.begin(), bufs.end() ) == num_bufs );
+      for ( auto buf_view : bufs ) {
+        CHECK( buf_view.size() == 64 );
+      }
+      buffer_sequences.push_back( std::move( bufs ) );
+    }
 
-//     fiona::timer timer( ex );
-//     co_await timer.async_wait( 250ms );
+    ++num_runs;
+  }( std::move( acceptor ) ) );
 
-//     ++num_runs;
-//   };
+  auto client = FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+    fiona::tcp::client client( ex );
 
-//   ioc.spawn( client( ex, port ) );
-//   ioc.spawn( client( ex, port ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    co_await client.async_connect( &addr );
 
-//   ioc.run();
+    std::vector<unsigned char> send_buf;
 
-//   CHECK( num_runs == 3 );
-// }
+    for ( int i = 0; i < 2 * num_bufs; ++i ) {
+      send_buf.insert( send_buf.end(), msg.begin(), msg.end() );
+    }
+    CHECK( send_buf.size() == 2 * num_bufs * msg.size() );
+
+    auto mbytes_transferred = co_await client.async_send( send_buf );
+    CHECK( mbytes_transferred.value() == send_buf.size() );
+
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 250ms );
+
+    ++num_runs;
+  };
+
+  ioc.spawn( client( ex, port ) );
+  ioc.spawn( client( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 3 );
+}

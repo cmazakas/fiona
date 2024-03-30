@@ -52,7 +52,7 @@ protected:
     return *reinterpret_cast<detail::buf_header_impl*>( p_ );
   }
 
-  recv_buffer_view( unsigned char* p ) : p_( p ) {}
+  recv_buffer_view( unsigned char* p ) noexcept : p_( p ) {}
 
 public:
   recv_buffer_view() = default;
@@ -146,6 +146,7 @@ protected:
   detail::buf_header_impl* psentry_;
   unsigned char* head_ = nullptr;
   unsigned char* tail_ = nullptr;
+  std::size_t size_ = 0;
 
   recv_buffer_sequence_view( detail::buf_header_impl* psentry )
       : psentry_( psentry ) {}
@@ -228,6 +229,9 @@ public:
     return { const_cast<detail::buf_header_impl*>( psentry_ ) };
   }
 
+  std::size_t size() const noexcept { return size_; }
+  bool empty() const noexcept { return size() == 0; }
+
   FIONA_DECL
   std::string to_string() const;
 
@@ -239,6 +243,26 @@ struct recv_buffer_sequence : public recv_buffer_sequence_view {
 private:
   detail::buf_header_impl sentry_;
 
+  void free_list() {
+    if ( !head_ ) {
+      return;
+    }
+
+    auto p = head_;
+
+    while ( p != reinterpret_cast<unsigned char*>( &sentry_ ) ) {
+      auto old = p;
+      p = recv_buffer_view( p ).header().next_;
+      recv_buffer::aligned_delete( old );
+    }
+
+    head_ = nullptr;
+    tail_ = nullptr;
+    size_ = 0;
+    sentry_.next_ = nullptr;
+    sentry_.prev_ = nullptr;
+  }
+
 public:
   recv_buffer_sequence() : recv_buffer_sequence_view( &sentry_ ) {}
 
@@ -249,6 +273,7 @@ public:
       : recv_buffer_sequence_view( &sentry_ ) {
     head_ = rhs.head_;
     tail_ = rhs.tail_;
+    size_ = rhs.size_;
 
     if ( tail_ ) {
       recv_buffer_view tail_view( tail_ );
@@ -264,26 +289,35 @@ public:
 
     rhs.head_ = nullptr;
     rhs.tail_ = nullptr;
+    rhs.size_ = 0;
   }
 
-  recv_buffer_sequence& operator=( recv_buffer_sequence&& ) = delete;
+  recv_buffer_sequence& operator=( recv_buffer_sequence&& rhs ) {
+    if ( this != &rhs ) {
+      if ( !empty() ) {
+        free_list();
+      }
 
-  ~recv_buffer_sequence() {
-    if ( !head_ ) {
-      return;
+      head_ = boost::exchange( rhs.head_, nullptr );
+      tail_ = boost::exchange( rhs.tail_, nullptr );
+      size_ = boost::exchange( rhs.size_, 0 );
+
+      recv_buffer_view head_view( head_ );
+      recv_buffer_view tail_view( tail_ );
+
+      tail_view.header().next_ = reinterpret_cast<unsigned char*>( &sentry_ );
+      sentry_.prev_ = tail_;
+
+      head_view.header().prev_ = reinterpret_cast<unsigned char*>( &sentry_ );
+      sentry_.next_ = head_;
     }
-
-    auto p = head_;
-
-    while ( p != reinterpret_cast<unsigned char*>( &sentry_ ) ) {
-      auto old = p;
-      p = recv_buffer_view( p ).header().next_;
-      recv_buffer::aligned_delete( old );
-    }
+    return *this;
   }
 
-  void push_back( recv_buffer rbuf ) {
-    // BOOST_ASSERT( rbuf.capacity() > 0 );
+  ~recv_buffer_sequence() { free_list(); }
+
+  void push_back( recv_buffer rbuf ) noexcept {
+    BOOST_ASSERT( rbuf.p_ != detail::default_buf_header() );
 
     auto p = rbuf.to_raw_parts();
     recv_buffer_view p_view( p );
@@ -301,9 +335,38 @@ public:
       head_ = tail_;
       sentry_.next_ = head_;
     }
+
+    ++size_;
   }
 
-  bool empty() const noexcept { return !head_; }
+  void concat( recv_buffer_sequence rhs ) noexcept {
+    if ( rhs.empty() ) {
+      return;
+    }
+
+    if ( empty() ) {
+      *this = std::move( rhs );
+      return;
+    }
+
+    recv_buffer_view header_view( head_ );
+    recv_buffer_view tail_view( tail_ );
+    recv_buffer_view rhs_head_view( rhs.head_ );
+    recv_buffer_view rhs_tail_view( rhs.tail_ );
+
+    tail_view.header().next_ = rhs.head_;
+    rhs_head_view.header().prev_ = tail_;
+
+    rhs_tail_view.header().next_ = reinterpret_cast<unsigned char*>( &sentry_ );
+    sentry_.prev_ = rhs.tail_;
+
+    tail_ = rhs.tail_;
+    size_ += rhs.size_;
+
+    rhs.head_ = nullptr;
+    rhs.tail_ = nullptr;
+    rhs.size_ = 0;
+  }
 };
 } // namespace fiona
 

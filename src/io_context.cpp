@@ -1,32 +1,34 @@
+#include <cerrno>
 #include <fiona/io_context.hpp>
 
-#include <fiona/detail/common.hpp> // for io_context_frame, buf_ring, task_map_type
-#include <fiona/detail/get_sqe.hpp>      // for reserve_sqes, submit_ring
-#include <fiona/error.hpp>               // for throw_errno_as_error_code
-#include <fiona/executor.hpp>            // for executor, executor_access_policy
-#include <fiona/params.hpp>              // for io_context_params
-#include <fiona/task.hpp>                // for task
+#include <fiona/detail/common.hpp>                // for io_context_frame
+#include <fiona/detail/get_sqe.hpp>               // for reserve_sqes, subm...
+#include <fiona/error.hpp>                        // for throw_errno_as_err...
+#include <fiona/executor.hpp>                     // for executor_access_po...
+#include <fiona/params.hpp>                       // for io_context_params
+#include <fiona/task.hpp>                         // for task
 
-#include <boost/assert.hpp>              // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp> // for hash
-#include <boost/core/exchange.hpp>
+#include <boost/assert.hpp>                       // for BOOST_ASSERT
+#include <boost/core/exchange.hpp>                // for exchange
 #include <boost/smart_ptr/intrusive_ptr.hpp>      // for intrusive_ptr
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
 
+#include <algorithm>                              // for copy
+#include <array>                                  // for array
 #include <coroutine>                              // for coroutine_handle
 #include <cstring>                                // for memcpy, size_t
 #include <deque>                                  // for deque
-#include <exception> // for rethrow_exception, exception_ptr
-#include <memory>    // for shared_ptr, __shared_ptr_access
-#include <utility>   // for move
-#include <vector>    // for vector
+#include <exception>                              // for exception_ptr, ret...
+#include <memory>                                 // for shared_ptr, __shar...
+#include <utility>                                // for move, pair
+#include <vector>                                 // for vector
 
-#include <errno.h>   // for errno
-#include <liburing.h> // for io_uring_get_sqe, io_uring_sqe_set_data, io_uring_cqe_get_...
-#include <liburing/io_uring.h> // for io_uring_cqe, io_uring_params, IORING_SETUP_COOP_TASKRUN
-#include <unistd.h> // for close, pipe
+#include <errno.h>                                // for errno
+#include <liburing.h>                             // for io_uring_cqe_get_data
+#include <liburing/io_uring.h>                    // for io_uring_cqe, io_u...
+#include <unistd.h>                               // for close, pipe
 
-#include "awaitable_base.hpp" // for intrusive_ptr_add_ref, awaitable_base, intrusive_ptr_release
+#include "awaitable_base.hpp"                     // for awaitable_base
 
 namespace {
 
@@ -144,6 +146,8 @@ struct guard {
     while ( !tasks.empty() ) {
       auto pos = tasks.begin();
       auto [h, pcount] = *pos;
+      // the awaitable for a task can still exist in some other task's frame who
+      // will then be responsible for cleaning up the coroutine
       if ( --*pcount == 0 ) {
         h.destroy();
       }
@@ -204,30 +208,13 @@ io_context::spawn( task<void> t ) {
 
 void
 io_context::run() {
-  // struct advance_guard {
-  //   io_uring* ring = nullptr;
-  //   unsigned count = 0;
-  //   ~advance_guard() {
-  //     if ( ring ) {
-  //       io_uring_cq_advance( ring, count );
-  //     }
-  //   }
-  // };
-
-  auto on_cqe = []( io_uring_cqe* cqe ) {
-    auto p = io_uring_cqe_get_data( cqe );
-
-    if ( !p ) {
-      return;
-    }
-
-    auto q = boost::intrusive_ptr<detail::awaitable_base>(
-        static_cast<detail::awaitable_base*>( p ), false );
-    BOOST_ASSERT( q->use_count() >= 1 );
-
-    q->await_process_cqe( cqe );
-    if ( auto h = q->handle(); h ) {
-      h.resume();
+  struct advance_guard {
+    io_uring* ring = nullptr;
+    unsigned count = 0;
+    ~advance_guard() {
+      if ( ring ) {
+        io_uring_cq_advance( ring, count );
+      }
     }
   };
 
@@ -237,13 +224,15 @@ io_context::run() {
   auto& tasks = pframe_->tasks_;
 
   guard g{ tasks, ring };
-
   {
-    auto pipe_awaiter =
-        pipe_awaitable( ex, detail::executor_access_policy::get_pipefd( ex ) );
+    pipe_awaitable pipe_awaiter(
+        ex, detail::executor_access_policy::get_pipefd( ex ) );
+
+    std::vector<std::coroutine_handle<>> handles( pframe_->params_.cq_entries );
 
     while ( !tasks.empty() ) {
-      if ( pframe_->exception_ptr_ ) {
+      if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
+        auto p = pframe_->exception_ptr_;
         std::rethrow_exception( pframe_->exception_ptr_ );
       }
 
@@ -252,14 +241,16 @@ io_context::run() {
         auto h = run_queue.front();
         h.resume();
         run_queue.pop_front();
-        if ( pframe_->exception_ptr_ ) {
-          auto p = pframe_->exception_ptr_;
 
+        if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
+          auto p = pframe_->exception_ptr_;
           std::rethrow_exception( pframe_->exception_ptr_ );
         }
       }
 
       if ( tasks.empty() ) {
+        // if tasks are empty and we don't break here, we get stuck waiting
+        // forever for I/O that'll never come
         break;
       }
 
@@ -268,28 +259,41 @@ io_context::run() {
       auto num_ready = io_uring_cq_ready( ring );
       io_uring_peek_batch_cqe( ring, cqes.data(), num_ready );
 
-      for ( std::size_t i = 0; i < num_ready; ++i ) {
-        auto guard = cqe_guard( ring, cqes[i] );
-        on_cqe( cqes[i] );
-        if ( pframe_->exception_ptr_ ) {
-          auto p = pframe_->exception_ptr_;
+      auto phandles = handles.begin();
 
-          std::rethrow_exception( pframe_->exception_ptr_ );
+      {
+        advance_guard cqe_guard{ ring, 0 };
+        for ( ; cqe_guard.count < num_ready; ++cqe_guard.count ) {
+          auto cqe = cqes[cqe_guard.count];
+          auto p = io_uring_cqe_get_data( cqe );
+          if ( !p ) {
+            continue;
+          }
+
+          boost::intrusive_ptr<detail::awaitable_base> q(
+              static_cast<detail::awaitable_base*>( p ), false );
+          BOOST_ASSERT( q->use_count() >= 1 );
+
+          q->await_process_cqe( cqe );
+          if ( auto h = q->handle(); h ) {
+            *phandles++ = h;
+          }
+
+          if ( BOOST_UNLIKELY(
+                   static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
+            auto p = pframe_->exception_ptr_;
+            std::rethrow_exception( pframe_->exception_ptr_ );
+          }
         }
       }
 
-      // advance_guard guard = { .ring = ring, .count = 0 };
-      // for ( ; guard.count < num_ready; ) {
-      //   on_cqe( cqes[guard.count++] );
-      //   if ( pframe_->exception_ptr_ ) {
-      //     auto p = pframe_->exception_ptr_;
-
-      //     std::rethrow_exception( pframe_->exception_ptr_ );
-      //   }
-      // }
+      for ( auto pos = handles.begin(); pos < phandles; ++pos ) {
+        pos->resume();
+      }
     }
 
-    if ( pframe_->exception_ptr_ ) {
+    if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
+      auto p = pframe_->exception_ptr_;
       std::rethrow_exception( pframe_->exception_ptr_ );
     }
   }

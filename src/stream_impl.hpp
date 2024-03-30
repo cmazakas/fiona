@@ -181,6 +181,7 @@ struct FIONA_DECL stream_impl {
 
       if ( cqe->res == 0 ) {
         BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
+        BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_BUFFER ) );
         buffers_.push_back( recv_buffer( 0 ) );
       }
 
@@ -193,24 +194,11 @@ struct FIONA_DECL stream_impl {
         auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 
         auto& buf = pbuf_ring_->get_buf( buffer_id );
-        auto cap = buf.capacity();
-
         auto buffer = std::move( buf );
         buffer.set_len( static_cast<std::size_t>( cqe->res ) );
         buffers_.push_back( std::move( buffer ) );
 
-        // TODO: we need somehow set an upper limit on the amount of allocations
-        // that can happen and then if so, how we handle back-filling the buffer
-        // group's buffer list
-        buf = recv_buffer( cap );
-
-        auto* br = pbuf_ring_->get();
-        io_uring_buf_ring_add(
-            br, buf.data(), static_cast<unsigned>( buf.capacity() ),
-            static_cast<unsigned short>( buffer_id ),
-            io_uring_buf_ring_mask( pbuf_ring_->size() ), 0 );
-
-        io_uring_buf_ring_advance( br, 1 );
+        *pbuf_ring_->buf_id_pos_++ = buffer_id;
       }
 
       if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {
@@ -222,9 +210,7 @@ struct FIONA_DECL stream_impl {
     }
 
     std::coroutine_handle<> handle() noexcept override {
-      auto h = h_;
-      h_ = nullptr;
-      return h;
+      return boost::exchange( h_, nullptr );
     }
 
     void inc_ref() noexcept override { ++pstream_->count_; }

@@ -1,6 +1,7 @@
 #include <fiona/tcp.hpp>                     // for stream, send_awa...
 
 #include <fiona/buffer.hpp>                  // for recv_buffer
+#include <fiona/detail/common.hpp>
 #include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/get_sqe.hpp>          // for reserve_sqes
 #include <fiona/error.hpp>                   // for error_code, result
@@ -592,14 +593,19 @@ recv_awaitable::await_ready() const {
   return !pstream_->recv_frame_.buffers_.empty();
 }
 
-void
+bool
 recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto& rf = pstream_->recv_frame_;
-
   rf.h_ = h;
+
+  if ( rf.ec_ ) {
+    BOOST_ASSERT( rf.buffers_.empty() );
+    return false;
+  }
+
   if ( rf.initiated_ ) {
     BOOST_ASSERT( rf.buffers_.empty() );
-    return;
+    return true;
   }
 
   auto bgid = pstream_->recv_frame_.buffer_group_id_;
@@ -610,6 +616,7 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
   rf.pbuf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
       pstream_->ex_, static_cast<unsigned>( bgid ) );
   rf.schedule_recv();
+  return true;
 }
 
 result<recv_buffer_sequence>
@@ -624,7 +631,33 @@ recv_awaitable::await_resume() {
     return ec;
   }
 
+  auto pbuf_ring = fiona::detail::executor_access_policy::get_buffer_group(
+      pstream_->ex_,
+      static_cast<std::size_t>( pstream_->recv_frame_.buffer_group_id_ ) );
+
+  int len = 0;
+  for ( auto buffer : rf.buffers_ ) {
+    if ( buffer.empty() ) {
+      break;
+    }
+
+    BOOST_ASSERT( pbuf_ring->buf_id_pos_ != pbuf_ring->buf_ids_.begin() );
+    BOOST_ASSERT( pbuf_ring->buf_size_ > 0 );
+
+    auto buffer_id = *( --pbuf_ring->buf_id_pos_ );
+    auto& buf = pbuf_ring->get_buf( buffer_id );
+    buf = fiona::recv_buffer( pbuf_ring->buf_size_ );
+    io_uring_buf_ring_add( pbuf_ring->get(), buf.data(),
+                           static_cast<unsigned>( buf.capacity() ),
+                           static_cast<unsigned short>( buffer_id ),
+                           io_uring_buf_ring_mask( pbuf_ring->size() ), 0 );
+    ++len;
+  }
+
+  io_uring_buf_ring_advance( pbuf_ring->get(), len );
+
   auto buffers = std::move( rf.buffers_ );
+  BOOST_ASSERT( rf.buffers_.empty() );
   return buffers;
 }
 
@@ -704,7 +737,7 @@ connect_awaitable::await_ready() const {
   return false;
 }
 
-void
+bool
 connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
@@ -727,6 +760,11 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     if ( pclient->fd_ == -1 ) {
       pclient->fd_ =
           fiona::detail::executor_access_policy::get_available_fd( ex );
+
+      if ( pclient->fd_ < 0 ) {
+        pclient->socket_frame_.res_ = -ENFILE;
+        return false;
+      }
     }
 
     fiona::detail::reserve_sqes( ring, 3 );
@@ -766,6 +804,8 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
   intrusive_ptr_add_ref( pstream_.get() );
   pclient->connect_frame_.h_ = h;
   pclient->connect_frame_.initiated_ = true;
+
+  return true;
 }
 
 result<void>
@@ -776,7 +816,7 @@ connect_awaitable::await_resume() {
   auto& connect_frame = pclient->connect_frame_;
 
   if ( socket_frame.res_ < 0 ) {
-    BOOST_ASSERT( connect_frame.initiated_ );
+    // BOOST_ASSERT( connect_frame.initiated_ );
     BOOST_ASSERT( !connect_frame.done_ );
     auto res = -socket_frame.res_;
     socket_frame.reset();

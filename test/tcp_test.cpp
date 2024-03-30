@@ -291,6 +291,7 @@ TEST_CASE( "tcp_test - socket creation failed" ) {
           }
         }
 
+        CHECK( num_runs == 0 );
         ++num_runs;
         co_return;
       }( ex, port ) );

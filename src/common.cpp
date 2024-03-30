@@ -19,7 +19,7 @@ namespace fiona {
 namespace detail {
 
 buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid )
-    : bufs_( num_bufs ), ring_( ring ), bgid_{ bgid } {
+    : bufs_( num_bufs ), buf_ids_( num_bufs ), ring_( ring ), bgid_{ bgid } {
   int ret = 0;
 
   auto* buf_ring = io_uring_setup_buf_ring( ring_, num_bufs, bgid, 0, &ret );
@@ -28,13 +28,15 @@ buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid )
   }
 
   buf_ring_ = buf_ring;
+  buf_id_pos_ = buf_ids_.begin();
 }
 
 buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs,
                     std::size_t buf_size, std::uint16_t bgid )
     : buf_ring( ring, num_bufs, bgid ) {
+  buf_size_ = buf_size;
   for ( auto& buf : bufs_ ) {
-    buf = recv_buffer( buf_size );
+    buf = recv_buffer( buf_size_ );
   }
 
   auto mask = io_uring_buf_ring_mask( static_cast<unsigned>( bufs_.size() ) );
