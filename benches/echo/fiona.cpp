@@ -27,7 +27,7 @@ fiona_echo_bench() {
   // params.cq_entries = 2 * 4096;
 
   fiona::io_context ioc( params );
-  ioc.register_buffer_sequence( 4 * 4096, 128, bgid );
+  ioc.register_buffer_sequence( 4 * 4096, 4096, bgid );
 
   auto ex = ioc.get_executor();
 
@@ -47,9 +47,10 @@ fiona_echo_bench() {
       auto mbufs = co_await stream.async_recv();
       auto bufs = std::move( mbufs ).value();
 
-      auto octets = bufs.to_bytes();
-      auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
-                                 octets.size() );
+      auto view = ( *bufs.begin() );
+
+      auto octets = view.readable_bytes();
+      auto m = view.as_str();
       REQUIRE( m == msg );
 
       auto num_written = co_await stream.async_send( octets );
@@ -99,8 +100,10 @@ fiona_echo_bench() {
       auto mbufs = co_await client.async_recv();
       auto bufs = std::move( mbufs ).value();
 
-      auto octets = bufs.to_bytes();
-      auto m = bufs.to_string();
+      auto view = ( *bufs.begin() );
+
+      auto octets = view.readable_bytes();
+      auto m = view.as_str();
 
       REQUIRE( octets.size() == result.value() );
       REQUIRE( m == msg );
@@ -115,7 +118,7 @@ fiona_echo_bench() {
   std::thread t1( [&params, &client, port, msg] {
     try {
       fiona::io_context ioc( params );
-      ioc.register_buffer_sequence( 4 * 4096, 128, bgid );
+      ioc.register_buffer_sequence( 4 * 4096, 4096, bgid );
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {
