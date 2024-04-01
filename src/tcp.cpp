@@ -790,7 +790,11 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_connect( sqe, pclient->fd_, addr, addrlen );
     io_uring_sqe_set_data( sqe, &pclient->connect_frame_ );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK | IOSQE_FIXED_FILE );
+
+    // TODO: leaving this as `IOSQE_ASYNC` causes a leak in one of the exception
+    // tests which we should fix at some point
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_LINK |
+                                     IOSQE_FIXED_FILE /* | IOSQE_ASYNC  */ );
   }
 
   {

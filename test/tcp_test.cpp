@@ -189,6 +189,45 @@ TEST_CASE( "tcp_test - client connect interruption" ) {
     co_return;
   }( ex ) );
 
+  ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    fiona::timer timer( ex );
+    co_await timer.async_wait( 100ms );
+    ++num_runs;
+    throw 1234;
+    co_return;
+  }( ex ) );
+
+  CHECK_THROWS( ioc.run() );
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - client connect exception" ) {
+  num_runs = 0;
+
+  // use one of the IP addresses from the test networks:
+  // 192.0.2.0/24
+  // https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Special-use_addresses
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+
+  ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    auto const timeout = std::chrono::milliseconds( 10'000 );
+
+    fiona::tcp::client client( ex );
+    client.timeout( timeout );
+
+    ++num_runs;
+
+    auto addr = fiona::ip::make_sockaddr_ipv4( "192.0.2.0", 3301 );
+    auto mok = co_await client.async_connect( &addr );
+    (void)mok;
+    CHECK( false );
+
+    co_return;
+  }( ex ) );
+
   ioc.spawn( []() -> fiona::task<void> {
     ++num_runs;
     throw 1234;
