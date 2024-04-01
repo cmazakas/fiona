@@ -21,7 +21,7 @@ fiona_echo_bench() {
 
   fiona::io_context_params params;
   params.num_files = 16 * 1024;
-  params.sq_entries = 1024;
+  params.sq_entries = 256;
   params.cq_entries = 16 * 1024;
   // params.sq_entries = 2 * 4096;
   // params.cq_entries = 2 * 4096;
