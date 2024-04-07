@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include "fiona/detail/common.hpp"
 #include "fiona/error.hpp"
 #include "helpers.hpp"
@@ -47,9 +51,6 @@ TEST_CASE( "recv_test - recv timeout" ) {
     {
       auto mbuf = co_await session.async_recv();
       CHECK( mbuf.has_value() );
-      if ( mbuf.has_error() ) {
-        CHECK( mbuf.error() == fiona::error_code::from_errno( EBADF ) );
-      }
     }
 
     ++num_runs;

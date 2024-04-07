@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include "helpers.hpp"
 
 #include <fiona/io_context.hpp>
@@ -504,6 +508,81 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
 
     client.set_buffer_group( 0 );
     auto mbuffers = co_await client.async_recv();
+    CHECK( mbuffers.has_value() );
+
+    auto& buffer = mbuffers.value();
+    auto msg = buffer.to_string();
+    CHECK( msg == server_msg );
+
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "tcp_test - send recv hello world object slicing" ) {
+
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  ioc.register_buffer_sequence( 1024, 128, 0 );
+
+  auto ex = ioc.get_executor();
+
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+
+  fiona::tcp::acceptor acceptor( ex, &addr );
+  auto const port = acceptor.port();
+  CHECK( port > 0 );
+
+  constexpr static auto const client_msg =
+      std::string_view( "hello, world! from the client" );
+
+  constexpr static auto const server_msg =
+      std::string_view( "hello, world! from the server" );
+
+  ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+    auto mstream = co_await acceptor.async_accept();
+    CHECK( mstream.has_value() );
+
+    auto& stream = mstream.value();
+
+    auto mbytes_transferred = co_await stream.async_send( server_msg );
+
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           server_msg.size() );
+
+    stream.set_buffer_group( 0 );
+
+    auto mbuffers = co_await stream.async_recv();
+    CHECK( mbuffers.has_value() );
+
+    auto& buffer = mbuffers.value();
+    auto msg = buffer.to_string();
+    CHECK( msg == client_msg );
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ioc.spawn( FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_value() );
+
+    fiona::tcp::stream stream = client;
+
+    auto mbytes_transferred = co_await stream.async_send( client_msg );
+    CHECK( static_cast<std::size_t>( mbytes_transferred.value() ) ==
+           client_msg.size() );
+
+    stream.set_buffer_group( 0 );
+    auto mbuffers = co_await stream.async_recv();
     CHECK( mbuffers.has_value() );
 
     auto& buffer = mbuffers.value();

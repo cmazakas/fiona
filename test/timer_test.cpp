@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include "helpers.hpp"
 
 #include <fiona/time.hpp>
@@ -36,7 +40,7 @@ namespace {
 
 template <class Rep, class Period>
 fiona::task<void>
-sleep_coro( fiona::timer& timer, std::chrono::duration<Rep, Period> d ) {
+sleep_coro( fiona::timer timer, std::chrono::duration<Rep, Period> d ) {
   {
     duration_guard guard( d );
     auto r = co_await timer.async_wait( d );

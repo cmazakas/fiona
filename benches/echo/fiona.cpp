@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include "common.hpp"
 
 #include <fiona/executor.hpp>
@@ -11,6 +15,8 @@
 CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
   return ex.message();
 }
+
+inline constexpr std::size_t const buf_size = 4096;
 
 void
 fiona_echo_bench() {
@@ -27,7 +33,7 @@ fiona_echo_bench() {
   // params.cq_entries = 2 * 4096;
 
   fiona::io_context ioc( params );
-  ioc.register_buffer_sequence( 4 * 4096, 4096, bgid );
+  ioc.register_buffer_sequence( 4 * 4096, buf_size, bgid );
 
   auto ex = ioc.get_executor();
 
@@ -118,7 +124,7 @@ fiona_echo_bench() {
   std::thread t1( [&params, &client, port, msg] {
     try {
       fiona::io_context ioc( params );
-      ioc.register_buffer_sequence( 4 * 4096, 4096, bgid );
+      ioc.register_buffer_sequence( 4 * 4096, buf_size, bgid );
 
       auto ex = ioc.get_executor();
       for ( int i = 0; i < num_clients; ++i ) {

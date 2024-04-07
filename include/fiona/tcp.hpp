@@ -1,8 +1,11 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #ifndef FIONA_TCP_HPP
 #define FIONA_TCP_HPP
 
-#include "fiona/buffer.hpp"
-#include <fiona/borrowed_buffer.hpp>         // for borrowed_buffer
+#include <fiona/buffer.hpp>                  // for recv_buffer_sequence
 #include <fiona/error.hpp>                   // for result
 #include <fiona/executor.hpp>                // for executor
 
@@ -20,11 +23,12 @@
 
 namespace fiona {
 namespace tls {
+
 struct client;
+
 }
 
 namespace tcp {
-
 namespace detail {
 
 struct acceptor_impl;
@@ -39,8 +43,6 @@ struct stream_cancel_awaitable;
 struct stream_close_awaitable;
 struct send_awaitable;
 struct recv_awaitable;
-
-struct receiver;
 
 } // namespace tcp
 } // namespace fiona
@@ -113,13 +115,8 @@ protected:
   boost::intrusive_ptr<detail::stream_impl> pstream_;
   stream( executor ex, int fd );
 
-  FIONA_DECL
   void timeout( __kernel_timespec ts );
-
-  FIONA_DECL
   void cancel_timer();
-
-  FIONA_DECL
   void cancel_recv();
 
 public:
@@ -131,12 +128,10 @@ public:
   stream( stream&& ) = default;
   stream& operator=( stream&& ) = default;
 
-  FIONA_DECL
   virtual ~stream();
 
   bool operator==( stream const& ) const = default;
 
-  FIONA_DECL
   executor get_executor() const;
 
   template <class Rep, class Period>
@@ -145,22 +140,12 @@ public:
     timeout( ts );
   }
 
-  FIONA_DECL
   void set_buffer_group( std::uint16_t bgid );
 
-  FIONA_DECL
   stream_close_awaitable async_close();
-
-  FIONA_DECL
   stream_cancel_awaitable async_cancel();
-
-  FIONA_DECL
   send_awaitable async_send( std::string_view msg );
-
-  FIONA_DECL
   send_awaitable async_send( std::span<unsigned char const> buf );
-
-  FIONA_DECL
   recv_awaitable async_recv();
 };
 
@@ -177,8 +162,7 @@ public:
   FIONA_DECL
   ~stream_close_awaitable();
 
-  FIONA_DECL
-  bool await_ready() const;
+  bool await_ready() const { return false; }
 
   FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
@@ -297,8 +281,7 @@ public:
   FIONA_DECL
   ~accept_awaitable();
 
-  FIONA_DECL
-  bool await_ready() const;
+  bool await_ready() const { return false; }
 
   FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );

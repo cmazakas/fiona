@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #ifndef FIONA_TIME_HPP
 #define FIONA_TIME_HPP
 
@@ -14,13 +18,15 @@
 
 namespace fiona {
 namespace detail {
+
 struct timer_impl;
 
 void FIONA_DECL
-intrusive_ptr_add_ref( timer_impl* ptimer ) noexcept;
+intrusive_ptr_add_ref( timer_impl* );
 
 void FIONA_DECL
-intrusive_ptr_release( timer_impl* ptimer ) noexcept;
+intrusive_ptr_release( timer_impl* );
+
 } // namespace detail
 } // namespace fiona
 
@@ -82,12 +88,17 @@ public:
   FIONA_DECL
   timer( executor ex );
 
+  FIONA_DECL
   timer( timer const& ) = default;
+  FIONA_DECL
   timer& operator=( timer const& ) = default;
 
+  FIONA_DECL
   timer( timer&& ) = default;
+  FIONA_DECL
   timer& operator=( timer&& ) = default;
 
+  FIONA_DECL
   ~timer() = default;
 
   template <class Rep, class Period>
