@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include <fiona/buffer.hpp>
 
 #include <fiona/detail/config.hpp>
@@ -47,7 +51,7 @@ struct buffers_iterator : public recv_buffer_sequence_view::iterator {
   }
 };
 
-struct buffers_adapter {
+struct buffers_adaptor {
   using value_type = boost::buffers::mutable_buffer;
   using const_iterator = buffers_iterator;
 
@@ -64,15 +68,10 @@ static_assert( boost::buffers::detail::is_bidirectional_iterator<
                buffers_iterator>::value );
 
 static_assert(
-    boost::buffers::is_mutable_buffer_sequence<buffers_adapter>::value );
+    boost::buffers::is_mutable_buffer_sequence<buffers_adaptor>::value );
 
 static_assert(
-    boost::buffers::is_const_buffer_sequence<buffers_adapter>::value );
-
-FIONA_DECL
-recv_buffer_sequence_view
-tag_invoke( boost::buffers::prefix_tag, buffers_adapter const& seq,
-            std::size_t n );
+    boost::buffers::is_const_buffer_sequence<buffers_adaptor>::value );
 
 } // namespace detail
 } // namespace fiona

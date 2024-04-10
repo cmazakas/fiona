@@ -10,13 +10,13 @@
 
 #include <string>
 
-#include "buffers_adapter.hpp"
+#include "buffers_adaptor.hpp"
 
 namespace fiona {
 
 std::string
 recv_buffer_sequence_view::to_string() const {
-  detail::buffers_adapter from{ *this };
+  detail::buffers_adaptor from{ *this };
 
   auto n = boost::buffers::buffer_size( from );
 
@@ -30,7 +30,7 @@ recv_buffer_sequence_view::to_string() const {
 
 std::vector<unsigned char>
 recv_buffer_sequence_view::to_bytes() const {
-  detail::buffers_adapter from{ *this };
+  detail::buffers_adaptor from{ *this };
 
   auto n = boost::buffers::buffer_size( from );
 
