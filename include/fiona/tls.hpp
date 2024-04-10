@@ -1,14 +1,18 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #ifndef FIONA_TLS_HPP
 #define FIONA_TLS_HPP
 
-#include <fiona/borrowed_buffer.hpp>
+#include <fiona/buffer.hpp>
 #include <fiona/executor.hpp>
 #include <fiona/task.hpp>
 #include <fiona/tcp.hpp>
 
 #include <fiona/detail/config.hpp>
 
-#include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 namespace fiona {
 namespace tls {
@@ -34,8 +38,8 @@ public:
   task<result<void>> async_handshake();
   task<result<std::size_t>> async_send( std::span<unsigned char const> buf );
   task<result<std::size_t>> async_send( std::string_view msg );
-  task<result<std::size_t>> async_recv();
-  std::span<unsigned char> buffer() const noexcept;
+  task<result<recv_buffer_sequence>> async_recv();
+  task<result<void>> async_shutdown();
 };
 
 } // namespace tls

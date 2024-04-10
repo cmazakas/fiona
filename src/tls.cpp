@@ -1,3 +1,7 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #include <fiona/tls.hpp>
 
 #include <fiona/buffer.hpp>
@@ -32,7 +36,7 @@
 #include <botan/x509path.h>
 #include <botan/x509self.h>
 
-#include "buffers_adapter.hpp"
+#include "buffers_adaptor.hpp"
 #include "stream_impl.hpp"
 
 #include <cerrno>
@@ -49,9 +53,9 @@ namespace tls {
 namespace detail {
 
 struct client_callbacks final : public Botan::TLS::Callbacks {
-  std::vector<unsigned char> recv_buf_;
   std::vector<unsigned char> send_buf_;
   recv_buffer_sequence recv_seq_;
+  bool received_record_ = false;
 
   bool close_notify_received_ = false;
   bool failed_cert_verification_ = false;
@@ -63,24 +67,24 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
   }
 
   void tls_record_received( std::uint64_t /* seq_no */,
-                            std::span<std::uint8_t const> data ) override {
-    std::cout << "tls client received application data" << std::endl;
+                            std::span<std::uint8_t const> plaintext ) override {
+    received_record_ = true;
 
-    auto n = boost::buffers::buffer_copy(
-        fiona::detail::buffers_adapter{ recv_seq_ },
-        boost::buffers::buffer( data.data(), data.size() ) );
-
-    std::cout << "yay, Buffers!" << std::endl;
-    auto seq = boost::buffers::prefix(
-        fiona::detail::buffers_adapter{ recv_seq_ }, n );
-    for ( auto const v : seq ) {
-      if ( v.empty() ) {
-        continue;
-      }
-      std::cout << v.as_str() << std::endl;
+    auto pos = recv_seq_.begin();
+    auto end = recv_seq_.end();
+    while ( !plaintext.empty() ) {
+      BOOST_ASSERT( pos != end );
+      auto buf_view = *pos;
+      auto n = std::min( buf_view.capacity(), plaintext.size() );
+      std::memcpy( buf_view.data(), plaintext.data(), n );
+      plaintext = plaintext.subspan( n );
+      buf_view.set_len( n );
+      ++pos;
     }
 
-    recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
+    for ( ; pos != end; ++pos ) {
+      ( *pos ).set_len( 0 );
+    }
   }
 
   void tls_alert( Botan::TLS::Alert alert ) override {
@@ -273,35 +277,53 @@ client::async_send( std::string_view msg ) {
       { reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
 }
 
-task<result<std::size_t>>
+task<result<recv_buffer_sequence>>
 client::async_recv() {
-  auto& f = *static_cast<detail::client_impl*>( pstream_.get() );
+  auto& f = static_cast<detail::client_impl&>( *pstream_ );
   auto& tls_client = f.tls_client_;
-  auto& recv_buf = f.pcallbacks_->recv_buf_;
+  auto& recv_seq = f.pcallbacks_->recv_seq_;
 
-  while ( recv_buf.empty() ) {
-    std::cout << "doing a looping read..." << std::endl;
+  while ( !f.pcallbacks_->received_record_ ) {
     auto mbuffers = co_await tcp::stream::async_recv();
     if ( mbuffers.has_error() ) {
       co_return mbuffers.error();
     }
 
-    auto& buf = mbuffers.value();
-    auto data = buf.to_bytes();
-    // BOOST_ASSERT( buf.capacity() > 0 );
+    auto& buffers = mbuffers.value();
+    auto data = buffers.to_bytes();
+    f.pcallbacks_->recv_seq_.concat( std::move( buffers ) );
 
-    // f.pcallbacks_->recv_seq_.push_back( std::move( buf ) );
     tls_client.received_data( data );
   }
 
-  co_return recv_buf.size();
+  co_return std::move( recv_seq );
 }
 
-std::span<unsigned char>
-client::buffer() const noexcept {
-  auto& f = *static_cast<detail::client_impl*>( pstream_.get() );
-  auto& recv_buf = f.pcallbacks_->recv_buf_;
-  return recv_buf;
+task<result<void>>
+client::async_shutdown() {
+  auto& f = static_cast<detail::client_impl&>( *pstream_ );
+  auto& tls_client = f.tls_client_;
+  auto& send_buf = f.pcallbacks_->send_buf_;
+
+  tls_client.close();
+
+  auto mwritten = co_await tcp::stream::async_send( send_buf );
+  if ( mwritten.has_error() ) {
+    co_return mwritten.error();
+  }
+  send_buf.clear();
+
+  auto mbufs = co_await tcp::stream::async_recv();
+  if ( mbufs.has_error() ) {
+    co_return mbufs.error();
+  }
+
+  auto& bufs = mbufs.value();
+  for ( auto buf_view : bufs ) {
+    tls_client.received_data( buf_view.readable_bytes() );
+  }
+
+  co_return result<void>();
 }
 
 } // namespace tls
