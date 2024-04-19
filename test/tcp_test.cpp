@@ -575,6 +575,7 @@ TEST_CASE( "tcp_test - send recv hello world object slicing" ) {
     auto mok = co_await client.async_connect( &addr );
     CHECK( mok.has_value() );
 
+    // slicing occurs here
     fiona::tcp::stream stream = client;
 
     auto mbytes_transferred = co_await stream.async_send( client_msg );
@@ -730,6 +731,9 @@ TEST_CASE( "tcp_test - tcp echo" ) {
       // }
     }
 
+    auto mok = co_await stream.async_close();
+    CHECK( mok.has_value() );
+
     ++anum_runs;
   };
 
@@ -772,6 +776,9 @@ TEST_CASE( "tcp_test - tcp echo" ) {
 
       num_bytes += octets.size();
     }
+
+    mok = co_await client.async_close();
+    CHECK( mok.has_value() );
 
     ++anum_runs;
   };
@@ -857,6 +864,9 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
       // }
     }
 
+    auto mok = co_await stream.async_close();
+    CHECK( mok.has_value() );
+
     ++anum_runs;
   };
 
@@ -899,6 +909,9 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
 
       num_bytes += octets.size();
     }
+
+    mok = co_await client.async_close();
+    CHECK( mok.has_value() );
 
     ++anum_runs;
   };
