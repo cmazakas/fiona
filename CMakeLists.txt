@@ -8,7 +8,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(liburing 2.5 REQUIRED)
-find_package(Boost 1.84 REQUIRED buffers http_proto url)
+find_package(Boost 1.84 REQUIRED)
 find_package(Botan 3.3.0 CONFIG COMPONENTS tls)
 
 set(fiona_headers
@@ -55,9 +55,6 @@ target_link_libraries(
   PUBLIC
   liburing::liburing
   Boost::headers
-  Boost::http_proto
-  Boost::buffers
-  Boost::url
 )
 
 target_sources(

@@ -9,13 +9,6 @@
 #include <fiona/error.hpp>
 #include <fiona/executor.hpp>
 
-#include <boost/buffers/algorithm.hpp>
-#include <boost/buffers/buffer.hpp>
-#include <boost/buffers/buffer_copy.hpp>
-#include <boost/buffers/const_buffer.hpp>
-#include <boost/buffers/mutable_buffer.hpp>
-#include <boost/buffers/type_traits.hpp>
-
 #include <botan/certstor.h>
 #include <botan/credentials_manager.h>
 #include <botan/data_src.h>
@@ -49,10 +42,9 @@ using namespace std::chrono_literals;
 
 namespace fiona {
 namespace tls {
-
 namespace detail {
 
-struct client_callbacks final : public Botan::TLS::Callbacks {
+struct tls_callbacks final : public Botan::TLS::Callbacks {
   std::vector<unsigned char> send_buf_;
   recv_buffer_sequence recv_seq_;
   bool received_record_ = false;
@@ -60,7 +52,7 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
   bool close_notify_received_ = false;
   bool failed_cert_verification_ = false;
 
-  ~client_callbacks() override;
+  ~tls_callbacks() override;
 
   void tls_emit_data( std::span<std::uint8_t const> data ) override {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
@@ -116,7 +108,7 @@ struct client_callbacks final : public Botan::TLS::Callbacks {
   }
 };
 
-client_callbacks::~client_callbacks() {}
+tls_callbacks::~tls_callbacks() {}
 
 struct tls_credentials_manager final : public Botan::Credentials_Manager {
   struct cert_key_pair {
@@ -183,7 +175,7 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
 tls_credentials_manager::~tls_credentials_manager() {}
 
 struct client_impl : public tcp::detail::client_impl {
-  std::shared_ptr<client_callbacks> pcallbacks_;
+  std::shared_ptr<tls_callbacks> pcallbacks_;
   std::shared_ptr<Botan::System_RNG> prng_;
   std::shared_ptr<Botan::TLS::Session_Manager_In_Memory> psession_mgr_;
   std::shared_ptr<tls_credentials_manager> pcreds_mgr_;
@@ -198,7 +190,7 @@ struct client_impl : public tcp::detail::client_impl {
 
   client_impl( executor ex )
       : tcp::detail::client_impl( ex ),
-        pcallbacks_( std::make_shared<client_callbacks>() ),
+        pcallbacks_( std::make_shared<tls_callbacks>() ),
         prng_( std::make_shared<Botan::System_RNG>() ),
         psession_mgr_(
             std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng_ ) ),
@@ -212,6 +204,35 @@ struct client_impl : public tcp::detail::client_impl {
 };
 
 client_impl::~client_impl() {}
+
+struct server_impl : public tcp::detail::stream_impl {
+  std::shared_ptr<tls_callbacks> pcallbacks_;
+  std::shared_ptr<Botan::System_RNG> prng_;
+  std::shared_ptr<Botan::TLS::Session_Manager_In_Memory> psession_mgr_;
+  std::shared_ptr<tls_credentials_manager> pcreds_mgr_;
+  std::shared_ptr<Botan::TLS::Policy const> ptls_policy_;
+
+  Botan::TLS::Server tls_server_;
+
+  server_impl() = delete;
+  server_impl( server_impl const& ) = delete;
+  server_impl( server_impl&& ) = delete;
+
+  server_impl( executor ex )
+      : tcp::detail::stream_impl( ex ),
+        pcallbacks_( std::make_shared<tls_callbacks>() ),
+        prng_( std::make_shared<Botan::System_RNG>() ),
+        psession_mgr_(
+            std::make_shared<Botan::TLS::Session_Manager_In_Memory>( prng_ ) ),
+        pcreds_mgr_( std::make_shared<tls_credentials_manager>() ),
+        ptls_policy_( std::make_shared<Botan::TLS::Policy const>() ),
+        tls_server_( pcallbacks_, psession_mgr_, pcreds_mgr_, ptls_policy_,
+                     prng_ ) {}
+
+  virtual ~server_impl() override;
+};
+
+server_impl::~server_impl() = default;
 
 } // namespace detail
 
@@ -323,6 +344,11 @@ client::async_shutdown() {
     tls_client.received_data( buf_view.readable_bytes() );
   }
 
+  co_return result<void>();
+}
+
+task<result<void>>
+server::async_handshake() {
   co_return result<void>();
 }
 
