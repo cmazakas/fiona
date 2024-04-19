@@ -318,11 +318,30 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept {
 } // namespace detail
 
 stream::stream( executor ex, int fd )
-    : pstream_{ new detail::stream_impl{ ex, fd } } {}
+    : pstream_( new detail::stream_impl( ex, fd ) ) {}
 
 stream::~stream() {
-  cancel_timer();
-  cancel_recv();
+  if ( !pstream_ ) {
+    return;
+  }
+
+  auto use_count = pstream_->use_count() -
+                   pstream_->detail::cancel_frame::initiated_ +
+                   pstream_->detail::cancel_frame::done_ -
+                   pstream_->detail::close_frame::initiated_ +
+                   pstream_->detail::close_frame::done_ -
+                   pstream_->detail::send_frame::initiated_ +
+                   pstream_->detail::send_frame::done_ -
+                   pstream_->detail::recv_frame::initiated_ -
+                   pstream_->detail::timeout_frame::initiated_;
+
+  BOOST_ASSERT( use_count > 0 );
+
+  if ( use_count == 1 ) {
+    cancel_timer();
+    cancel_recv();
+    pstream_ = nullptr;
+  }
 }
 
 void
@@ -661,7 +680,34 @@ client_impl::connect_frame::~connect_frame() {}
 } // namespace detail
 
 client::client( executor ex ) { pstream_ = new detail::client_impl( ex ); }
-client::~client() {}
+client::~client() {
+  if ( !pstream_ ) {
+    return;
+  }
+
+  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+
+  auto use_count = pclient->use_count() -
+                   pclient->detail::cancel_frame::initiated_ +
+                   pclient->detail::cancel_frame::done_ -
+                   pclient->detail::close_frame::initiated_ +
+                   pclient->detail::close_frame::done_ -
+                   pclient->detail::socket_frame::initiated_ +
+                   pclient->detail::socket_frame::done_ -
+                   pclient->detail::connect_frame::initiated_ +
+                   pclient->detail::connect_frame::done_ -
+                   pclient->detail::send_frame::initiated_ +
+                   pclient->detail::send_frame::done_ -
+                   pclient->detail::recv_frame::initiated_ -
+                   pclient->detail::timeout_frame::initiated_;
+
+  BOOST_ASSERT( use_count > 0 );
+  if ( use_count == 1 ) {
+    cancel_timer();
+    cancel_recv();
+    pstream_ = nullptr;
+  }
+}
 
 connect_awaitable
 client::async_connect( sockaddr_in6 const* addr ) {

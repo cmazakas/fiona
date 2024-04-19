@@ -6,8 +6,10 @@
 #define FIONA_SRC_STREAM_IMPL
 
 #include <fiona/borrowed_buffer.hpp>
+#include <fiona/error.hpp>
 #include <fiona/executor.hpp>
 
+#include <fiona/detail/common.hpp>
 #include <fiona/detail/get_sqe.hpp>
 
 #include <chrono>
@@ -15,8 +17,6 @@
 #include <liburing.h>
 
 #include "awaitable_base.hpp"
-#include "fiona/detail/common.hpp"
-#include "fiona/error.hpp"
 
 namespace fiona {
 namespace tcp {
@@ -147,7 +147,6 @@ struct FIONA_DECL recv_frame : public fiona::detail::awaitable_base {
 struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base {
   stream_impl* pstream_ = nullptr;
   bool initiated_ = false;
-  bool done_ = false;
   bool cancelled_ = false;
 
   timeout_frame() = delete;
@@ -156,7 +155,6 @@ struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base {
 
   void reset() {
     initiated_ = false;
-    done_ = false;
     cancelled_ = false;
   }
 
