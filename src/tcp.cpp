@@ -62,12 +62,12 @@ stream_impl::~stream_impl() {
   }
 }
 
-stream_impl::nop_frame::~nop_frame() {}
-stream_impl::cancel_frame::~cancel_frame() {}
-stream_impl::close_frame::~close_frame() {}
-stream_impl::send_frame::~send_frame() {}
-stream_impl::recv_frame::~recv_frame() {}
-stream_impl::timeout_frame::~timeout_frame() {}
+stream_impl::cancel_frame::~cancel_frame() = default;
+stream_impl::timeout_cancel_frame::~timeout_cancel_frame() = default;
+stream_impl::close_frame::~close_frame() = default;
+stream_impl::send_frame::~send_frame() = default;
+stream_impl::recv_frame::~recv_frame() = default;
+stream_impl::timeout_frame::~timeout_frame() = default;
 
 struct accept_frame : public fiona::detail::awaitable_base {
   acceptor_impl* pacceptor_ = nullptr;
@@ -326,14 +326,12 @@ stream::~stream() {
   }
 
   auto use_count = pstream_->use_count() -
-                   pstream_->detail::cancel_frame::initiated_ +
-                   pstream_->detail::cancel_frame::done_ -
-                   pstream_->detail::close_frame::initiated_ +
-                   pstream_->detail::close_frame::done_ -
-                   pstream_->detail::send_frame::initiated_ +
-                   pstream_->detail::send_frame::done_ -
-                   pstream_->detail::recv_frame::initiated_ -
-                   pstream_->detail::timeout_frame::initiated_;
+                   pstream_->detail::cancel_frame::is_active() -
+                   pstream_->detail::close_frame::is_active() -
+                   pstream_->detail::send_frame::is_active() -
+                   pstream_->detail::recv_frame::is_active() -
+                   pstream_->detail::timeout_frame::is_active() -
+                   pstream_->detail::timeout_cancel_frame::is_active();
 
   BOOST_ASSERT( use_count > 0 );
 
@@ -688,18 +686,14 @@ client::~client() {
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
   auto use_count = pclient->use_count() -
-                   pclient->detail::cancel_frame::initiated_ +
-                   pclient->detail::cancel_frame::done_ -
-                   pclient->detail::close_frame::initiated_ +
-                   pclient->detail::close_frame::done_ -
-                   pclient->detail::socket_frame::initiated_ +
-                   pclient->detail::socket_frame::done_ -
-                   pclient->detail::connect_frame::initiated_ +
-                   pclient->detail::connect_frame::done_ -
-                   pclient->detail::send_frame::initiated_ +
-                   pclient->detail::send_frame::done_ -
-                   pclient->detail::recv_frame::initiated_ -
-                   pclient->detail::timeout_frame::initiated_;
+                   pclient->detail::cancel_frame::is_active() -
+                   pclient->detail::close_frame::is_active() -
+                   pclient->detail::send_frame::is_active() -
+                   pclient->detail::recv_frame::is_active() -
+                   pclient->detail::timeout_frame::is_active() -
+                   pclient->detail::timeout_cancel_frame::is_active() -
+                   pclient->detail::socket_frame::is_active() -
+                   pclient->detail::connect_frame::is_active();
 
   BOOST_ASSERT( use_count > 0 );
   if ( use_count == 1 ) {
