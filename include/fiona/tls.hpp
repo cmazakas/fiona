@@ -42,6 +42,29 @@ public:
   task<result<void>> async_shutdown();
 };
 
+struct server : private tcp::stream {
+public:
+  server() = default;
+  server( executor ex );
+
+  server( server const& ) = default;
+  server& operator=( server const& ) = default;
+
+  server( server&& ) = default;
+  server& operator=( server&& ) = default;
+
+  virtual ~server() override;
+
+  bool operator==( server const& ) const = default;
+
+  using tcp::stream::set_buffer_group;
+
+  task<result<void>> async_handshake();
+  task<result<std::size_t>> async_send( std::span<unsigned char const> buf );
+  task<result<std::size_t>> async_send( std::string_view msg );
+  task<result<recv_buffer_sequence>> async_recv();
+};
+
 } // namespace tls
 } // namespace fiona
 
