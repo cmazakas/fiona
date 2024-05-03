@@ -308,8 +308,8 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
     auto& flags = params.flags;
     flags |= IORING_SETUP_CQSIZE;
     flags |= IORING_SETUP_SINGLE_ISSUER;
-    flags |= IORING_SETUP_COOP_TASKRUN;
-    flags |= IORING_SETUP_TASKRUN_FLAG;
+    // flags |= IORING_SETUP_COOP_TASKRUN;
+    // flags |= IORING_SETUP_TASKRUN_FLAG;
     flags |= IORING_SETUP_DEFER_TASKRUN;
   }
 
