@@ -21,7 +21,7 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "tcp_test - acceptor" ) {
+TEST_CASE( "acceptor" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -41,21 +41,21 @@ TEST_CASE( "tcp_test - acceptor" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        fiona::tcp::client client( ex );
+    fiona::tcp::client client( ex );
 
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-        auto mok = co_await client.async_connect( &addr );
-        CHECK( mok.has_value() );
-        ++num_runs;
-        co_return;
-      }( ex, port ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_value() );
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
 
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - client already connected" ) {
+TEST_CASE( "client already connected" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -79,40 +79,40 @@ TEST_CASE( "tcp_test - client already connected" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
-        fiona::tcp::client client( ex );
-        {
-          auto mok = co_await client.async_connect( &addr );
-          CHECK( mok.has_value() );
-        }
+    fiona::tcp::client client( ex );
+    {
+      auto mok = co_await client.async_connect( &addr );
+      CHECK( mok.has_value() );
+    }
 
-        auto timer = fiona::timer( ex );
-        co_await timer.async_wait( std::chrono::milliseconds( 100 ) );
+    auto timer = fiona::timer( ex );
+    co_await timer.async_wait( std::chrono::milliseconds( 100 ) );
 
-        {
-          auto mok = co_await client.async_connect( &addr );
-          CHECK( mok.has_error() );
-          CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
-        }
+    {
+      auto mok = co_await client.async_connect( &addr );
+      CHECK( mok.has_error() );
+      CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
+    }
 
-        {
-          auto mok = co_await client.async_connect( &addr );
-          CHECK( mok.has_error() );
-          CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
-        }
+    {
+      auto mok = co_await client.async_connect( &addr );
+      CHECK( mok.has_error() );
+      CHECK( mok.error() == fiona::error_code::from_errno( EISCONN ) );
+    }
 
-        ++num_runs;
+    ++num_runs;
 
-        co_return;
-      }( ex, port ) );
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
 
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - server not listening" ) {
+TEST_CASE( "server not listening" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -120,23 +120,23 @@ TEST_CASE( "tcp_test - server not listening" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        fiona::tcp::client client( ex );
+    fiona::tcp::client client( ex );
 
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-        auto mok = co_await client.async_connect( &addr );
-        CHECK( mok.has_error() );
-        CHECK( mok.error() == fiona::error_code::from_errno( ECONNREFUSED ) );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_error() );
+    CHECK( mok.error() == fiona::error_code::from_errno( ECONNREFUSED ) );
 
-        ++num_runs;
-        co_return;
-      }( ex, 3333 ) );
+    ++num_runs;
+    co_return;
+  }( ex, 3333 ) );
 
   ioc.run();
 
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "tcp_test - client connect timeout" ) {
+TEST_CASE( "client connect timeout" ) {
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -167,7 +167,7 @@ TEST_CASE( "tcp_test - client connect timeout" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "tcp_test - client connect interruption" ) {
+TEST_CASE( "client connect interruption" ) {
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -206,7 +206,7 @@ TEST_CASE( "tcp_test - client connect interruption" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - client connect exception" ) {
+TEST_CASE( "client connect exception" ) {
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -243,7 +243,7 @@ TEST_CASE( "tcp_test - client connect exception" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - double connect" ) {
+TEST_CASE( "double connect" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -263,38 +263,37 @@ TEST_CASE( "tcp_test - double connect" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        fiona::tcp::client client( ex );
+    fiona::tcp::client client( ex );
 
-        auto h = fiona::spawn(
-            ex,
-            []( fiona::tcp::client client,
-                std::uint16_t port ) -> fiona::task<void> {
-              auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-              CHECK_THROWS( co_await client.async_connect( &addr ) );
+    auto h = fiona::spawn( ex,
+                           []( fiona::tcp::client client,
+                               std::uint16_t port ) -> fiona::task<void> {
+      auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+      CHECK_THROWS( co_await client.async_connect( &addr ) );
 
-              ++num_runs;
-            }( client, port ) );
+      ++num_runs;
+    }( client, port ) );
 
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-        auto mok = co_await client.async_connect( &addr );
-        CHECK( mok.has_value() );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_value() );
 
-        co_await h;
+    co_await h;
 
-        ++num_runs;
-        co_return;
-      }( ex, port ) );
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
 
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "tcp_test - socket creation failed" ) {
+TEST_CASE( "socket creation failed" ) {
   num_runs = 0;
 
   fiona::io_context_params params;
-  params.num_files = 16;
+  params.num_files = 1 + 16;
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
@@ -319,31 +318,31 @@ TEST_CASE( "tcp_test - socket creation failed" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        std::vector<fiona::tcp::client> clients;
-        for ( int i = 0; i < 10; ++i ) {
-          fiona::tcp::client client( ex );
+    std::vector<fiona::tcp::client> clients;
+    for ( int i = 0; i < 10; ++i ) {
+      fiona::tcp::client client( ex );
 
-          auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-          auto mok = co_await client.async_connect( &addr );
-          if ( i < 8 ) {
-            CHECK( mok.has_value() );
-            clients.push_back( std::move( client ) );
-          } else {
-            CHECK( mok.has_error() );
-            CHECK( mok.error() == fiona::error_code::from_errno( ENFILE ) );
-          }
-        }
+      auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+      auto mok = co_await client.async_connect( &addr );
+      if ( i < 8 ) {
+        CHECK( mok.has_value() );
+        clients.push_back( std::move( client ) );
+      } else {
+        CHECK( mok.has_error() );
+        CHECK( mok.error() == fiona::error_code::from_errno( ENFILE ) );
+      }
+    }
 
-        CHECK( num_runs == 0 );
-        ++num_runs;
-        co_return;
-      }( ex, port ) );
+    CHECK( num_runs == 0 );
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - connect cancellation" ) {
+TEST_CASE( "connect cancellation" ) {
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -362,21 +361,21 @@ TEST_CASE( "tcp_test - connect cancellation" ) {
     ++num_runs;
   }( std::move( acceptor ) ) );
 
-  ioc.spawn( []( fiona::executor ex,
-                 std::uint16_t const port ) -> fiona::task<void> {
+  ioc.spawn(
+      []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
     client.timeout( 10s );
 
     auto h =
         fiona::spawn( ex, []( fiona::tcp::client client ) -> fiona::task<void> {
-          fiona::timer timer( client.get_executor() );
-          co_await timer.async_wait( 2s );
+      fiona::timer timer( client.get_executor() );
+      co_await timer.async_wait( 2s );
 
-          auto mcancelled = co_await client.async_cancel();
-          CHECK( mcancelled.value() == 1 );
-          ++num_runs;
-          co_return;
-        }( client ) );
+      auto mcancelled = co_await client.async_cancel();
+      CHECK( mcancelled.value() == 1 );
+      ++num_runs;
+      co_return;
+    }( client ) );
 
     {
       auto addr = fiona::ip::make_sockaddr_ipv4( "192.0.2.0", 3300 );
@@ -399,7 +398,7 @@ TEST_CASE( "tcp_test - connect cancellation" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "tcp_test - client reconnection" ) {
+TEST_CASE( "client reconnection" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -430,28 +429,27 @@ TEST_CASE( "tcp_test - client reconnection" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
-        fiona::tcp::client client( ex );
-        for ( int i = 0; i < 3; ++i ) {
-          auto mok = co_await client.async_connect( &addr );
-          CHECK( mok.has_value() );
+    fiona::tcp::client client( ex );
+    for ( int i = 0; i < 3; ++i ) {
+      auto mok = co_await client.async_connect( &addr );
+      CHECK( mok.has_value() );
 
-          mok = co_await client.async_close();
-          CHECK( mok.has_value() );
-        }
+      mok = co_await client.async_close();
+      CHECK( mok.has_value() );
+    }
 
-        ++num_runs;
-        co_return;
-      }( ioc.get_executor(), port ) );
+    ++num_runs;
+    co_return;
+  }( ioc.get_executor(), port ) );
 
   ioc.run();
 
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - send recv hello world" ) {
-
+TEST_CASE( "send recv hello world" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -523,7 +521,7 @@ TEST_CASE( "tcp_test - send recv hello world" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - send recv hello world object slicing" ) {
+TEST_CASE( "send recv hello world object slicing" ) {
 
   num_runs = 0;
 
@@ -599,7 +597,7 @@ TEST_CASE( "tcp_test - send recv hello world object slicing" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - send not connected" ) {
+TEST_CASE( "send not connected" ) {
 
   num_runs = 0;
 
@@ -644,43 +642,43 @@ TEST_CASE( "tcp_test - send not connected" ) {
 
   ioc.spawn(
       []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
-        auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
 
-        fiona::tcp::client client( ex );
-        auto mok = co_await client.async_connect( &addr );
-        CHECK( mok.has_value() );
+    fiona::tcp::client client( ex );
+    auto mok = co_await client.async_connect( &addr );
+    CHECK( mok.has_value() );
 
-        fiona::timer timer( client.get_executor() );
-        co_await timer.async_wait( 250ms );
+    fiona::timer timer( client.get_executor() );
+    co_await timer.async_wait( 250ms );
 
-        // for more info on why the first send() succeeds, see this answer:
-        // https://stackoverflow.com/questions/11436013/writing-to-a-closed-local-tcp-socket-not-failing
-        //
+    // for more info on why the first send() succeeds, see this answer:
+    // https://stackoverflow.com/questions/11436013/writing-to-a-closed-local-tcp-socket-not-failing
+    //
 
-        auto sv = std::string_view( "hello, world!" );
+    auto sv = std::string_view( "hello, world!" );
 
-        {
-          auto mbytes_transferred = co_await client.async_send( sv );
-          CHECK( mbytes_transferred.value() == sv.size() );
-        }
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( mbytes_transferred.value() == sv.size() );
+    }
 
-        {
-          auto mbytes_transferred = co_await client.async_send( sv );
-          CHECK( mbytes_transferred.has_error() );
-          CHECK( mbytes_transferred.error() ==
-                 fiona::error_code::from_errno( EPIPE ) );
-        }
+    {
+      auto mbytes_transferred = co_await client.async_send( sv );
+      CHECK( mbytes_transferred.has_error() );
+      CHECK( mbytes_transferred.error() ==
+             fiona::error_code::from_errno( EPIPE ) );
+    }
 
-        ++num_runs;
-        co_return;
-      }( ex, port ) );
+    ++num_runs;
+    co_return;
+  }( ex, port ) );
 
   ioc.run();
 
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "tcp_test - tcp echo" ) {
+TEST_CASE( "tcp echo" ) {
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -813,7 +811,7 @@ TEST_CASE( "tcp_test - tcp echo" ) {
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
-TEST_CASE( "tcp_test - tcp echo saturating" ) {
+TEST_CASE( "tcp echo saturating" ) {
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -946,7 +944,7 @@ TEST_CASE( "tcp_test - tcp echo saturating" ) {
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
-TEST_CASE( "tcp_test - fd reuse" ) {
+TEST_CASE( "fd reuse" ) {
   num_runs = 0;
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
@@ -962,7 +960,7 @@ TEST_CASE( "tcp_test - fd reuse" ) {
   constexpr std::uint32_t total_connections = 4 * num_files;
 
   fiona::io_context_params params;
-  params.num_files = 2 * num_files; // duality because of client<->server
+  params.num_files = 1 + 2 * num_files; // duality because of client<->server
 
   fiona::io_context ioc( params );
   ioc.register_buffer_sequence( 1024, 128, 0 );
@@ -1068,7 +1066,7 @@ TEST_CASE( "tcp_test - fd reuse" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp_test - tcp echo exception" ) {
+TEST_CASE( "tcp echo exception" ) {
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
