@@ -137,9 +137,6 @@ struct acceptor_impl : public virtual ref_count, public accept_frame {
       fiona::detail::throw_errno_as_error_code( errno );
     }
 
-    fd_ = fd;
-    is_ipv4_ = is_ipv4;
-
     socklen_t caddrlen = sizeof( addr_storage_ );
     ret = getsockname( fd, reinterpret_cast<sockaddr*>( &addr_storage_ ),
                        &caddrlen );
@@ -147,6 +144,23 @@ struct acceptor_impl : public virtual ref_count, public accept_frame {
       fiona::detail::throw_errno_as_error_code( errno );
     }
     BOOST_ASSERT( caddrlen == addrlen );
+
+    auto off = fiona::detail::executor_access_policy::get_available_fd( ex_ );
+    if ( off < 0 ) {
+      throw error_code::from_errno( ENFILE );
+    }
+
+    auto ring = fiona::detail::executor_access_policy::ring( ex_ );
+    ret = io_uring_register_files_update( ring, static_cast<unsigned>( off ),
+                                          &fd, 1 );
+
+    if ( ret < 0 ) {
+      fiona::detail::throw_errno_as_error_code( -ret );
+    }
+
+    // fd_ = fd;
+    fd_ = off;
+    is_ipv4_ = is_ipv4;
   }
 
   acceptor_impl( executor ex, sockaddr_in const addr, int const backlog )
@@ -214,7 +228,15 @@ detail::accept_frame::await_process_cqe( io_uring_cqe* cqe ) {
 
 acceptor_impl::~acceptor_impl() {
   if ( fd_ >= 0 ) {
-    close( fd_ );
+    auto ring = fiona::detail::executor_access_policy::ring( ex_ );
+    auto sqe = fiona::detail::get_sqe( ring );
+    io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd_ ) );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    io_uring_sqe_set_data( sqe, nullptr );
+    fiona::detail::submit_ring( ring );
+
+    fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
+    fd_ = -1;
   }
 }
 
@@ -285,6 +307,7 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
   io_uring_prep_accept_direct( sqe, fd, nullptr, nullptr, 0,
                                static_cast<unsigned>( file_idx ) );
   io_uring_sqe_set_data( sqe, &af );
+  io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
 
   intrusive_ptr_add_ref( &af );
 
