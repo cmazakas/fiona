@@ -1193,3 +1193,52 @@ TEST_CASE( "tcp_test - tcp echo exception" ) {
 
   CHECK( anum_runs == 2 );
 }
+
+TEST_CASE( "accept raw fd" ) {
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ex, &addr );
+  auto port = acceptor.port();
+
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto ex = acceptor.get_executor();
+    auto mfd = co_await acceptor.async_accept_raw();
+    CHECK( mfd.has_value() );
+
+    auto fd = mfd.value();
+    fiona::tcp::stream stream( ex, fd );
+
+    ex.register_buffer_sequence( 16, 128, 0 );
+    stream.set_buffer_group( 0 );
+    auto mbufs = co_await stream.async_recv();
+    CHECK( mbufs.has_value() );
+
+    auto mok = co_await stream.async_close();
+    CHECK( mok.has_value() );
+
+    ++num_runs;
+    co_return;
+  };
+
+  auto client = []( fiona::tcp::client client,
+                    std::uint16_t port ) -> fiona::task<void> {
+    auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+    auto mok = co_await client.async_connect( &addr );
+    REQUIRE( mok.has_value() );
+
+    co_await client.async_send( "rawr" );
+
+    mok = co_await client.async_close();
+    ++num_runs;
+    co_return;
+  };
+
+  ioc.spawn( server( acceptor ) );
+  ioc.spawn( client( ex, port ) );
+
+  ioc.run();
+  CHECK( num_runs == 2 );
+}

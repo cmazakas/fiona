@@ -242,6 +242,11 @@ acceptor::async_accept() {
   return { pacceptor_ };
 }
 
+accept_raw_awaitable
+acceptor::async_accept_raw() {
+  return { pacceptor_ };
+}
+
 accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
     : pacceptor_( pacceptor ) {}
@@ -302,6 +307,24 @@ accept_awaitable::await_resume() {
   auto s = stream( ex, peer_fd );
   s.pstream_->connected_ = true;
   return { std::move( s ) };
+}
+
+accept_raw_awaitable::accept_raw_awaitable(
+    boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
+    : accept_awaitable( pacceptor ) {}
+
+result<int>
+accept_raw_awaitable::await_resume() {
+  auto ex = pacceptor_->ex_;
+  auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
+  auto peer_fd = af.peer_fd_;
+
+  af.reset();
+  if ( peer_fd < 0 ) {
+    return { error_code::from_errno( -peer_fd ) };
+  }
+
+  return peer_fd;
 }
 
 namespace detail {
@@ -399,7 +422,7 @@ stream::cancel_recv() {
 }
 
 executor
-stream::get_executor() const {
+stream::get_executor() const noexcept {
   return pstream_->ex_;
 }
 
@@ -436,7 +459,7 @@ stream::async_send( std::span<unsigned char const> buf ) {
 
 recv_awaitable
 stream::async_recv() {
-  BOOST_ASSERT( pstream_->recv_frame::buffer_group_id_ >= 0 );
+  // BOOST_ASSERT( pstream_->recv_frame::buffer_group_id_ >= 0 );
   return { pstream_ };
 }
 

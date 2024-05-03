@@ -23,9 +23,7 @@
 
 namespace fiona {
 namespace tls {
-
 struct client;
-
 }
 
 namespace tcp {
@@ -38,6 +36,7 @@ struct stream_impl;
 } // namespace detail
 
 struct accept_awaitable;
+struct accept_raw_awaitable;
 struct connect_awaitable;
 struct stream_cancel_awaitable;
 struct stream_close_awaitable;
@@ -106,6 +105,9 @@ public:
 
   FIONA_DECL
   accept_awaitable async_accept();
+
+  FIONA_DECL
+  accept_raw_awaitable async_accept_raw();
 };
 
 struct FIONA_DECL stream {
@@ -113,7 +115,6 @@ protected:
   friend struct accept_awaitable;
 
   boost::intrusive_ptr<detail::stream_impl> pstream_;
-  stream( executor ex, int fd );
 
   void timeout( __kernel_timespec ts );
   void cancel_timer();
@@ -121,6 +122,7 @@ protected:
 
 public:
   stream() = default;
+  stream( executor ex, int fd );
 
   stream( stream const& ) = default;
   stream& operator=( stream const& ) = default;
@@ -132,7 +134,7 @@ public:
 
   bool operator==( stream const& ) const = default;
 
-  executor get_executor() const;
+  executor get_executor() const noexcept;
 
   template <class Rep, class Period>
   void timeout( std::chrono::duration<Rep, Period> const d ) {
@@ -147,6 +149,26 @@ public:
   send_awaitable async_send( std::string_view msg );
   send_awaitable async_send( std::span<unsigned char const> buf );
   recv_awaitable async_recv();
+};
+
+struct FIONA_DECL client : public stream {
+public:
+  client() {}
+  client( executor ex );
+
+  client( client const& ) = default;
+  client& operator=( client const& ) = default;
+
+  client( client&& ) = default;
+  client& operator=( client&& ) = default;
+
+  virtual ~client() override;
+
+  bool operator==( client const& ) const = default;
+
+  connect_awaitable async_connect( sockaddr const* addr );
+  connect_awaitable async_connect( sockaddr_in const* addr );
+  connect_awaitable async_connect( sockaddr_in6 const* addr );
 };
 
 struct stream_close_awaitable {
@@ -245,28 +267,8 @@ public:
   result<recv_buffer_sequence> await_resume();
 };
 
-struct FIONA_DECL client : public stream {
-public:
-  client() {}
-  client( executor ex );
-
-  client( client const& ) = default;
-  client& operator=( client const& ) = default;
-
-  client( client&& ) = default;
-  client& operator=( client&& ) = default;
-
-  virtual ~client() override;
-
-  bool operator==( client const& ) const = default;
-
-  connect_awaitable async_connect( sockaddr const* addr );
-  connect_awaitable async_connect( sockaddr_in const* addr );
-  connect_awaitable async_connect( sockaddr_in6 const* addr );
-};
-
 struct accept_awaitable {
-private:
+protected:
   friend struct acceptor;
 
   boost::intrusive_ptr<detail::acceptor_impl> pacceptor_ = nullptr;
@@ -288,6 +290,21 @@ public:
 
   FIONA_DECL
   result<stream> await_resume();
+};
+
+struct accept_raw_awaitable : public accept_awaitable {
+private:
+  friend struct acceptor;
+
+  accept_raw_awaitable( boost::intrusive_ptr<detail::acceptor_impl> pacceptor );
+
+public:
+  accept_raw_awaitable() = delete;
+  accept_raw_awaitable( accept_awaitable const& ) = delete;
+  accept_raw_awaitable( accept_awaitable&& ) = delete;
+
+  FIONA_DECL
+  result<int> await_resume();
 };
 
 struct connect_awaitable {
