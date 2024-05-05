@@ -53,5 +53,17 @@ make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port ) {
   return addr;
 }
 
+std::string FIONA_DECL
+to_string( sockaddr_in const* p_ipv4_addr ) {
+  std::string s( INET_ADDRSTRLEN, '\0' );
+  auto p_dst = inet_ntop( AF_INET, &p_ipv4_addr->sin_addr, s.data(), s.size() );
+  if ( p_dst == nullptr ) {
+    fiona::detail::throw_errno_as_error_code( errno );
+  }
+  auto idx = s.find_first_of( '\0' );
+  s.erase( idx );
+  return s;
+}
+
 } // namespace ip
 } // namespace fiona
