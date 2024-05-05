@@ -5,6 +5,7 @@
 #include <fiona/error.hpp>    // for result, error_code
 #include <fiona/executor.hpp> // for executor
 #include <fiona/io_context.hpp> // for io_context
+#include <fiona/ip.hpp>
 #include <fiona/tcp.hpp> // for client, connect_awaitable, recv_awaitable, send_awaitable, stream_cl...
 
 #include <cstddef>      // for size_t
@@ -17,7 +18,7 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "dns_test - fetching the list of remote IP addresses" ) {
+TEST_CASE( "fetching the list of remote IP addresses" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -49,7 +50,7 @@ TEST_CASE( "dns_test - fetching the list of remote IP addresses" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "dns_test - fetching a non-existent entry" ) {
+TEST_CASE( "fetching a non-existent entry" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -57,11 +58,22 @@ TEST_CASE( "dns_test - fetching a non-existent entry" ) {
   ioc.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
-    auto mentrylist =
+    auto m_entrylist =
         co_await resolver.async_resolve( "www.lmaobro.rawr", "https" );
 
-    CHECK( mentrylist.has_error() );
-    CHECK( mentrylist.error().value() == EAI_NONAME );
+    if ( m_entrylist.has_value() ) {
+      auto& entrylist = m_entrylist.value();
+      for ( auto p = entrylist.data(); p; p = p->ai_next ) {
+        REQUIRE( p->ai_family == AF_INET );
+        auto p_ipv4 = reinterpret_cast<sockaddr_in const*>( p->ai_addr );
+        // this is the AT&T DNS assist IP that gets returned
+        // not everyone will have this but I do when using my laptop...
+        CHECK( fiona::ip::to_string( p_ipv4 ) == "143.244.220.150" );
+      }
+    } else {
+      CHECK( m_entrylist.has_error() );
+      CHECK( m_entrylist.error().value() == EAI_NONAME );
+    }
 
     ++num_runs;
     co_return;
@@ -71,7 +83,7 @@ TEST_CASE( "dns_test - fetching a non-existent entry" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "dns_test - connecting a client" ) {
+TEST_CASE( "connecting a client" ) {
   num_runs = 0;
 
   fiona::io_context ioc;
