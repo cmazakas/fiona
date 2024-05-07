@@ -56,7 +56,8 @@ make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port ) {
 std::string FIONA_DECL
 to_string( sockaddr_in const* p_ipv4_addr ) {
   std::string s( INET_ADDRSTRLEN, '\0' );
-  auto p_dst = inet_ntop( AF_INET, &p_ipv4_addr->sin_addr, s.data(), s.size() );
+  auto p_dst = inet_ntop( AF_INET, &p_ipv4_addr->sin_addr, s.data(),
+                          static_cast<unsigned>( s.size() ) );
   if ( p_dst == nullptr ) {
     fiona::detail::throw_errno_as_error_code( errno );
   }

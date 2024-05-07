@@ -9,6 +9,11 @@
 
 #include <boost/assert.hpp> // for BOOST_ASSERT
 
+#if BOOST_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-default"
+#endif
+
 namespace fiona {
 template <class T>
 struct promise;
@@ -207,5 +212,9 @@ task<T>::awaitable::await_suspend(
   return h_;
 }
 } // namespace fiona
+
+#if BOOST_CLANG
+#pragma clang diagnostic pop
+#endif
 
 #endif // FIONA_TASK_HPP
