@@ -371,8 +371,12 @@ TEST_CASE( "concurrent send and recv" ) {
       "hello, world, from the server!";
   constexpr static std::string_view const msg2 =
       "hello, world, from the client!";
+  constexpr static int const num_clients = 1000;
+  constexpr static int const num_msgs = 100;
 
-  fiona::io_context ioc;
+  fiona::io_context_params params;
+  params.num_files = 4 * 1024;
+  fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
 
   auto ipv4_addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
@@ -380,42 +384,54 @@ TEST_CASE( "concurrent send and recv" ) {
 
   auto port = acceptor.port();
 
-  ioc.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
-    auto m_stream = co_await acceptor.async_accept();
-    CHECK( m_stream.has_value() );
+  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buffer_sequence( 1024, 128, 1 );
 
-    auto stream = m_stream.value();
-    auto ex = stream.get_executor();
+  ioc.spawn( []( fiona::tcp::acceptor acceptor,
+                 int const num_clients ) -> fiona::task<void> {
+    auto server = []( fiona::tcp::stream stream ) -> fiona::task<void> {
+      auto ex = stream.get_executor();
+      stream.set_buffer_group( 0 );
 
-    ex.spawn( []( fiona::tcp::stream stream ) -> fiona::task<void> {
-      auto m_sent = co_await stream.async_send( msg1 );
-      CHECK( m_sent.has_value() );
-      CHECK( m_sent.value() == msg1.size() );
+      for ( int i = 0; i < num_msgs; ++i ) {
+        ex.spawn(
+            []( fiona::tcp::stream stream, bool cancel ) -> fiona::task<void> {
+          auto m_sent = co_await stream.async_send( msg1 );
+          CHECK( m_sent.has_value() );
+          CHECK( m_sent.value() == msg1.size() );
 
-      co_await stream.async_cancel();
+          if ( cancel ) {
+            co_await stream.async_cancel();
+          }
+        }( stream, i == ( num_msgs - 1 ) ) );
+
+        auto m_bufs = co_await stream.async_recv();
+        CHECK( m_bufs.has_value() );
+
+        auto bufs = std::move( m_bufs ).value();
+        CHECK( bufs.to_string() == msg2 );
+      }
+
+      auto m_bufs = co_await stream.async_recv();
+      CHECK( m_bufs.has_error() );
+      CHECK( m_bufs.error() == std::errc::operation_canceled );
 
       ++num_runs;
-    }( stream ) );
+    };
 
-    ex.register_buffer_sequence( 128, 128, 0 );
-    stream.set_buffer_group( 0 );
+    for ( int i = 0; i < num_clients; ++i ) {
+      auto m_stream = co_await acceptor.async_accept();
+      CHECK( m_stream.has_value() );
 
-    auto m_bufs = co_await stream.async_recv();
-    CHECK( m_bufs.has_value() );
-
-    auto bufs = std::move( m_bufs ).value();
-    CHECK( bufs.to_string() == msg2 );
-
-    m_bufs = co_await stream.async_recv();
-    CHECK( m_bufs.has_error() );
-    CHECK( m_bufs.error() == std::errc::operation_canceled );
-
-    ++num_runs;
+      auto stream = m_stream.value();
+      auto ex = stream.get_executor();
+      ex.spawn( server( stream ) );
+    }
     co_return;
-  }( acceptor ) );
+  }( acceptor, num_clients ) );
 
-  ioc.spawn(
-      []( fiona::executor ex, std::uint16_t const port ) -> fiona::task<void> {
+  auto client = []( fiona::executor ex,
+                    std::uint16_t const port ) -> fiona::task<void> {
     fiona::tcp::client client( ex );
 
     auto ipv4_addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -423,35 +439,40 @@ TEST_CASE( "concurrent send and recv" ) {
     CHECK( m_ok.has_value() );
 
     fiona::tcp::stream stream = client;
-
-    ex.spawn( []( fiona::tcp::stream stream ) -> fiona::task<void> {
-      auto m_sent = co_await stream.async_send( msg2 );
-      CHECK( m_sent.has_value() );
-      CHECK( m_sent.value() == msg1.size() );
-
-      co_await stream.async_cancel();
-
-      ++num_runs;
-    }( stream ) );
-
-    ex.register_buffer_sequence( 128, 128, 1 );
     stream.set_buffer_group( 1 );
 
+    for ( int i = 0; i < num_msgs; ++i ) {
+      ex.spawn(
+          []( fiona::tcp::stream stream, bool cancel ) -> fiona::task<void> {
+        auto m_sent = co_await stream.async_send( msg2 );
+        CHECK( m_sent.has_value() );
+        CHECK( m_sent.value() == msg1.size() );
+
+        if ( cancel ) {
+          co_await stream.async_cancel();
+        }
+      }( stream, ( i == num_msgs - 1 ) ) );
+
+      auto m_bufs = co_await stream.async_recv();
+      CHECK( m_bufs.has_value() );
+
+      auto bufs = std::move( m_bufs ).value();
+      CHECK( bufs.to_string() == msg1 );
+    }
+
     auto m_bufs = co_await stream.async_recv();
-    CHECK( m_bufs.has_value() );
-
-    auto bufs = std::move( m_bufs ).value();
-    CHECK( bufs.to_string() == msg1 );
-
-    m_bufs = co_await stream.async_recv();
     CHECK( m_bufs.has_error() );
     CHECK( m_bufs.error() == std::errc::operation_canceled );
 
     ++num_runs;
     co_return;
-  }( ioc.get_executor(), port ) );
+  };
+
+  for ( int i = 0; i < num_clients; ++i ) {
+    ioc.spawn( client( ioc.get_executor(), port ) );
+  }
 
   ioc.run();
 
-  CHECK( num_runs == 4 );
+  CHECK( num_runs == 2 * num_clients );
 }

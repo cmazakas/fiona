@@ -300,6 +300,9 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto file_idx = fiona::detail::executor_access_policy::get_available_fd( ex );
+  if ( file_idx < 0 ) {
+    fiona::detail::throw_errno_as_error_code( ENFILE );
+  }
 
   fiona::detail::reserve_sqes( ring, 1 );
 
