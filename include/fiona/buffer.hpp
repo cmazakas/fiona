@@ -150,7 +150,7 @@ protected:
   detail::buf_header_impl* psentry_;
   unsigned char* head_ = nullptr;
   unsigned char* tail_ = nullptr;
-  std::size_t size_ = 0;
+  std::size_t num_bufs_ = 0;
 
   recv_buffer_sequence_view( detail::buf_header_impl* psentry )
       : psentry_( psentry ) {}
@@ -233,8 +233,8 @@ public:
     return { const_cast<detail::buf_header_impl*>( psentry_ ) };
   }
 
-  std::size_t size() const noexcept { return size_; }
-  bool empty() const noexcept { return size() == 0; }
+  std::size_t num_bufs() const noexcept { return num_bufs_; }
+  bool empty() const noexcept { return num_bufs() == 0; }
 
   FIONA_DECL
   std::string to_string() const;
@@ -262,7 +262,7 @@ private:
 
     head_ = nullptr;
     tail_ = nullptr;
-    size_ = 0;
+    num_bufs_ = 0;
     sentry_.next_ = nullptr;
     sentry_.prev_ = nullptr;
   }
@@ -277,7 +277,7 @@ public:
       : recv_buffer_sequence_view( &sentry_ ) {
     head_ = rhs.head_;
     tail_ = rhs.tail_;
-    size_ = rhs.size_;
+    num_bufs_ = rhs.num_bufs_;
 
     if ( tail_ ) {
       recv_buffer_view tail_view( tail_ );
@@ -293,7 +293,7 @@ public:
 
     rhs.head_ = nullptr;
     rhs.tail_ = nullptr;
-    rhs.size_ = 0;
+    rhs.num_bufs_ = 0;
   }
 
   recv_buffer_sequence& operator=( recv_buffer_sequence&& rhs ) {
@@ -304,7 +304,7 @@ public:
 
       head_ = boost::exchange( rhs.head_, nullptr );
       tail_ = boost::exchange( rhs.tail_, nullptr );
-      size_ = boost::exchange( rhs.size_, 0 );
+      num_bufs_ = boost::exchange( rhs.num_bufs_, 0 );
 
       recv_buffer_view head_view( head_ );
       recv_buffer_view tail_view( tail_ );
@@ -340,7 +340,7 @@ public:
       sentry_.next_ = head_;
     }
 
-    ++size_;
+    ++num_bufs_;
   }
 
   void concat( recv_buffer_sequence rhs ) noexcept {
@@ -365,11 +365,11 @@ public:
     sentry_.prev_ = rhs.tail_;
 
     tail_ = rhs.tail_;
-    size_ += rhs.size_;
+    num_bufs_ += rhs.num_bufs_;
 
     rhs.head_ = nullptr;
     rhs.tail_ = nullptr;
-    rhs.size_ = 0;
+    rhs.num_bufs_ = 0;
   }
 };
 } // namespace fiona

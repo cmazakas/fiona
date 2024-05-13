@@ -81,7 +81,7 @@ TEST_CASE( "buffer_test - recv_buffer" ) {
 
 TEST_CASE( "buffer_test - owned buffer sequence" ) {
   fiona::recv_buffer_sequence buf_seq;
-  CHECK( buf_seq.size() == 0 );
+  CHECK( buf_seq.num_bufs() == 0 );
   CHECK( buf_seq.empty() );
 
   auto register_buffer = [&buf_seq]( std::string_view str ) {
@@ -105,7 +105,7 @@ TEST_CASE( "buffer_test - owned buffer sequence" ) {
     register_buffer( str );
   }
 
-  CHECK( buf_seq.size() == strs.size() );
+  CHECK( buf_seq.num_bufs() == strs.size() );
 
   auto pos = buf_seq.begin();
 
@@ -167,10 +167,9 @@ TEST_CASE( "buffer_test - move stability" ) {
   } );
 
   std::vector<unsigned char*> old_addrs( 16 );
-  std::ranges::transform( buf_seq, old_addrs.begin(),
-                          []( fiona::recv_buffer_view b ) {
-    return b.data();
-  } );
+  std::ranges::transform(
+      buf_seq, old_addrs.begin(),
+      []( fiona::recv_buffer_view b ) { return b.data(); } );
 
   auto pos = buf_seq.begin();
 
@@ -180,10 +179,9 @@ TEST_CASE( "buffer_test - move stability" ) {
     ++pos;
   }
 
-  CHECK( std::ranges::equal( old_addrs, buf_seq2, {}, {},
-                             []( fiona::recv_buffer_view b ) {
-    return b.data();
-  } ) );
+  CHECK( std::ranges::equal(
+      old_addrs, buf_seq2, {}, {},
+      []( fiona::recv_buffer_view b ) { return b.data(); } ) );
 
   CHECK( buf_seq.end() != buf_seq2.end() );
 
@@ -200,7 +198,7 @@ TEST_CASE( "buffer_test - move stability" ) {
 TEST_CASE( "buffer_test - push_back empty" ) {
   fiona::recv_buffer_sequence bs;
   bs.push_back( fiona::recv_buffer( 0 ) );
-  CHECK( bs.size() == 1 );
+  CHECK( bs.num_bufs() == 1 );
 }
 
 TEST_CASE( "buffer_test - concat" ) {
@@ -218,8 +216,8 @@ TEST_CASE( "buffer_test - concat" ) {
 
     bs1.concat( std::move( bs2 ) );
     {
-      CHECK( bs1.size() == 2 );
-      CHECK( bs2.size() == 0 );
+      CHECK( bs1.num_bufs() == 2 );
+      CHECK( bs2.num_bufs() == 0 );
 
       unsigned cap = 0;
       for ( auto bv : bs1 ) {
@@ -235,8 +233,8 @@ TEST_CASE( "buffer_test - concat" ) {
 
     bs1.concat( std::move( bs2 ) );
     {
-      CHECK( bs1.size() == 2 );
-      CHECK( bs2.size() == 0 );
+      CHECK( bs1.num_bufs() == 2 );
+      CHECK( bs2.num_bufs() == 0 );
 
       unsigned cap = 0;
       for ( auto bv : bs1 ) {
@@ -260,8 +258,8 @@ TEST_CASE( "buffer_test - concat" ) {
     bs1.concat( std::move( bs2 ) );
 
     {
-      CHECK( bs1.size() == 4 );
-      CHECK( bs2.size() == 0 );
+      CHECK( bs1.num_bufs() == 4 );
+      CHECK( bs2.num_bufs() == 0 );
 
       unsigned cap = 0;
       for ( auto bv : bs1 ) {

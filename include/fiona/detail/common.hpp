@@ -55,7 +55,11 @@ public:
   // coverage for this
   ~buf_ring();
 
-  recv_buffer& get_buf( std::size_t idx ) noexcept { return bufs_[idx]; }
+  recv_buffer& get_buf( std::size_t idx ) noexcept {
+    auto& buf = bufs_[idx];
+    return buf;
+  }
+
   io_uring_buf_ring* get() const noexcept { return buf_ring_; }
   std::uint32_t size() const noexcept {
     return static_cast<std::uint32_t>( bufs_.size() );
