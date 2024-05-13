@@ -42,6 +42,7 @@ buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs,
   auto mask = io_uring_buf_ring_mask( static_cast<unsigned>( bufs_.size() ) );
   for ( std::size_t i = 0; i < bufs_.size(); ++i ) {
     auto& buf = bufs_[i];
+    BOOST_ASSERT( buf.capacity() > 0 );
     io_uring_buf_ring_add(
         buf_ring_, buf.data(), static_cast<unsigned>( buf.capacity() ),
         static_cast<unsigned short>( i ), mask, static_cast<int>( i ) );

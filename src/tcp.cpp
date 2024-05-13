@@ -704,10 +704,11 @@ recv_awaitable::await_resume() {
     auto buffer_id = *( --pbuf_ring->buf_id_pos_ );
     auto& buf = pbuf_ring->get_buf( buffer_id );
     buf = fiona::recv_buffer( pbuf_ring->buf_size_ );
+    BOOST_ASSERT( buf.capacity() > 0 );
     io_uring_buf_ring_add( pbuf_ring->get(), buf.data(),
                            static_cast<unsigned>( buf.capacity() ),
                            static_cast<unsigned short>( buffer_id ),
-                           io_uring_buf_ring_mask( pbuf_ring->size() ), 0 );
+                           io_uring_buf_ring_mask( pbuf_ring->size() ), len );
     ++len;
   }
 

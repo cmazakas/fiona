@@ -273,6 +273,7 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe ) {
     auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 
     auto& buf = pbuf_ring_->get_buf( buffer_id );
+    BOOST_ASSERT( buf.capacity() );
     auto buffer = std::move( buf );
     buffer.set_len( static_cast<std::size_t>( cqe->res ) );
     buffers_.push_back( std::move( buffer ) );
