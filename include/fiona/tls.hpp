@@ -14,13 +14,53 @@
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
+#include <memory>
+
 namespace fiona {
 namespace tls {
 
-struct FIONA_DECL client : private tcp::client {
+struct tls_context;
+
+namespace detail {
+struct client_impl;
+struct server_impl;
+struct tls_context_frame;
+} // namespace detail
+
+//------------------------------------------------------------------------------
+
+struct tls_context
+{
+private:
+  friend struct detail::client_impl;
+  friend struct detail::server_impl;
+
+  std::shared_ptr<detail::tls_context_frame> p_tls_frame_;
+
+public:
+  FIONA_DECL
+  tls_context();
+
+  ~tls_context() = default;
+
+  tls_context( tls_context const& ) = default;
+  tls_context& operator=( tls_context const& ) = default;
+
+  FIONA_DECL
+  void add_certificate_authority( std::string_view filepath );
+
+  FIONA_DECL
+  void add_certificate_key_pair( std::string_view cert_path,
+                                 std::string_view key_path );
+};
+
+//------------------------------------------------------------------------------
+
+struct FIONA_DECL client : private tcp::client
+{
 public:
   client() = default;
-  client( executor ex );
+  client( tls_context ctx, executor ex );
 
   client( client const& ) = default;
   client& operator=( client const& ) = default;
@@ -33,6 +73,7 @@ public:
   bool operator==( client const& ) const = default;
 
   using tcp::client::async_connect;
+  using tcp::stream::async_close;
   using tcp::stream::set_buffer_group;
 
   task<result<void>> async_handshake();
@@ -42,10 +83,11 @@ public:
   task<result<void>> async_shutdown();
 };
 
-struct server : private tcp::stream {
+struct FIONA_DECL server : private tcp::stream
+{
 public:
   server() = default;
-  server( executor ex );
+  server( tls_context ctx, executor ex, int fd );
 
   server( server const& ) = default;
   server& operator=( server const& ) = default;
@@ -57,6 +99,7 @@ public:
 
   bool operator==( server const& ) const = default;
 
+  using tcp::stream::async_close;
   using tcp::stream::set_buffer_group;
 
   task<result<void>> async_handshake();

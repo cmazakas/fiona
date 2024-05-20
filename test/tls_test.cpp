@@ -37,7 +37,8 @@
 
 static int num_runs = 0;
 
-struct tls_callbacks final : public Botan::TLS::Callbacks {
+struct tls_callbacks final : public Botan::TLS::Callbacks
+{
   static_assert( std::is_same_v<std::uint8_t, unsigned char> );
 
   std::vector<unsigned char> send_buf_;
@@ -46,19 +47,22 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
 
   ~tls_callbacks() override;
 
-  void tls_emit_data( std::span<std::uint8_t const> data ) override {
+  void tls_emit_data( std::span<std::uint8_t const> data ) override
+  {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   }
 
   void tls_record_received( uint64_t seq_no,
-                            std::span<std::uint8_t const> data ) override {
+                            std::span<std::uint8_t const> data ) override
+  {
     (void)seq_no;
 
     REQUIRE( !data.empty() );
     recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_alert( Botan::TLS::Alert alert ) override {
+  void tls_alert( Botan::TLS::Alert alert ) override
+  {
     // if the alert type is a close_notify, we should start a graceful shutdown
     // of the connection, otherwise we're permitted to probably just do a
     // hard shutdown of the TCP connection
@@ -71,14 +75,18 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
   void tls_session_activated() override {}
 
   void tls_session_established(
-      const Botan::TLS::Session_Summary& /* session */ ) override {}
+      const Botan::TLS::Session_Summary& /* session */ ) override
+  {
+  }
 
   void tls_verify_cert_chain(
       const std::vector<Botan::X509_Certificate>& cert_chain,
       const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
       const std::vector<Botan::Certificate_Store*>& trusted_roots,
-      Botan::Usage_Type usage, std::string_view hostname,
-      const Botan::TLS::Policy& policy ) override {
+      Botan::Usage_Type usage,
+      std::string_view hostname,
+      const Botan::TLS::Policy& policy ) override
+  {
 
     Botan::Path_Validation_Restrictions restrictions(
         false, policy.minimum_signature_strength() );
@@ -93,8 +101,12 @@ struct tls_callbacks final : public Botan::TLS::Callbacks {
 
 tls_callbacks::~tls_callbacks() {}
 
-struct tls_credentials_manager final : public Botan::Credentials_Manager {
-  struct cert_key_pair {
+//------------------------------------------------------------------------------
+
+struct tls_credentials_manager final : public Botan::Credentials_Manager
+{
+  struct cert_key_pair
+  {
     Botan::X509_Certificate cert;
     std::shared_ptr<Botan::Private_Key> key;
   };
@@ -104,7 +116,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
 
   ~tls_credentials_manager() override;
 
-  tls_credentials_manager() {
+  tls_credentials_manager()
+  {
     {
       Botan::X509_Certificate cert( "../../test/tls/botan/ca.crt.pem" );
       cert_store_.add_certificate( cert );
@@ -136,7 +149,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
   std::shared_ptr<Botan::Private_Key>
   private_key_for( const Botan::X509_Certificate& cert,
                    const std::string& /* type */,
-                   const std::string& /* context */ ) override {
+                   const std::string& /* context */ ) override
+  {
     for ( auto const& [mcert, pkey] : cert_key_pairs_ ) {
       if ( cert == mcert ) {
         return pkey;
@@ -150,7 +164,9 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
       const std::vector<std::string>& algos,
       const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
       const std::vector<Botan::X509_DN>& acceptable_cas,
-      const std::string& type, const std::string& hostname ) override {
+      const std::string& type,
+      const std::string& hostname ) override
+  {
     BOTAN_UNUSED( cert_signature_schemes );
     BOTAN_UNUSED( acceptable_cas );
 
@@ -182,7 +198,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager {
 
   std::vector<Botan::Certificate_Store*>
   trusted_certificate_authorities( const std::string& type,
-                                   const std::string& context ) override {
+                                   const std::string& context ) override
+  {
     BOTAN_UNUSED( type, context );
     // return a list of certificates of CAs we trust for tls server certificates
     // ownership of the pointers remains with Credentials_Manager
@@ -195,7 +212,8 @@ tls_credentials_manager::~tls_credentials_manager() {}
 namespace {
 
 fiona::task<void>
-server( fiona::tcp::acceptor acceptor ) {
+server( fiona::tcp::acceptor acceptor )
+{
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
   auto psession_mgr =
@@ -281,7 +299,8 @@ server( fiona::tcp::acceptor acceptor ) {
 }
 
 fiona::task<void>
-client( fiona::executor ex, std::uint16_t const port ) {
+client( fiona::executor ex, std::uint16_t const port )
+{
   auto prng = std::make_shared<Botan::System_RNG>();
   auto pcallbacks = std::make_shared<tls_callbacks>();
   auto psession_mgr =
@@ -379,8 +398,29 @@ client( fiona::executor ex, std::uint16_t const port ) {
 }
 
 fiona::task<void>
-tls_client( fiona::executor ex, std::uint16_t const port ) {
-  fiona::tls::client client( ex );
+tls_server( fiona::tls::tls_context ctx, fiona::tcp::acceptor acceptor )
+{
+  auto m_fd = co_await acceptor.async_accept_raw();
+  auto ex = acceptor.get_executor();
+
+  CHECK( m_fd.has_value() );
+  auto fd = m_fd.value();
+
+  fiona::tls::server stream( ctx, ex, fd );
+  ex.register_buffer_sequence( 4 * 1024, 8, 0 );
+  stream.set_buffer_group( 0 );
+  auto m_ok = co_await stream.async_handshake();
+  CHECK( m_ok.has_value() );
+
+  co_await stream.async_close();
+}
+
+fiona::task<void>
+tls_client( fiona::tls::tls_context ctx,
+            fiona::executor ex,
+            std::uint16_t const port )
+{
+  fiona::tls::client client( ctx, ex );
 
   ex.register_buffer_sequence( 4 * 1024, 8, 1 );
   client.set_buffer_group( 1 );
@@ -401,6 +441,8 @@ tls_client( fiona::executor ex, std::uint16_t const port ) {
   mok = co_await client.async_shutdown();
   CHECK( mok.has_value() );
 
+  mok = co_await client.async_close();
+
   ++num_runs;
 
   co_return;
@@ -408,7 +450,8 @@ tls_client( fiona::executor ex, std::uint16_t const port ) {
 
 } // namespace
 
-TEST_CASE( "tls_test - botan hello world" ) {
+TEST_CASE( "botan hello world" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -425,7 +468,8 @@ TEST_CASE( "tls_test - botan hello world" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tls_test - tls::client hello world" ) {
+TEST_CASE( "tls::client hello world" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -435,8 +479,13 @@ TEST_CASE( "tls_test - tls::client hello world" ) {
 
   auto port = acceptor.port();
 
-  ioc.spawn( server( std::move( acceptor ) ) );
-  ioc.spawn( tls_client( ioc.get_executor(), port ) );
+  fiona::tls::tls_context ctx;
+  ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
+  ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
+                                "../../test/tls/botan/server.key.pem" );
+
+  ioc.spawn( tls_server( ctx, std::move( acceptor ) ) );
+  ioc.spawn( tls_client( ctx, ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );
