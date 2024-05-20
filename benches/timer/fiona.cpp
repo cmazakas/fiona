@@ -10,7 +10,8 @@
 using namespace std::chrono_literals;
 
 void
-fiona_timer_bench() {
+fiona_timer_bench()
+{
   static std::atomic_int anums = 0;
 
   fiona::io_context_params params;

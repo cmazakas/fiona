@@ -34,7 +34,8 @@ struct __kernel_timespec;
 
 namespace fiona {
 
-struct timer_awaitable {
+struct timer_awaitable
+{
 private:
   friend struct timer;
 
@@ -58,7 +59,8 @@ public:
   result<void> await_resume();
 };
 
-struct timer_cancel_awaitable {
+struct timer_cancel_awaitable
+{
 private:
   friend struct timer;
 
@@ -80,7 +82,8 @@ public:
   result<void> await_resume();
 };
 
-struct timer {
+struct timer
+{
 private:
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
@@ -102,7 +105,8 @@ public:
   ~timer() = default;
 
   template <class Rep, class Period>
-  timer_awaitable async_wait( std::chrono::duration<Rep, Period> d ) {
+  timer_awaitable async_wait( std::chrono::duration<Rep, Period> d )
+  {
     auto ts = detail::duration_to_timespec( d );
     return { ptimer_, ts };
   }

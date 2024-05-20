@@ -36,7 +36,8 @@
 
 namespace {
 
-struct frame : public fiona::detail::awaitable_base {
+struct frame : public fiona::detail::awaitable_base
+{
   fiona::executor ex_;
   std::coroutine_handle<> h_ = nullptr;
   alignas( std::coroutine_handle<> ) unsigned char buffer_[sizeof(
@@ -45,7 +46,8 @@ struct frame : public fiona::detail::awaitable_base {
 
   frame( fiona::executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
-  void schedule_recv() {
+  void schedule_recv()
+  {
     auto ring = fiona::detail::executor_access_policy::ring( ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
     auto sqe = io_uring_get_sqe( ring );
@@ -54,7 +56,8 @@ struct frame : public fiona::detail::awaitable_base {
     intrusive_ptr_add_ref( this );
   }
 
-  void await_process_cqe( io_uring_cqe* cqe ) override {
+  void await_process_cqe( io_uring_cqe* cqe ) override
+  {
     if ( cqe->res != sizeof( void* ) ) {
       BOOST_ASSERT( cqe->res < 0 );
       fiona::detail::throw_errno_as_error_code( -cqe->res );
@@ -71,7 +74,9 @@ struct frame : public fiona::detail::awaitable_base {
     } else if ( data & fiona::detail::post_mask ) {
       // TODO: determine if tsan is just giving us false positives here and if
       // we should remove lock/unlocking the mutex here
-      { auto guard = fiona::detail::executor_access_policy::lock_guard( ex_ ); }
+      {
+        auto guard = fiona::detail::executor_access_policy::lock_guard( ex_ );
+      }
 
       data &= fiona::detail::ptr_mask;
 
@@ -91,21 +96,25 @@ struct frame : public fiona::detail::awaitable_base {
     schedule_recv();
   }
 
-  std::coroutine_handle<> handle() noexcept override {
+  std::coroutine_handle<> handle() noexcept override
+  {
     return boost::exchange( h_, nullptr );
   }
 };
 
-struct pipe_awaitable {
+struct pipe_awaitable
+{
   boost::intrusive_ptr<frame> p_;
 
-  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) ) {
+  pipe_awaitable( fiona::executor ex, int fd ) : p_( new frame( ex, fd ) )
+  {
     p_->schedule_recv();
   }
 
   ~pipe_awaitable() { cancel(); }
 
-  void cancel() {
+  void cancel()
+  {
     auto& self = *p_;
     auto ring = fiona::detail::executor_access_policy::ring( self.ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
@@ -116,20 +125,24 @@ struct pipe_awaitable {
   }
 };
 
-struct cqe_guard {
+struct cqe_guard
+{
   io_uring* ring;
   io_uring_cqe* cqe;
 
-  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ )
-      : ring{ ring_ }, cqe{ cqe_ } {}
+  cqe_guard( io_uring* ring_, io_uring_cqe* cqe_ ) : ring{ ring_ }, cqe{ cqe_ }
+  {
+  }
   ~cqe_guard() { io_uring_cqe_seen( ring, cqe ); }
 };
 
-struct guard {
+struct guard
+{
   fiona::detail::task_map_type& tasks;
   io_uring* ring;
 
-  ~guard() {
+  ~guard()
+  {
     io_uring_submit( ring );
 
     while ( !tasks.empty() ) {
@@ -173,7 +186,8 @@ struct guard {
 
 namespace fiona {
 
-io_context::~io_context() {
+io_context::~io_context()
+{
   {
     auto ex = get_executor();
     auto ring = detail::executor_access_policy::ring( ex );
@@ -185,22 +199,27 @@ io_context::~io_context() {
 }
 
 executor
-io_context::get_executor() const noexcept {
+io_context::get_executor() const noexcept
+{
   return executor{ pframe_ };
 }
 
 void
-io_context::spawn( task<void> t ) {
+io_context::spawn( task<void> t )
+{
   auto ex = get_executor();
   ex.spawn( std::move( t ) );
 }
 
 void
-io_context::run() {
-  struct advance_guard {
+io_context::run()
+{
+  struct advance_guard
+  {
     io_uring* ring = nullptr;
     unsigned count = 0;
-    ~advance_guard() {
+    ~advance_guard()
+    {
       if ( ring ) {
         io_uring_cq_advance( ring, count );
       }
@@ -291,7 +310,8 @@ io_context::run() {
 namespace detail {
 
 io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
-    : params_( io_ctx_params ) {
+    : params_( io_ctx_params )
+{
 
   int ret = -1;
   auto ring = &io_ring_;
@@ -335,7 +355,8 @@ io_context_frame::io_context_frame( io_context_params const& io_ctx_params )
   }
 }
 
-io_context_frame::~io_context_frame() {
+io_context_frame::~io_context_frame()
+{
   close( pipefd_[0] );
   close( pipefd_[1] );
 

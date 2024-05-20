@@ -33,14 +33,18 @@ inline constexpr char const* localhost_ipv4 = "127.0.0.1";
 inline constexpr char const* localhost_ipv6 = "::1";
 
 template <class Rep, class Period>
-struct duration_guard {
+struct duration_guard
+{
   std::chrono::duration<Rep, Period> expected;
   std::chrono::system_clock::time_point prev;
 
   duration_guard( std::chrono::duration<Rep, Period> expected_ )
-      : expected( expected_ ), prev( std::chrono::system_clock::now() ) {}
+      : expected( expected_ ), prev( std::chrono::system_clock::now() )
+  {
+  }
 
-  ~duration_guard() {
+  ~duration_guard()
+  {
     auto now = std::chrono::system_clock::now();
 
     auto elapsed =
@@ -55,7 +59,8 @@ template <class Rep, class Period>
 duration_guard( std::chrono::duration<Rep, Period> )
     -> duration_guard<Rep, Period>;
 
-CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
+CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex )
+{
   return ex.message();
 }
 

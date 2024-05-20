@@ -15,19 +15,22 @@
 
 static std::atomic_int num_runs = 0;
 
-struct custom_awaitable {
+struct custom_awaitable
+{
   std::shared_ptr<std::vector<int>> nums;
   std::thread t;
   fiona::executor ex;
   std::shared_ptr<std::mutex> m;
   bool should_detach = false;
 
-  custom_awaitable( fiona::executor ex_ ) : ex{ ex_ } {
+  custom_awaitable( fiona::executor ex_ ) : ex{ ex_ }
+  {
     nums = std::make_shared<std::vector<int>>();
     m = std::make_shared<std::mutex>();
   }
 
-  ~custom_awaitable() {
+  ~custom_awaitable()
+  {
     if ( should_detach ) {
       t.detach();
     } else {
@@ -37,7 +40,8 @@ struct custom_awaitable {
 
   bool await_ready() const noexcept { return false; }
 
-  void await_suspend( std::coroutine_handle<> h ) {
+  void await_suspend( std::coroutine_handle<> h )
+  {
     auto waker = ex.make_waker( h );
 
     t = std::thread( [nums = this->nums, m = this->m,
@@ -61,13 +65,15 @@ struct custom_awaitable {
     } );
   }
 
-  std::vector<int> await_resume() {
+  std::vector<int> await_resume()
+  {
     std::lock_guard<std::mutex> lg{ *m };
     return std::move( *nums );
   }
 };
 
-TEST_CASE( "waker_test - waiting a simple future" ) {
+TEST_CASE( "waker_test - waiting a simple future" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -83,7 +89,8 @@ TEST_CASE( "waker_test - waiting a simple future" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "waker_test - waker outlives the io_context" ) {
+TEST_CASE( "waker_test - waker outlives the io_context" )
+{
   num_runs = 0;
 
   {
@@ -113,7 +120,8 @@ TEST_CASE( "waker_test - waker outlives the io_context" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "waker_test - awaiting multiple foreign futures" ) {
+TEST_CASE( "waker_test - awaiting multiple foreign futures" )
+{
   num_runs = 0;
 
   constexpr int const num_futures = 100;

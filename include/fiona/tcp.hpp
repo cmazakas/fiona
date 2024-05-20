@@ -74,7 +74,8 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept;
 namespace fiona {
 namespace tcp {
 
-struct acceptor {
+struct acceptor
+{
 private:
   boost::intrusive_ptr<detail::acceptor_impl> pacceptor_;
 
@@ -91,9 +92,13 @@ public:
   acceptor( executor ex, sockaddr const* addr );
 
   acceptor( executor ex, sockaddr_in const* addr )
-      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) )
+  {
+  }
   acceptor( executor ex, sockaddr_in6 const* addr )
-      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) ) {}
+      : acceptor( ex, reinterpret_cast<sockaddr const*>( addr ) )
+  {
+  }
 
   bool operator==( acceptor const& ) const = default;
 
@@ -110,7 +115,8 @@ public:
   accept_raw_awaitable async_accept_raw();
 };
 
-struct FIONA_DECL stream {
+struct FIONA_DECL stream
+{
 protected:
   friend struct accept_awaitable;
 
@@ -137,7 +143,8 @@ public:
   executor get_executor() const noexcept;
 
   template <class Rep, class Period>
-  void timeout( std::chrono::duration<Rep, Period> const d ) {
+  void timeout( std::chrono::duration<Rep, Period> const d )
+  {
     auto ts = fiona::detail::duration_to_timespec( d );
     timeout( ts );
   }
@@ -151,7 +158,8 @@ public:
   recv_awaitable async_recv();
 };
 
-struct FIONA_DECL client : public stream {
+struct FIONA_DECL client : public stream
+{
 public:
   client() {}
   client( executor ex );
@@ -171,7 +179,8 @@ public:
   connect_awaitable async_connect( sockaddr_in6 const* addr );
 };
 
-struct stream_close_awaitable {
+struct stream_close_awaitable
+{
 private:
   friend struct stream;
   friend struct client;
@@ -193,7 +202,8 @@ public:
   result<void> await_resume();
 };
 
-struct stream_cancel_awaitable {
+struct stream_cancel_awaitable
+{
 private:
   friend struct stream;
   friend struct client;
@@ -213,7 +223,8 @@ public:
   result<int> await_resume();
 };
 
-struct send_awaitable {
+struct send_awaitable
+{
 private:
   friend struct stream;
   friend struct client;
@@ -237,7 +248,8 @@ public:
   result<std::size_t> await_resume();
 };
 
-struct recv_awaitable {
+struct recv_awaitable
+{
 private:
   friend struct stream;
 
@@ -267,7 +279,8 @@ public:
   result<recv_buffer_sequence> await_resume();
 };
 
-struct accept_awaitable {
+struct accept_awaitable
+{
 protected:
   friend struct acceptor;
 
@@ -292,7 +305,8 @@ public:
   result<stream> await_resume();
 };
 
-struct accept_raw_awaitable : public accept_awaitable {
+struct accept_raw_awaitable : public accept_awaitable
+{
 private:
   friend struct acceptor;
 
@@ -307,7 +321,8 @@ public:
   result<int> await_resume();
 };
 
-struct connect_awaitable {
+struct connect_awaitable
+{
 private:
   friend struct client;
 

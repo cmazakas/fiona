@@ -4,7 +4,8 @@
 #include <fiona/time.hpp>
 
 int
-main() {
+main()
+{
   fiona::io_context ioc;
   fiona::timer timer( ioc.get_executor() );
 

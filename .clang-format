@@ -5,8 +5,13 @@ SpacesInParentheses: true
 LambdaBodyIndentation: OuterScope
 ColumnLimit: 80
 BinPackArguments: true
-BinPackParameters: true
+BinPackParameters: false
 AllowAllArgumentsOnNextLine: true
 AlignTrailingComments:
   Kind: Always
   OverEmptyLines: 2
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterStruct: true
+  AfterClass: true
+  AfterFunction: true

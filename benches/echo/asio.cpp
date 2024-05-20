@@ -7,7 +7,8 @@
 #include <iostream>
 
 void
-asio_echo_bench() {
+asio_echo_bench()
+{
   std::cout << "Asio does not support building with tsan and gcc!" << std::endl;
   CHECK( false );
 }
@@ -35,7 +36,8 @@ using namespace std::chrono_literals;
 using namespace boost::asio::experimental::awaitable_operators;
 
 void
-asio_echo_bench() {
+asio_echo_bench()
+{
   static std::atomic_uint64_t anum_runs = 0;
 
   constexpr std::string_view msg = "hello, world!";

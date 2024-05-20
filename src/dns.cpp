@@ -12,7 +12,8 @@
 
 namespace fiona {
 
-struct dns_frame {
+struct dns_frame
+{
   std::mutex m_;
   std::thread t_;
   char const* node_ = nullptr;
@@ -25,37 +26,46 @@ struct dns_frame {
 dns_entry_list::dns_entry_list( addrinfo* head ) : head_{ head } {}
 
 dns_entry_list::dns_entry_list( dns_entry_list&& rhs ) noexcept
-    : head_{ boost::exchange( rhs.head_, nullptr ) } {}
+    : head_{ boost::exchange( rhs.head_, nullptr ) }
+{
+}
 
 dns_entry_list&
-dns_entry_list::operator=( dns_entry_list&& rhs ) noexcept {
+dns_entry_list::operator=( dns_entry_list&& rhs ) noexcept
+{
   if ( this != &rhs ) {
     head_ = boost::exchange( rhs.head_, nullptr );
   }
   return *this;
 }
 
-dns_entry_list::~dns_entry_list() {
+dns_entry_list::~dns_entry_list()
+{
   if ( head_ ) {
     freeaddrinfo( head_ );
   }
 }
 
 addrinfo const*
-dns_entry_list::data() const noexcept {
+dns_entry_list::data() const noexcept
+{
   return head_;
 }
 
 dns_awaitable::dns_awaitable( executor ex, std::shared_ptr<dns_frame> pframe )
-    : ex_{ ex }, pframe_{ pframe } {}
+    : ex_{ ex }, pframe_{ pframe }
+{
+}
 
 bool
-dns_awaitable::await_ready() const {
+dns_awaitable::await_ready() const
+{
   return false;
 }
 
 void
-dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
+dns_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto waker = ex_.make_waker( h );
   auto& frame = *pframe_;
   frame.t_ = std::thread( [pframe = pframe_, waker] {
@@ -76,7 +86,8 @@ dns_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<dns_entry_list>
-dns_awaitable::await_resume() {
+dns_awaitable::await_resume()
+{
   auto& frame = *pframe_;
   frame.t_.join();
   std::lock_guard<std::mutex> guard( frame.m_ );
@@ -89,10 +100,13 @@ dns_awaitable::await_resume() {
 }
 
 dns_resolver::dns_resolver( fiona::executor ex )
-    : ex_{ ex }, pframe_{ new dns_frame() } {}
+    : ex_{ ex }, pframe_{ new dns_frame() }
+{
+}
 
 dns_awaitable
-dns_resolver::async_resolve( char const* node, char const* service ) {
+dns_resolver::async_resolve( char const* node, char const* service )
+{
   pframe_->node_ = node;
   pframe_->service_ = service;
   return { ex_, pframe_ };

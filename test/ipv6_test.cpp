@@ -7,7 +7,8 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "ipv6 sanity check" ) {
+TEST_CASE( "ipv6 sanity check" )
+{
 
   auto server = []( fiona::executor ex,
                     fiona::tcp::acceptor acceptor ) -> fiona::task<void> {

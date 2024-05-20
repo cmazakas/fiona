@@ -9,12 +9,14 @@ namespace fiona {
 namespace detail {
 
 inline void
-submit_ring( io_uring* ring ) {
+submit_ring( io_uring* ring )
+{
   io_uring_submit_and_get_events( ring );
 }
 
 [[nodiscard]] inline io_uring_sqe*
-get_sqe( io_uring* ring ) {
+get_sqe( io_uring* ring )
+{
   auto sqe = io_uring_get_sqe( ring );
   if ( sqe ) {
     return sqe;
@@ -26,7 +28,8 @@ get_sqe( io_uring* ring ) {
 }
 
 inline void
-reserve_sqes( io_uring* ring, unsigned n ) {
+reserve_sqes( io_uring* ring, unsigned n )
+{
   auto r = io_uring_sq_space_left( ring );
   if ( r < n ) {
     submit_ring( ring );

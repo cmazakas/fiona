@@ -18,7 +18,8 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "fetching the list of remote IP addresses" ) {
+TEST_CASE( "fetching the list of remote IP addresses" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -50,7 +51,8 @@ TEST_CASE( "fetching the list of remote IP addresses" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "fetching a non-existent entry" ) {
+TEST_CASE( "fetching a non-existent entry" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -83,7 +85,8 @@ TEST_CASE( "fetching a non-existent entry" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "connecting a client" ) {
+TEST_CASE( "connecting a client" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;

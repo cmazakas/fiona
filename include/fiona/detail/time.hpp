@@ -10,7 +10,8 @@ namespace detail {
 
 template <class Rep, class Period>
 __kernel_timespec
-duration_to_timespec( std::chrono::duration<Rep, Period> const& d ) {
+duration_to_timespec( std::chrono::duration<Rep, Period> const& d )
+{
   auto sec = std::chrono::floor<std::chrono::seconds>( d );
   auto nsec = std::chrono::duration_cast<std::chrono::nanoseconds>( d - sec );
   __kernel_timespec ts;

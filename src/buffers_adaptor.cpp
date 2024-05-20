@@ -5,5 +5,6 @@
 #include "buffers_adaptor.hpp"
 
 namespace fiona {
-namespace detail {} // namespace detail
+namespace detail {
+} // namespace detail
 } // namespace fiona

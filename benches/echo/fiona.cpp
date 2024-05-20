@@ -12,14 +12,16 @@
 #include <iostream>
 #include <thread>
 
-CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex ) {
+CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex )
+{
   return ex.message();
 }
 
 inline constexpr std::size_t const buf_size = 4096;
 
 void
-fiona_echo_bench() {
+fiona_echo_bench()
+{
   static std::atomic_uint64_t anum_runs = 0;
   constexpr std::uint16_t bgid = 0;
 

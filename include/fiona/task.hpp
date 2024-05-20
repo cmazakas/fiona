@@ -22,9 +22,11 @@ struct promise;
 namespace fiona {
 
 template <class T>
-struct task {
+struct task
+{
 private:
-  struct awaitable {
+  struct awaitable
+  {
     std::coroutine_handle<promise<T>> h_;
 
     awaitable( std::coroutine_handle<promise<T>> h ) : h_( h ) {}
@@ -34,7 +36,8 @@ private:
     std::coroutine_handle<>
     await_suspend( std::coroutine_handle<> awaiting_coro ) noexcept;
 
-    decltype( auto ) await_resume() {
+    decltype( auto ) await_resume()
+    {
       BOOST_ASSERT( h_ );
       return std::move( h_.promise() ).result();
     }
@@ -48,7 +51,8 @@ public:
   task() = default;
   task( std::coroutine_handle<promise<T>> h ) : h_( h ) {}
 
-  ~task() {
+  ~task()
+  {
     if ( h_ ) {
       h_.destroy();
     }
@@ -58,7 +62,8 @@ public:
   task& operator=( task const& ) = delete;
 
   task( task&& rhs ) noexcept : h_( rhs.h_ ) { rhs.h_ = nullptr; }
-  task& operator=( task&& rhs ) noexcept {
+  task& operator=( task&& rhs ) noexcept
+  {
     if ( this != &rhs ) {
       auto h = h_;
       h_ = rhs.h_;
@@ -69,31 +74,37 @@ public:
 
   awaitable operator co_await() noexcept { return awaitable{ h_ }; }
 
-  void* into_address() {
+  void* into_address()
+  {
     BOOST_ASSERT( h_ );
     auto p = h_.address();
     h_ = nullptr;
     return p;
   }
 
-  static task<void> from_address( void* p ) {
+  static task<void> from_address( void* p )
+  {
     return { std::coroutine_handle<promise<void>>::from_address( p ) };
   }
 };
 
-struct promise_base {
+struct promise_base
+{
 private:
-  struct final_awaitable {
+  struct final_awaitable
+  {
     bool await_ready() const noexcept { return false; }
 
     template <class Promise>
     std::coroutine_handle<>
-    await_suspend( std::coroutine_handle<Promise> coro ) noexcept {
+    await_suspend( std::coroutine_handle<Promise> coro ) noexcept
+    {
       return coro.promise().continuation_;
     }
 
     BOOST_NORETURN
-    void await_resume() noexcept {
+    void await_resume() noexcept
+    {
       BOOST_ASSERT( false );
       __builtin_unreachable();
     }
@@ -107,14 +118,16 @@ public:
   std::suspend_always initial_suspend() { return {}; }
   final_awaitable final_suspend() noexcept { return {}; }
 
-  void set_continuation( std::coroutine_handle<> continuation ) {
+  void set_continuation( std::coroutine_handle<> continuation )
+  {
     BOOST_ASSERT( !continuation_ );
     continuation_ = continuation;
   }
 };
 
 template <class T>
-struct promise final : public promise_base {
+struct promise final : public promise_base
+{
 private:
   enum class result_type { uninit, ok, err };
 
@@ -126,7 +139,8 @@ private:
 
 public:
   promise() noexcept {}
-  ~promise() {
+  ~promise()
+  {
     switch ( rt ) {
     case result_type::ok:
       value_.~T();
@@ -141,30 +155,35 @@ public:
     }
   }
 
-  task<T> get_return_object() {
+  task<T> get_return_object()
+  {
     return { std::coroutine_handle<promise>::from_promise( *this ) };
   }
 
   template <class Expr>
-  void return_value( Expr&& expr ) {
+  void return_value( Expr&& expr )
+  {
     new ( std::addressof( value_ ) ) T( std::forward<Expr>( expr ) );
     rt = result_type::ok;
   }
 
-  void unhandled_exception() {
+  void unhandled_exception()
+  {
     new ( std::addressof( exception_ ) )
         std::exception_ptr( std::current_exception() );
     rt = result_type::err;
   }
 
-  T& result() & {
+  T& result() &
+  {
     if ( rt == result_type::err ) {
       std::rethrow_exception( exception_ );
     }
     return value_;
   }
 
-  T&& result() && {
+  T&& result() &&
+  {
     if ( rt == result_type::err ) {
       std::rethrow_exception( exception_ );
     }
@@ -173,24 +192,28 @@ public:
 };
 
 template <>
-struct promise<void> final : public promise_base {
+struct promise<void> final : public promise_base
+{
 private:
   enum class result_type { uninit, ok, err };
 
   std::exception_ptr exception_;
 
 public:
-  task<void> get_return_object() {
+  task<void> get_return_object()
+  {
     return { std::coroutine_handle<promise>::from_promise( *this ) };
   }
 
   void return_void() {}
 
-  void unhandled_exception() {
+  void unhandled_exception()
+  {
     exception_ = std::exception_ptr( std::current_exception() );
   }
 
-  void result() {
+  void result()
+  {
     if ( exception_ ) {
       std::rethrow_exception( exception_ );
     }
@@ -200,7 +223,8 @@ public:
 template <class T>
 std::coroutine_handle<>
 task<T>::awaitable::await_suspend(
-    std::coroutine_handle<> awaiting_coro ) noexcept {
+    std::coroutine_handle<> awaiting_coro ) noexcept
+{
   /*
    * because this awaitable is created using the coroutine_handle of a
    * child coroutine, awaiting_coro is the parent

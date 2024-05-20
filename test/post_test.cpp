@@ -23,7 +23,8 @@ inline constexpr std::chrono::milliseconds sleep_dur( 25 );
 namespace {
 
 fiona::task<std::string>
-make_string( fiona::executor ex ) {
+make_string( fiona::executor ex )
+{
   ++num_runs;
   fiona::timer timer( ex );
   auto r = co_await timer.async_wait( sleep_dur );
@@ -33,7 +34,8 @@ make_string( fiona::executor ex ) {
 }
 
 fiona::task<std::unique_ptr<int>>
-make_int_pointer( fiona::executor ex ) {
+make_int_pointer( fiona::executor ex )
+{
   ++num_runs;
   fiona::timer timer( ex );
   auto r = co_await timer.async_wait( sleep_dur );
@@ -44,7 +46,8 @@ make_int_pointer( fiona::executor ex ) {
 }
 
 fiona::task<int>
-throw_exception( fiona::executor ex ) {
+throw_exception( fiona::executor ex )
+{
   ++num_runs;
   fiona::timer timer( ex );
   auto r = co_await timer.async_wait( sleep_dur );
@@ -57,7 +60,8 @@ throw_exception( fiona::executor ex ) {
 
 } // namespace
 
-TEST_CASE( "post_test - awaiting a sibling coro" ) {
+TEST_CASE( "post_test - awaiting a sibling coro" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -97,7 +101,8 @@ TEST_CASE( "post_test - awaiting a sibling coro" ) {
   CHECK( num_runs == 2 * 2 + 1 );
 }
 
-TEST_CASE( "post_test - ignoring exceptions" ) {
+TEST_CASE( "post_test - ignoring exceptions" )
+{
   // test the following:
   // * coroutine destroyed without a post_awaitable object in its frame
   // * coroutine destroyed with a post_awaitable in its frame
@@ -116,14 +121,13 @@ TEST_CASE( "post_test - ignoring exceptions" ) {
   }( ex ) );
 
   ioc.spawn( FIONA_TASK( fiona::executor ex ) {
-    auto h = fiona::spawn(
-        ex, FIONA_TASK( fiona::executor ex ) {
-          ++num_runs;
-          fiona::timer timer( ex );
-          co_await timer.async_wait( 500ms );
-          CHECK( false );
-          co_return;
-        }( ex ) );
+    auto h = fiona::spawn( ex, FIONA_TASK( fiona::executor ex ) {
+      ++num_runs;
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 500ms );
+      CHECK( false );
+      co_return;
+    }( ex ) );
 
     (void)h;
 
@@ -134,7 +138,8 @@ TEST_CASE( "post_test - ignoring exceptions" ) {
   }( ex ) );
 
   ioc.spawn( FIONA_TASK( fiona::executor ex ) {
-    auto inner_task = FIONA_TASK( fiona::executor ex ) {
+    auto inner_task = FIONA_TASK( fiona::executor ex )
+    {
       ++num_runs;
       fiona::timer timer( ex );
       co_await timer.async_wait( 500ms );
@@ -149,22 +154,21 @@ TEST_CASE( "post_test - ignoring exceptions" ) {
   }( ex ) );
 
   ioc.spawn( FIONA_TASK( fiona::executor ex ) {
-    auto inner_task = FIONA_TASK( fiona::executor ex ) {
-      auto h = fiona::spawn(
-          ex, FIONA_TASK( fiona::executor ex ) {
-            ++num_runs;
-            fiona::timer timer( ex );
-            co_await timer.async_wait( 500ms );
-            CHECK( false );
-          }( ex ) );
+    auto inner_task = FIONA_TASK( fiona::executor ex )
+    {
+      auto h = fiona::spawn( ex, FIONA_TASK( fiona::executor ex ) {
+        ++num_runs;
+        fiona::timer timer( ex );
+        co_await timer.async_wait( 500ms );
+        CHECK( false );
+      }( ex ) );
 
       (void)h;
 
-      fiona::spawn(
-          ex, FIONA_TASK() {
-            throw "a random error";
-            co_return;
-          }() );
+      fiona::spawn( ex, FIONA_TASK() {
+        throw "a random error";
+        co_return;
+      }() );
 
       ++num_runs;
       fiona::timer timer( ex );
@@ -183,7 +187,8 @@ TEST_CASE( "post_test - ignoring exceptions" ) {
   CHECK( num_runs == 6 );
 }
 
-TEST_CASE( "post_test - posting a move-only type" ) {
+TEST_CASE( "post_test - posting a move-only type" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -210,7 +215,8 @@ TEST_CASE( "post_test - posting a move-only type" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "post_test - void returning function" ) {
+TEST_CASE( "post_test - void returning function" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -239,12 +245,14 @@ TEST_CASE( "post_test - void returning function" ) {
 namespace {
 
 fiona::task<void>
-empty_task() {
+empty_task()
+{
   co_return;
 }
 
 fiona::task<void>
-symmetric_transfer_test() {
+symmetric_transfer_test()
+{
   for ( int i = 0; i < 1'000'000; ++i ) {
     co_await empty_task();
   }
@@ -254,7 +262,8 @@ symmetric_transfer_test() {
 
 } // namespace
 
-TEST_CASE( "post_test - symmetric transfer" ) {
+TEST_CASE( "post_test - symmetric transfer" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -265,7 +274,8 @@ TEST_CASE( "post_test - symmetric transfer" ) {
 
 #endif
 
-TEST_CASE( "post_test - destruction on a separate thread" ) {
+TEST_CASE( "post_test - destruction on a separate thread" )
+{
   num_runs = 0;
 
   std::thread t;
@@ -299,7 +309,8 @@ TEST_CASE( "post_test - destruction on a separate thread" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "post_test - inter-thread posting" ) {
+TEST_CASE( "post_test - inter-thread posting" )
+{
   fiona::io_context ioc;
   std::vector<std::jthread> threads;
 

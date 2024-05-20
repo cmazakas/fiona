@@ -21,7 +21,8 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "acceptor" ) {
+TEST_CASE( "acceptor" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -55,7 +56,8 @@ TEST_CASE( "acceptor" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "client already connected" ) {
+TEST_CASE( "client already connected" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -112,7 +114,8 @@ TEST_CASE( "client already connected" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "server not listening" ) {
+TEST_CASE( "server not listening" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -136,7 +139,8 @@ TEST_CASE( "server not listening" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "client connect timeout" ) {
+TEST_CASE( "client connect timeout" )
+{
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -167,7 +171,8 @@ TEST_CASE( "client connect timeout" ) {
   CHECK( num_runs == 1 );
 }
 
-TEST_CASE( "client connect interruption" ) {
+TEST_CASE( "client connect interruption" )
+{
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -206,7 +211,8 @@ TEST_CASE( "client connect interruption" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "client connect exception" ) {
+TEST_CASE( "client connect exception" )
+{
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -243,7 +249,8 @@ TEST_CASE( "client connect exception" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "double connect" ) {
+TEST_CASE( "double connect" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -289,7 +296,8 @@ TEST_CASE( "double connect" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "socket creation failed" ) {
+TEST_CASE( "socket creation failed" )
+{
   num_runs = 0;
 
   fiona::io_context_params params;
@@ -342,7 +350,8 @@ TEST_CASE( "socket creation failed" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "connect cancellation" ) {
+TEST_CASE( "connect cancellation" )
+{
   num_runs = 0;
 
   // use one of the IP addresses from the test networks:
@@ -398,7 +407,8 @@ TEST_CASE( "connect cancellation" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "client reconnection" ) {
+TEST_CASE( "client reconnection" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -449,7 +459,8 @@ TEST_CASE( "client reconnection" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "send recv hello world" ) {
+TEST_CASE( "send recv hello world" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -521,7 +532,8 @@ TEST_CASE( "send recv hello world" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "send recv hello world object slicing" ) {
+TEST_CASE( "send recv hello world object slicing" )
+{
 
   num_runs = 0;
 
@@ -597,7 +609,8 @@ TEST_CASE( "send recv hello world object slicing" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "send not connected" ) {
+TEST_CASE( "send not connected" )
+{
 
   num_runs = 0;
 
@@ -678,7 +691,8 @@ TEST_CASE( "send not connected" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "tcp echo" ) {
+TEST_CASE( "tcp echo" )
+{
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -811,7 +825,8 @@ TEST_CASE( "tcp echo" ) {
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
-TEST_CASE( "tcp echo saturating" ) {
+TEST_CASE( "tcp echo saturating" )
+{
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -944,7 +959,8 @@ TEST_CASE( "tcp echo saturating" ) {
   CHECK( anum_runs == 1 + ( 2 * num_clients ) );
 }
 
-TEST_CASE( "fd reuse" ) {
+TEST_CASE( "fd reuse" )
+{
   num_runs = 0;
   // want to prove that the runtime correctly manages its set of file
   // descriptors by proving they can be reused over and over again
@@ -1066,7 +1082,8 @@ TEST_CASE( "fd reuse" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "tcp echo exception" ) {
+TEST_CASE( "tcp echo exception" )
+{
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -1192,7 +1209,8 @@ TEST_CASE( "tcp echo exception" ) {
   CHECK( anum_runs == 2 );
 }
 
-TEST_CASE( "accept raw fd" ) {
+TEST_CASE( "accept raw fd" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;

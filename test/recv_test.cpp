@@ -17,7 +17,8 @@
 
 static int num_runs = 0;
 
-TEST_CASE( "recv timeout" ) {
+TEST_CASE( "recv timeout" )
+{
   num_runs = 0;
 
   constexpr static auto const server_timeout = 1s;
@@ -98,7 +99,8 @@ TEST_CASE( "recv timeout" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "recv cancel" ) {
+TEST_CASE( "recv cancel" )
+{
   num_runs = 0;
 
   auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
@@ -165,7 +167,8 @@ TEST_CASE( "recv cancel" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "recv high traffic" ) {
+TEST_CASE( "recv high traffic" )
+{
   num_runs = 0;
 
   auto server = []( fiona::tcp::acceptor acceptor,
@@ -225,7 +228,8 @@ TEST_CASE( "recv high traffic" ) {
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "double registering same buffer group" ) {
+TEST_CASE( "double registering same buffer group" )
+{
   fiona::io_context ioc;
 
   std::uint16_t const buffer_group_id = 0;
@@ -238,7 +242,8 @@ TEST_CASE( "double registering same buffer group" ) {
   }
 }
 
-TEST_CASE( "buffer exhaustion" ) {
+TEST_CASE( "buffer exhaustion" )
+{
   num_runs = 0;
 
   fiona::io_context ioc;
@@ -334,7 +339,8 @@ TEST_CASE( "buffer exhaustion" ) {
     ++num_runs;
   }( std::move( acceptor ) ) );
 
-  auto client = FIONA_TASK( fiona::executor ex, std::uint16_t const port ) {
+  auto client = FIONA_TASK( fiona::executor ex, std::uint16_t const port )
+  {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -364,7 +370,8 @@ TEST_CASE( "buffer exhaustion" ) {
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "concurrent send and recv" ) {
+TEST_CASE( "concurrent send and recv" )
+{
   constexpr static std::string_view const server_msg =
       "hello world from the server!";
   constexpr static std::string_view const client_msg =
@@ -377,9 +384,11 @@ TEST_CASE( "concurrent send and recv" ) {
   constexpr static int const num_clients = 500;
   constexpr static int const num_msgs = 100;
 
-  struct server_op {
+  struct server_op
+  {
     static fiona::task<void> start( fiona::tcp::acceptor acceptor,
-                                    int const num_clients ) {
+                                    int const num_clients )
+    {
       for ( int i = 0; i < num_clients; ++i ) {
         auto m_stream = co_await acceptor.async_accept();
         CHECK( m_stream.has_value() );
@@ -392,7 +401,8 @@ TEST_CASE( "concurrent send and recv" ) {
     }
 
     static fiona::task<void> send_server_msg( fiona::tcp::stream stream,
-                                              int idx ) {
+                                              int idx )
+    {
       if ( idx == 0 ) {
         co_return;
       }
@@ -405,7 +415,8 @@ TEST_CASE( "concurrent send and recv" ) {
       co_return;
     }
 
-    static fiona::task<void> session( fiona::tcp::stream stream ) {
+    static fiona::task<void> session( fiona::tcp::stream stream )
+    {
       auto ex = stream.get_executor();
       stream.set_buffer_group( 0 );
 
@@ -435,9 +446,11 @@ TEST_CASE( "concurrent send and recv" ) {
     }
   };
 
-  struct client_op {
+  struct client_op
+  {
     static fiona::task<void> start( fiona::executor ex,
-                                    std::uint16_t const port ) {
+                                    std::uint16_t const port )
+    {
       fiona::tcp::client client( ex );
 
       auto ipv4_addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -475,7 +488,8 @@ TEST_CASE( "concurrent send and recv" ) {
     }
 
     static fiona::task<void> send_client_msg( fiona::tcp::stream stream,
-                                              int idx ) {
+                                              int idx )
+    {
       if ( idx == 0 ) {
         co_return;
       }

@@ -41,14 +41,16 @@ namespace tcp {
 namespace {
 
 BOOST_NOINLINE BOOST_NORETURN inline void
-throw_busy() {
+throw_busy()
+{
   fiona::detail::throw_errno_as_error_code( EBUSY );
 }
 } // namespace
 
 namespace detail {
 
-stream_impl::~stream_impl() {
+stream_impl::~stream_impl()
+{
   if ( fd_ >= 0 ) {
     auto ring = fiona::detail::executor_access_policy::ring( ex_ );
     auto sqe = fiona::detail::get_sqe( ring );
@@ -69,7 +71,8 @@ stream_impl::send_frame::~send_frame() = default;
 stream_impl::recv_frame::~recv_frame() = default;
 stream_impl::timeout_frame::~timeout_frame() = default;
 
-struct accept_frame : public fiona::detail::awaitable_base {
+struct accept_frame : public fiona::detail::awaitable_base
+{
   acceptor_impl* pacceptor_ = nullptr;
   std::coroutine_handle<> h_;
   int peer_fd_ = -1;
@@ -80,7 +83,8 @@ struct accept_frame : public fiona::detail::awaitable_base {
   accept_frame( acceptor_impl* pacceptor ) : pacceptor_( pacceptor ) {}
   virtual ~accept_frame() override;
 
-  void reset() {
+  void reset()
+  {
     h_ = nullptr;
     peer_fd_ = -1;
     initiated_ = false;
@@ -89,19 +93,22 @@ struct accept_frame : public fiona::detail::awaitable_base {
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override {
+  std::coroutine_handle<> handle() noexcept override
+  {
     return boost::exchange( h_, nullptr );
   }
 };
 
-struct acceptor_impl : public virtual ref_count, public accept_frame {
+struct acceptor_impl : public virtual ref_count, public accept_frame
+{
   sockaddr_storage addr_storage_ = {};
   executor ex_;
   int fd_ = -1;
   bool is_ipv4_ = true;
 
   acceptor_impl( executor ex, sockaddr const* addr, int const backlog )
-      : accept_frame( this ), ex_( ex ) {
+      : accept_frame( this ), ex_( ex )
+  {
     auto const addrlen = static_cast<socklen_t>( addr->sa_family == AF_INET6
                                                      ? sizeof( sockaddr_in6 )
                                                      : sizeof( sockaddr_in ) );
@@ -164,24 +171,32 @@ struct acceptor_impl : public virtual ref_count, public accept_frame {
   }
 
   acceptor_impl( executor ex, sockaddr_in const addr, int const backlog )
-      : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ),
-                       backlog ) {}
+      : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ), backlog )
+  {
+  }
 
   acceptor_impl( executor ex, sockaddr_in6 const addr, int const backlog )
-      : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ),
-                       backlog ) {}
+      : acceptor_impl( ex, reinterpret_cast<sockaddr const*>( &addr ), backlog )
+  {
+  }
 
 public:
-  acceptor_impl( executor ex, in_addr ipv4_addr, std::uint16_t const port,
+  acceptor_impl( executor ex,
+                 in_addr ipv4_addr,
+                 std::uint16_t const port,
                  int const backlog )
       : acceptor_impl( ex,
                        sockaddr_in{ .sin_family = AF_INET,
                                     .sin_port = port,
                                     .sin_addr = ipv4_addr,
                                     .sin_zero = { 0 } },
-                       backlog ) {}
+                       backlog )
+  {
+  }
 
-  acceptor_impl( executor ex, in6_addr ipv6_addr, std::uint16_t const port,
+  acceptor_impl( executor ex,
+                 in6_addr ipv6_addr,
+                 std::uint16_t const port,
                  int const backlog )
       : acceptor_impl( ex,
                        sockaddr_in6{ .sin6_family = AF_INET6,
@@ -189,11 +204,14 @@ public:
                                      .sin6_flowinfo = 0,
                                      .sin6_addr = ipv6_addr,
                                      .sin6_scope_id = 0 },
-                       backlog ) {}
+                       backlog )
+  {
+  }
 
   virtual ~acceptor_impl() override;
 
-  std::uint16_t port() const noexcept {
+  std::uint16_t port() const noexcept
+  {
     if ( is_ipv4_ ) {
       auto paddr = reinterpret_cast<sockaddr_in const*>( &addr_storage_ );
       return ntohs( paddr->sin_port );
@@ -205,17 +223,20 @@ public:
 };
 
 void FIONA_DECL
-intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept {
+intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept
+{
   intrusive_ptr_add_ref( static_cast<ref_count*>( pacceptor ) );
 }
 
 void FIONA_DECL
-intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept {
+intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept
+{
   intrusive_ptr_release( static_cast<ref_count*>( pacceptor ) );
 }
 
 void
-detail::accept_frame::await_process_cqe( io_uring_cqe* cqe ) {
+detail::accept_frame::await_process_cqe( io_uring_cqe* cqe )
+{
   auto res = cqe->res;
   if ( res < 0 ) {
     BOOST_ASSERT( peer_fd_ >= 0 );
@@ -226,7 +247,8 @@ detail::accept_frame::await_process_cqe( io_uring_cqe* cqe ) {
   done_ = true;
 }
 
-acceptor_impl::~acceptor_impl() {
+acceptor_impl::~acceptor_impl()
+{
   if ( fd_ >= 0 ) {
     auto ring = fiona::detail::executor_access_policy::ring( ex_ );
     auto sqe = fiona::detail::get_sqe( ring );
@@ -247,33 +269,42 @@ accept_frame::~accept_frame() {}
 inline constexpr int const static default_backlog = 256;
 
 acceptor::acceptor( executor ex, sockaddr const* addr )
-    : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) } {}
+    : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) }
+{
+}
 
 std::uint16_t
-acceptor::port() const noexcept {
+acceptor::port() const noexcept
+{
   return pacceptor_->port();
 }
 
 executor
-acceptor::get_executor() const noexcept {
+acceptor::get_executor() const noexcept
+{
   return pacceptor_->ex_;
 }
 
 accept_awaitable
-acceptor::async_accept() {
+acceptor::async_accept()
+{
   return { pacceptor_ };
 }
 
 accept_raw_awaitable
-acceptor::async_accept_raw() {
+acceptor::async_accept_raw()
+{
   return { pacceptor_ };
 }
 
 accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
-    : pacceptor_( pacceptor ) {}
+    : pacceptor_( pacceptor )
+{
+}
 
-accept_awaitable::~accept_awaitable() {
+accept_awaitable::~accept_awaitable()
+{
   auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
   if ( af.initiated_ && !af.done_ ) {
     auto ex = pacceptor_->ex_;
@@ -290,7 +321,8 @@ accept_awaitable::~accept_awaitable() {
 }
 
 void
-accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
+accept_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto ex = pacceptor_->ex_;
   auto fd = pacceptor_->fd_;
   auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
@@ -320,7 +352,8 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<stream>
-accept_awaitable::await_resume() {
+accept_awaitable::await_resume()
+{
   auto ex = pacceptor_->ex_;
   auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
   auto peer_fd = af.peer_fd_;
@@ -337,10 +370,13 @@ accept_awaitable::await_resume() {
 
 accept_raw_awaitable::accept_raw_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
-    : accept_awaitable( pacceptor ) {}
+    : accept_awaitable( pacceptor )
+{
+}
 
 result<int>
-accept_raw_awaitable::await_resume() {
+accept_raw_awaitable::await_resume()
+{
   auto ex = pacceptor_->ex_;
   auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
   auto peer_fd = af.peer_fd_;
@@ -356,20 +392,25 @@ accept_raw_awaitable::await_resume() {
 namespace detail {
 
 void FIONA_DECL
-intrusive_ptr_add_ref( stream_impl* pstream ) noexcept {
+intrusive_ptr_add_ref( stream_impl* pstream ) noexcept
+{
   intrusive_ptr_add_ref( static_cast<ref_count*>( pstream ) );
 }
 
 void FIONA_DECL
-intrusive_ptr_release( stream_impl* pstream ) noexcept {
+intrusive_ptr_release( stream_impl* pstream ) noexcept
+{
   intrusive_ptr_release( static_cast<ref_count*>( pstream ) );
 }
 } // namespace detail
 
 stream::stream( executor ex, int fd )
-    : pstream_( new detail::stream_impl( ex, fd ) ) {}
+    : pstream_( new detail::stream_impl( ex, fd ) )
+{
+}
 
-stream::~stream() {
+stream::~stream()
+{
   if ( !pstream_ ) {
     return;
   }
@@ -392,7 +433,8 @@ stream::~stream() {
 }
 
 void
-stream::timeout( __kernel_timespec ts ) {
+stream::timeout( __kernel_timespec ts )
+{
   pstream_->ts_ = ts;
 
   auto ex = pstream_->ex_;
@@ -414,7 +456,8 @@ stream::timeout( __kernel_timespec ts ) {
 }
 
 void
-stream::cancel_timer() {
+stream::cancel_timer()
+{
   if ( pstream_ && pstream_->timeout_frame::initiated_ ) {
     pstream_->timeout_frame::cancelled_ = true;
     auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
@@ -432,7 +475,8 @@ stream::cancel_timer() {
 }
 
 void
-stream::cancel_recv() {
+stream::cancel_recv()
+{
   if ( pstream_ && pstream_->recv_frame::initiated_ ) {
     auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
@@ -448,12 +492,14 @@ stream::cancel_recv() {
 }
 
 executor
-stream::get_executor() const noexcept {
+stream::get_executor() const noexcept
+{
   return pstream_->ex_;
 }
 
 void
-stream::set_buffer_group( std::uint16_t bgid ) {
+stream::set_buffer_group( std::uint16_t bgid )
+{
   auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
   if ( rf.initiated_ ) {
     throw_busy();
@@ -463,40 +509,48 @@ stream::set_buffer_group( std::uint16_t bgid ) {
 }
 
 stream_close_awaitable
-stream::async_close() {
+stream::async_close()
+{
   return { pstream_ };
 }
 
 stream_cancel_awaitable
-stream::async_cancel() {
+stream::async_cancel()
+{
   return { pstream_ };
 }
 
 send_awaitable
-stream::async_send( std::string_view msg ) {
+stream::async_send( std::string_view msg )
+{
   return async_send( std::span{
       reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
 }
 
 send_awaitable
-stream::async_send( std::span<unsigned char const> buf ) {
+stream::async_send( std::span<unsigned char const> buf )
+{
   return { buf, pstream_ };
 }
 
 recv_awaitable
-stream::async_recv() {
+stream::async_recv()
+{
   // BOOST_ASSERT( pstream_->recv_frame::buffer_group_id_ >= 0 );
   return { pstream_ };
 }
 
 stream_close_awaitable::stream_close_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream ) {}
+    : pstream_( pstream )
+{
+}
 
 stream_close_awaitable::~stream_close_awaitable() {}
 
 void
-stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
+stream_close_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto ex = pstream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
@@ -517,7 +571,8 @@ stream_close_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<void>
-stream_close_awaitable::await_resume() {
+stream_close_awaitable::await_resume()
+{
   auto& cf = static_cast<detail::close_frame&>( *pstream_ );
   auto res = cf.res_;
   cf.reset();
@@ -531,15 +586,19 @@ stream_close_awaitable::await_resume() {
 
 stream_cancel_awaitable::stream_cancel_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream ) {}
+    : pstream_( pstream )
+{
+}
 
 bool
-stream_cancel_awaitable::await_ready() const {
+stream_cancel_awaitable::await_ready() const
+{
   return pstream_->fd_ == -1;
 }
 
 void
-stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
+stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto ex = pstream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto fd = pstream_->fd_;
@@ -563,7 +622,8 @@ stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<int>
-stream_cancel_awaitable::await_resume() {
+stream_cancel_awaitable::await_resume()
+{
   auto fd = pstream_->fd_;
   auto res = pstream_->cancel_frame::res_;
 
@@ -583,9 +643,12 @@ stream_cancel_awaitable::await_resume() {
 send_awaitable::send_awaitable(
     std::span<unsigned char const> buf,
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : buf_( buf ), pstream_( pstream ) {}
+    : buf_( buf ), pstream_( pstream )
+{
+}
 
-send_awaitable::~send_awaitable() {
+send_awaitable::~send_awaitable()
+{
   if ( pstream_->send_frame::initiated_ && !pstream_->send_frame::done_ ) {
     auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
@@ -599,7 +662,8 @@ send_awaitable::~send_awaitable() {
 }
 
 void
-send_awaitable::await_suspend( std::coroutine_handle<> h ) {
+send_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto& sf = static_cast<detail::send_frame&>( *pstream_ );
 
   if ( sf.initiated_ ) {
@@ -627,7 +691,8 @@ send_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<std::size_t>
-send_awaitable::await_resume() {
+send_awaitable::await_resume()
+{
   auto res = pstream_->send_frame::res_;
 
   pstream_->send_frame::reset();
@@ -641,17 +706,21 @@ send_awaitable::await_resume() {
 
 recv_awaitable::recv_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream ) {}
+    : pstream_( pstream )
+{
+}
 
 recv_awaitable::~recv_awaitable() {}
 
 bool
-recv_awaitable::await_ready() const {
+recv_awaitable::await_ready() const
+{
   return !pstream_->recv_frame::buffers_.empty();
 }
 
 bool
-recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
+recv_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
   rf.h_ = h;
 
@@ -677,7 +746,8 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<recv_buffer_sequence>
-recv_awaitable::await_resume() {
+recv_awaitable::await_resume()
+{
   auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
 
   BOOST_ASSERT( !rf.buffers_.empty() || rf.ec_ );
@@ -728,7 +798,8 @@ client_impl::connect_frame::~connect_frame() {}
 } // namespace detail
 
 client::client( executor ex ) { pstream_ = new detail::client_impl( ex ); }
-client::~client() {
+client::~client()
+{
   if ( !pstream_ ) {
     return;
   }
@@ -754,16 +825,19 @@ client::~client() {
 }
 
 connect_awaitable
-client::async_connect( sockaddr_in6 const* addr ) {
+client::async_connect( sockaddr_in6 const* addr )
+{
   return async_connect( reinterpret_cast<sockaddr const*>( addr ) );
 }
 connect_awaitable
-client::async_connect( sockaddr_in const* addr ) {
+client::async_connect( sockaddr_in const* addr )
+{
   return async_connect( reinterpret_cast<sockaddr const*>( addr ) );
 }
 
 connect_awaitable
-client::async_connect( sockaddr const* addr ) {
+client::async_connect( sockaddr const* addr )
+{
   auto const is_ipv4 = ( addr->sa_family == AF_INET );
 
   if ( !is_ipv4 && ( addr->sa_family != AF_INET6 ) ) {
@@ -779,9 +853,12 @@ client::async_connect( sockaddr const* addr ) {
 
 connect_awaitable::connect_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream ) {}
+    : pstream_( pstream )
+{
+}
 
-connect_awaitable::~connect_awaitable() {
+connect_awaitable::~connect_awaitable()
+{
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
   auto ex = pclient->ex_;
@@ -812,7 +889,8 @@ connect_awaitable::~connect_awaitable() {
 }
 
 bool
-connect_awaitable::await_ready() const {
+connect_awaitable::await_ready() const
+{
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
   if ( pclient->socket_frame::initiated_ ) {
     throw_busy();
@@ -821,7 +899,8 @@ connect_awaitable::await_ready() const {
 }
 
 bool
-connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
+connect_awaitable::await_suspend( std::coroutine_handle<> h )
+{
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
   BOOST_ASSERT( !pclient->socket_frame::initiated_ );
@@ -898,7 +977,8 @@ connect_awaitable::await_suspend( std::coroutine_handle<> h ) {
 }
 
 result<void>
-connect_awaitable::await_resume() {
+connect_awaitable::await_resume()
+{
   auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
 
   auto& socket_frame = *static_cast<detail::socket_frame*>( pclient );

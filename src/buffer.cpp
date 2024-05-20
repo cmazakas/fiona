@@ -11,7 +11,8 @@ namespace fiona {
 namespace {
 
 std::size_t
-buffer_size( recv_buffer_sequence_view bufs ) {
+buffer_size( recv_buffer_sequence_view bufs )
+{
   std::size_t n = 0;
   for ( auto buf_view : bufs ) {
     n += buf_view.size();
@@ -20,7 +21,8 @@ buffer_size( recv_buffer_sequence_view bufs ) {
 }
 
 std::size_t
-buffer_copy( std::span<unsigned char> dst, recv_buffer_sequence_view bufs ) {
+buffer_copy( std::span<unsigned char> dst, recv_buffer_sequence_view bufs )
+{
   std::size_t n = 0;
 
   auto end = bufs.end();
@@ -43,7 +45,8 @@ buffer_copy( std::span<unsigned char> dst, recv_buffer_sequence_view bufs ) {
 }
 
 std::size_t
-buffer_copy( std::span<char> dst, recv_buffer_sequence_view bufs ) {
+buffer_copy( std::span<char> dst, recv_buffer_sequence_view bufs )
+{
   return buffer_copy(
       std::span( reinterpret_cast<unsigned char*>( dst.data() ), dst.size() ),
       bufs );
@@ -52,7 +55,8 @@ buffer_copy( std::span<char> dst, recv_buffer_sequence_view bufs ) {
 } // namespace
 
 std::string
-recv_buffer_sequence_view::to_string() const {
+recv_buffer_sequence_view::to_string() const
+{
   auto n = buffer_size( *this );
   std::string s( n, '\0' );
   buffer_copy( std::span( s.data(), s.size() ), *this );
@@ -60,7 +64,8 @@ recv_buffer_sequence_view::to_string() const {
 }
 
 std::vector<unsigned char>
-recv_buffer_sequence_view::to_bytes() const {
+recv_buffer_sequence_view::to_bytes() const
+{
   auto n = buffer_size( *this );
   std::vector<unsigned char> s( n, 0x00 );
   buffer_copy( s, *this );

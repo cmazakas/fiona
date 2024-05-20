@@ -11,15 +11,18 @@
 
 namespace fiona {
 
-struct error_code : public std::error_code {
+struct error_code : public std::error_code
+{
   inline friend std::ostream& operator<<( std::ostream& os,
-                                          error_code const& ec ) {
+                                          error_code const& ec )
+  {
     os << static_cast<std::error_code const&>( ec ) << ":"
        << std::strerror( ec.value() );
     return os;
   }
 
-  static error_code from_errno( int e ) {
+  static error_code from_errno( int e )
+  {
     BOOST_ASSERT( e != 0 );
     return { std::make_error_code( static_cast<std::errc>( e ) ) };
   }
@@ -28,7 +31,8 @@ struct error_code : public std::error_code {
 namespace detail {
 
 BOOST_NOINLINE BOOST_NORETURN inline void
-throw_errno_as_error_code( int e ) {
+throw_errno_as_error_code( int e )
+{
   throw std::system_error( error_code::from_errno( e ) );
 }
 

@@ -6,7 +6,8 @@
 #include <iterator>
 #include <vector>
 
-TEST_CASE( "buffer_test - recv_buffer" ) {
+TEST_CASE( "buffer_test - recv_buffer" )
+{
   {
     fiona::recv_buffer buf;
     CHECK( buf.data() != nullptr );
@@ -79,7 +80,8 @@ TEST_CASE( "buffer_test - recv_buffer" ) {
   }
 }
 
-TEST_CASE( "buffer_test - owned buffer sequence" ) {
+TEST_CASE( "buffer_test - owned buffer sequence" )
+{
   fiona::recv_buffer_sequence buf_seq;
   CHECK( buf_seq.num_bufs() == 0 );
   CHECK( buf_seq.empty() );
@@ -145,7 +147,8 @@ TEST_CASE( "buffer_test - owned buffer sequence" ) {
   CHECK( pos == buf_seq.begin() );
 }
 
-TEST_CASE( "buffer_test - end() stability" ) {
+TEST_CASE( "buffer_test - end() stability" )
+{
   fiona::recv_buffer_sequence buf_seq;
   auto end = buf_seq.end();
 
@@ -155,7 +158,8 @@ TEST_CASE( "buffer_test - end() stability" ) {
   CHECK( end == buf_seq.begin() );
 }
 
-TEST_CASE( "buffer_test - move stability" ) {
+TEST_CASE( "buffer_test - move stability" )
+{
   fiona::recv_buffer_sequence buf_seq;
   for ( int i = 0; i < 16; ++i ) {
     buf_seq.push_back( fiona::recv_buffer( 128 ) );
@@ -195,13 +199,15 @@ TEST_CASE( "buffer_test - move stability" ) {
   } );
 }
 
-TEST_CASE( "buffer_test - push_back empty" ) {
+TEST_CASE( "buffer_test - push_back empty" )
+{
   fiona::recv_buffer_sequence bs;
   bs.push_back( fiona::recv_buffer( 0 ) );
   CHECK( bs.num_bufs() == 1 );
 }
 
-TEST_CASE( "buffer_test - concat" ) {
+TEST_CASE( "buffer_test - concat" )
+{
   {
     fiona::recv_buffer_sequence bs1, bs2;
     bs1.concat( std::move( bs2 ) );

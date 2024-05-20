@@ -16,7 +16,8 @@ struct io_uring_cqe;
 namespace fiona {
 namespace detail {
 
-struct FIONA_DECL ref_count {
+struct FIONA_DECL ref_count
+{
   int count_ = 0;
   virtual ~ref_count();
 
@@ -24,18 +25,21 @@ struct FIONA_DECL ref_count {
 };
 
 inline void
-intrusive_ptr_add_ref( ref_count* prc ) noexcept {
+intrusive_ptr_add_ref( ref_count* prc ) noexcept
+{
   ++prc->count_;
 }
 
 inline void
-intrusive_ptr_release( ref_count* prc ) {
+intrusive_ptr_release( ref_count* prc )
+{
   if ( --prc->count_ == 0 ) {
     delete prc;
   }
 }
 
-struct FIONA_DECL awaitable_base : public virtual ref_count {
+struct FIONA_DECL awaitable_base : public virtual ref_count
+{
   virtual ~awaitable_base() override;
   virtual void await_process_cqe( io_uring_cqe* cqe ) = 0;
   virtual std::coroutine_handle<> handle() noexcept = 0;

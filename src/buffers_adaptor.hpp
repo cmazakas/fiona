@@ -6,4 +6,5 @@
 
 #include <fiona/detail/config.hpp>
 
-namespace fiona {} // namespace fiona
+namespace fiona {
+} // namespace fiona

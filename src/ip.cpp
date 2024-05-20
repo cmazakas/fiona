@@ -12,7 +12,8 @@ namespace fiona {
 namespace ip {
 
 sockaddr_in FIONA_DECL
-make_sockaddr_ipv4( char const* ipv4_addr, std::uint16_t const port ) {
+make_sockaddr_ipv4( char const* ipv4_addr, std::uint16_t const port )
+{
   int ret = -1;
 
   sockaddr_in addr = {};
@@ -33,7 +34,8 @@ make_sockaddr_ipv4( char const* ipv4_addr, std::uint16_t const port ) {
 }
 
 sockaddr_in6 FIONA_DECL
-make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port ) {
+make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port )
+{
   int ret = -1;
 
   sockaddr_in6 addr = {};
@@ -54,7 +56,8 @@ make_sockaddr_ipv6( char const* ipv6_addr, std::uint16_t const port ) {
 }
 
 std::string FIONA_DECL
-to_string( sockaddr_in const* p_ipv4_addr ) {
+to_string( sockaddr_in const* p_ipv4_addr )
+{
   std::string s( INET_ADDRSTRLEN, '\0' );
   auto p_dst = inet_ntop( AF_INET, &p_ipv4_addr->sin_addr, s.data(),
                           static_cast<unsigned>( s.size() ) );

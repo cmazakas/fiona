@@ -13,7 +13,8 @@
 using namespace std::chrono_literals;
 
 void
-fiona_post_bench() {
+fiona_post_bench()
+{
   fiona::io_context ioc;
   std::vector<std::jthread> threads;
 

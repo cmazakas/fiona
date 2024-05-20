@@ -16,7 +16,8 @@ struct addrinfo;
 
 namespace fiona {
 
-struct dns_entry_list {
+struct dns_entry_list
+{
 private:
   addrinfo* head_ = nullptr;
 
@@ -40,7 +41,8 @@ public:
   addrinfo const* data() const noexcept;
 };
 
-struct dns_awaitable {
+struct dns_awaitable
+{
 private:
   executor ex_;
   std::shared_ptr<dns_frame> pframe_;
@@ -62,7 +64,8 @@ public:
   result<dns_entry_list> await_resume();
 };
 
-struct dns_resolver {
+struct dns_resolver
+{
 private:
   fiona::executor ex_;
   std::shared_ptr<dns_frame> pframe_ = nullptr;

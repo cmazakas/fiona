@@ -19,7 +19,8 @@ using namespace std::chrono_literals;
 namespace asio = boost::asio;
 
 void
-asio_post_bench() {
+asio_post_bench()
+{
   asio::io_context ioc;
   std::vector<std::jthread> threads;
 
@@ -36,14 +37,11 @@ asio_post_bench() {
     co_return;
   };
 
-  asio::co_spawn(
-      ex,
-      [ptimer = &timer]() mutable -> asio::awaitable<void> {
-        ptimer->expires_after( 100s );
-        co_await ptimer->async_wait( asio::use_awaitable );
-        co_return;
-      },
-      asio::detached );
+  asio::co_spawn( ex, [ptimer = &timer]() mutable -> asio::awaitable<void> {
+    ptimer->expires_after( 100s );
+    co_await ptimer->async_wait( asio::use_awaitable );
+    co_return;
+  }, asio::detached );
 
   for ( int i = 0; i < num_threads; ++i ) {
     threads.emplace_back( [ex, task] {
