@@ -38,7 +38,7 @@ private:
   std::shared_ptr<detail::tls_context_frame> p_tls_frame_;
 
 public:
-  FIONA_DECL
+  FIONA_TLS_DECL
   tls_context();
 
   ~tls_context() = default;
@@ -46,17 +46,17 @@ public:
   tls_context( tls_context const& ) = default;
   tls_context& operator=( tls_context const& ) = default;
 
-  FIONA_DECL
+  FIONA_TLS_DECL
   void add_certificate_authority( std::string_view filepath );
 
-  FIONA_DECL
+  FIONA_TLS_DECL
   void add_certificate_key_pair( std::string_view cert_path,
                                  std::string_view key_path );
 };
 
 //------------------------------------------------------------------------------
 
-struct FIONA_DECL client : private tcp::client
+struct FIONA_TLS_DECL client : private tcp::client
 {
 public:
   client() = default;
@@ -83,7 +83,7 @@ public:
   task<result<void>> async_shutdown();
 };
 
-struct FIONA_DECL server : private tcp::stream
+struct FIONA_TLS_DECL server : private tcp::stream
 {
 public:
   server() = default;
@@ -106,6 +106,7 @@ public:
   task<result<std::size_t>> async_send( std::span<unsigned char const> buf );
   task<result<std::size_t>> async_send( std::string_view msg );
   task<result<recv_buffer_sequence>> async_recv();
+  task<result<void>> async_shutdown();
 };
 
 } // namespace tls

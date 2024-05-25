@@ -398,8 +398,12 @@ client( fiona::executor ex, std::uint16_t const port )
 }
 
 fiona::task<void>
-tls_server( fiona::tls::tls_context ctx, fiona::tcp::acceptor acceptor )
+tls_server( fiona::tcp::acceptor acceptor )
 {
+  fiona::tls::tls_context ctx;
+  ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
+                                "../../test/tls/botan/server.key.pem" );
+
   auto m_fd = co_await acceptor.async_accept_raw();
   auto ex = acceptor.get_executor();
 
@@ -412,24 +416,41 @@ tls_server( fiona::tls::tls_context ctx, fiona::tcp::acceptor acceptor )
   auto m_ok = co_await stream.async_handshake();
   CHECK( m_ok.has_value() );
 
-  co_await stream.async_close();
+  auto m_bufs = co_await stream.async_recv();
+  CHECK( m_bufs.has_value() );
+
+  auto msg = m_bufs->to_string();
+  CHECK( msg == "hello, world! encryption is great!" );
+
+  auto m_sent = co_await stream.async_send( "hello from the server!" );
+  CHECK( m_sent.has_value() );
+
+  m_ok = co_await stream.async_shutdown();
+  CHECK( m_ok.has_value() );
+
+  m_ok = co_await stream.async_close();
+  CHECK( m_ok.has_value() );
+
+  ++num_runs;
 }
 
 fiona::task<void>
-tls_client( fiona::tls::tls_context ctx,
-            fiona::executor ex,
-            std::uint16_t const port )
+tls_client( fiona::executor ex, std::uint16_t const port )
 {
+  fiona::tls::tls_context ctx;
+  ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
+
   fiona::tls::client client( ctx, ex );
 
   ex.register_buffer_sequence( 4 * 1024, 8, 1 );
   client.set_buffer_group( 1 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
-  auto mok = co_await client.async_connect( &addr );
-  REQUIRE( mok.has_value() );
+  auto m_ok = co_await client.async_connect( &addr );
+  REQUIRE( m_ok.has_value() );
 
-  co_await client.async_handshake();
+  m_ok = co_await client.async_handshake();
+  CHECK( m_ok.has_value() );
 
   co_await client.async_send( "hello, world! encryption is great!" );
   auto mbufs = co_await client.async_recv();
@@ -438,10 +459,11 @@ tls_client( fiona::tls::tls_context ctx,
   auto msg = mbufs.value().to_string();
   CHECK( msg == "hello from the server!" );
 
-  mok = co_await client.async_shutdown();
-  CHECK( mok.has_value() );
+  m_ok = co_await client.async_shutdown();
+  CHECK( m_ok.has_value() );
 
-  mok = co_await client.async_close();
+  m_ok = co_await client.async_close();
+  CHECK( m_ok.has_value() );
 
   ++num_runs;
 
@@ -479,13 +501,8 @@ TEST_CASE( "tls::client hello world" )
 
   auto port = acceptor.port();
 
-  fiona::tls::tls_context ctx;
-  ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
-  ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
-                                "../../test/tls/botan/server.key.pem" );
-
-  ioc.spawn( tls_server( ctx, std::move( acceptor ) ) );
-  ioc.spawn( tls_client( ctx, ioc.get_executor(), port ) );
+  ioc.spawn( tls_server( std::move( acceptor ) ) );
+  ioc.spawn( tls_client( ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );

@@ -468,5 +468,74 @@ server::async_handshake()
   co_return result<void>{};
 }
 
+task<result<recv_buffer_sequence>>
+server::async_recv()
+{
+  auto& f = static_cast<detail::server_impl&>( *pstream_ );
+  auto& tls_server = f.tls_server_;
+  auto& recv_seq = f.p_callbacks_->recv_seq_;
+
+  while ( !f.p_callbacks_->received_record_ ) {
+    auto mbuffers = co_await tcp::stream::async_recv();
+    if ( mbuffers.has_error() ) {
+      co_return mbuffers.error();
+    }
+
+    auto& buffers = mbuffers.value();
+    auto data = buffers.to_bytes();
+    f.p_callbacks_->recv_seq_.concat( std::move( buffers ) );
+
+    tls_server.received_data( data );
+  }
+
+  co_return std::move( recv_seq );
+}
+
+task<result<std::size_t>>
+server::async_send( std::span<unsigned char const> data )
+{
+  auto& f = *static_cast<detail::server_impl*>( pstream_.get() );
+  auto& tls_server = f.tls_server_;
+  auto& send_buf = f.p_callbacks_->send_buf_;
+
+  tls_server.send( data );
+
+  auto mn = co_await tcp::stream::async_send( send_buf );
+  send_buf.clear();
+  if ( mn.has_error() ) {
+    co_return mn.error();
+  }
+
+  co_return data.size();
+}
+
+task<result<std::size_t>>
+server::async_send( std::string_view msg )
+{
+  return async_send(
+      { reinterpret_cast<unsigned char const*>( msg.data() ), msg.size() } );
+}
+
+task<result<void>>
+server::async_shutdown()
+{
+  auto& f = static_cast<detail::server_impl&>( *pstream_ );
+  auto& tls_server = f.tls_server_;
+  auto& send_buf = f.p_callbacks_->send_buf_;
+
+  auto m_bufs = co_await tcp::stream::async_recv();
+  tls_server.received_data( m_bufs.value().to_bytes() );
+  if ( !f.p_callbacks_->close_notify_received_ ) {
+    fiona::detail::throw_errno_as_error_code( EINVAL );
+  }
+
+  auto mnbytes = co_await tcp::stream::async_send( send_buf );
+  if ( mnbytes.has_error() ) {
+    fiona::detail::throw_errno_as_error_code( EINVAL );
+  }
+  send_buf.clear();
+
+  co_return result<void>();
+}
 } // namespace tls
 } // namespace fiona
