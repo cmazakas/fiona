@@ -168,6 +168,7 @@ struct acceptor_impl : public virtual ref_count, public accept_frame
     // fd_ = fd;
     fd_ = off;
     is_ipv4_ = is_ipv4;
+    close( fd );
   }
 
   acceptor_impl( executor ex, sockaddr_in const addr, int const backlog )
