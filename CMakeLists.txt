@@ -73,10 +73,10 @@ add_library(Fiona::fiona ALIAS fiona)
 
 if(Botan_FOUND)
   add_library(fiona_tls src/tls.cpp)
-  target_link_libraries(fiona_tls PUBLIC fiona Botan::Botan-static)
+  target_link_libraries(fiona_tls PUBLIC Fiona::fiona Botan::Botan-static)
   add_library(Fiona::tls ALIAS fiona_tls)
 
-  target_compile_definitions(fiona_tls PRIVATE FIONA_SOURCE)
+  target_compile_definitions(fiona_tls PRIVATE FIONA_TLS_SOURCE)
   if (BUILD_SHARED_LIBS)
     target_compile_definitions(fiona_tls PRIVATE FIONA_DYN_LINK)
   endif()
