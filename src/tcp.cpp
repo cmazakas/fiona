@@ -783,10 +783,13 @@ recv_awaitable::await_resume()
     ++len;
   }
 
-  io_uring_buf_ring_advance( pbuf_ring->get(), len );
+  if ( len > 0 ) {
+    io_uring_buf_ring_advance( pbuf_ring->get(), len );
+  }
 
   auto buffers = std::move( rf.buffers_ );
   BOOST_ASSERT( rf.buffers_.empty() );
+  BOOST_ASSERT( buffers.num_bufs() > 0 );
   return buffers;
 }
 

@@ -100,6 +100,7 @@ public:
   bool operator==( server const& ) const = default;
 
   using tcp::stream::async_close;
+  using tcp::stream::get_executor;
   using tcp::stream::set_buffer_group;
 
   task<result<void>> async_handshake();

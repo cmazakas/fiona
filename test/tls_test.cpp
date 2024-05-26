@@ -31,6 +31,8 @@
 #include <botan/x509path.h>
 #include <botan/x509self.h>
 
+#include <catch2/generators/catch_generators_random.hpp>
+
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -503,6 +505,174 @@ TEST_CASE( "tls::client hello world" )
 
   ioc.spawn( tls_server( std::move( acceptor ) ) );
   ioc.spawn( tls_client( ioc.get_executor(), port ) );
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
+
+TEST_CASE( "large messages" )
+{
+  struct server_op
+  {
+    static fiona::task<void> recv_op( fiona::tls::server stream,
+                                      std::span<std::uint8_t const> msg )
+    {
+      std::vector<std::uint8_t> received_msg;
+
+      while ( received_msg.size() < msg.size() ) {
+        auto m_bufs = co_await stream.async_recv();
+        CHECK( m_bufs.has_value() );
+
+        auto bufs = std::move( m_bufs.value() );
+        for ( auto buf : bufs ) {
+          auto m = buf.readable_bytes();
+          received_msg.insert( received_msg.end(), m.begin(), m.end() );
+        }
+      }
+
+      CHECK( received_msg.size() == msg.size() );
+      CHECK( std::equal( received_msg.begin(), received_msg.end(), msg.begin(),
+                         msg.end() ) );
+
+      co_return;
+    }
+
+    static fiona::task<void> send_op( fiona::tls::server stream,
+                                      std::span<std::uint8_t const> msg )
+    {
+      auto m_sent = co_await stream.async_send( msg );
+      CHECK( m_sent.has_value() );
+      CHECK( m_sent.value() == msg.size() );
+      co_return;
+    }
+
+    static fiona::task<void> run( fiona::tcp::acceptor acceptor,
+                                  std::span<std::uint8_t const> msg )
+    {
+      fiona::tls::tls_context ctx;
+      ctx.add_certificate_key_pair(
+          "/home/exbigboss/cpp/fiona/test/tls/botan/server.crt.pem",
+          "/home/exbigboss/cpp/fiona/test/tls/botan/server.key.pem" );
+
+      auto m_fd = co_await acceptor.async_accept_raw();
+      auto ex = acceptor.get_executor();
+
+      CHECK( m_fd.has_value() );
+      auto fd = m_fd.value();
+
+      fiona::tls::server stream( ctx, ex, fd );
+      ex.register_buffer_sequence( 4 * 1024, 8, 0 );
+      stream.set_buffer_group( 0 );
+      auto m_ok = co_await stream.async_handshake();
+      CHECK( m_ok.has_value() );
+
+      auto h1 = fiona::spawn( ex, recv_op( stream, msg ) );
+      auto h2 = fiona::spawn( ex, send_op( stream, msg ) );
+
+      co_await h1;
+      co_await h2;
+
+      m_ok = co_await stream.async_shutdown();
+      CHECK( m_ok.has_value() );
+
+      m_ok = co_await stream.async_close();
+      CHECK( m_ok.has_value() );
+
+      ++num_runs;
+      co_return;
+    }
+  };
+
+  struct client_op
+  {
+    static fiona::task<void> recv_op( fiona::tls::client stream,
+                                      std::span<std::uint8_t const> msg )
+    {
+      std::vector<std::uint8_t> received_msg;
+
+      while ( received_msg.size() < msg.size() ) {
+        auto m_bufs = co_await stream.async_recv();
+        CHECK( m_bufs.has_value() );
+
+        auto bufs = std::move( m_bufs ).value();
+        for ( auto buf : bufs ) {
+          auto m = buf.readable_bytes();
+          received_msg.insert( received_msg.end(), m.begin(), m.end() );
+        }
+      }
+
+      CHECK( received_msg.size() == msg.size() );
+      CHECK( std::equal( received_msg.begin(), received_msg.end(), msg.begin(),
+                         msg.end() ) );
+
+      co_return;
+    }
+
+    static fiona::task<void> send_op( fiona::tls::client stream,
+                                      std::span<std::uint8_t const> msg )
+    {
+      auto m_sent = co_await stream.async_send( msg );
+      CHECK( m_sent.has_value() );
+      CHECK( m_sent.value() == msg.size() );
+      co_return;
+    }
+
+    static fiona::task<void> run( fiona::executor ex,
+                                  std::uint16_t port,
+                                  std::span<std::uint8_t const> msg )
+    {
+      fiona::tls::tls_context ctx;
+      ctx.add_certificate_authority(
+          "/home/exbigboss/cpp/fiona/test/tls/botan/ca.crt.pem" );
+
+      fiona::tls::client client( ctx, ex );
+
+      ex.register_buffer_sequence( 4 * 1024, 8, 1 );
+      client.set_buffer_group( 1 );
+
+      auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
+      auto m_ok = co_await client.async_connect( &addr );
+      REQUIRE( m_ok.has_value() );
+
+      m_ok = co_await client.async_handshake();
+      CHECK( m_ok.has_value() );
+
+      auto h1 = fiona::spawn( ex, recv_op( client, msg ) );
+      auto h2 = fiona::spawn( ex, send_op( client, msg ) );
+
+      co_await h1;
+      co_await h2;
+
+      m_ok = co_await client.async_shutdown();
+      CHECK( m_ok.has_value() );
+
+      m_ok = co_await client.async_close();
+      CHECK( m_ok.has_value() );
+
+      ++num_runs;
+
+      co_return;
+    }
+  };
+
+  num_runs = 0;
+
+  std::size_t const msg_size = 1024 * 1024;
+  std::vector<std::uint8_t> msg( msg_size, 0x00 );
+  auto rng = Catch::Generators::random( 0, 255 );
+  for ( auto& b : msg ) {
+    b = static_cast<std::uint8_t>( rng.get() );
+  }
+
+  fiona::io_context ioc;
+
+  auto const addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
+  fiona::tcp::acceptor acceptor( ioc.get_executor(), &addr );
+
+  auto const port = acceptor.port();
+
+  ioc.spawn( server_op::run( std::move( acceptor ), msg ) );
+  ioc.spawn( client_op::run( ioc.get_executor(), port, msg ) );
   ioc.run();
 
   CHECK( num_runs == 2 );

@@ -149,7 +149,6 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
   std::vector<unsigned char> send_buf_;
   recv_buffer_sequence recv_seq_;
   bool received_record_ = false;
-
   bool close_notify_received_ = false;
   bool failed_cert_verification_ = false;
 
@@ -165,21 +164,14 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
   {
     received_record_ = true;
 
-    auto pos = recv_seq_.begin();
-    auto end = recv_seq_.end();
-    while ( !plaintext.empty() ) {
-      BOOST_ASSERT( pos != end );
-      auto buf_view = *pos;
-      auto n = std::min( buf_view.capacity(), plaintext.size() );
-      std::memcpy( buf_view.data(), plaintext.data(), n );
-      plaintext = plaintext.subspan( n );
-      buf_view.set_len( n );
-      ++pos;
+    recv_buffer buf( plaintext.size() );
+    {
+      auto bs = buf.spare_capacity_mut();
+      std::memcpy( bs.data(), plaintext.data(), bs.size() );
+      buf.set_len( bs.size() );
     }
 
-    for ( ; pos != end; ++pos ) {
-      ( *pos ).set_len( 0 );
-    }
+    recv_seq_.push_back( std::move( buf ) );
   }
 
   void tls_alert( Botan::TLS::Alert alert ) override
@@ -324,11 +316,11 @@ client::async_handshake()
   auto& send_buf = f.p_callbacks_->send_buf_;
 
   if ( tls_client.is_active() || tls_client.is_closed() ) {
-    fiona::detail::throw_errno_as_error_code( EINVAL );
+    co_return error_code::from_errno( EINVAL );
   }
 
   if ( send_buf.empty() ) {
-    fiona::detail::throw_errno_as_error_code( EINVAL );
+    co_return error_code::from_errno( EINVAL );
   }
 
   co_await tcp::stream::async_send( send_buf );
@@ -383,22 +375,20 @@ client::async_recv()
 {
   auto& f = static_cast<detail::client_impl&>( *pstream_ );
   auto& tls_client = f.tls_client_;
-  auto& recv_seq = f.p_callbacks_->recv_seq_;
 
   while ( !f.p_callbacks_->received_record_ ) {
-    auto mbuffers = co_await tcp::stream::async_recv();
-    if ( mbuffers.has_error() ) {
-      co_return mbuffers.error();
+    auto m_buffers = co_await tcp::stream::async_recv();
+    if ( m_buffers.has_error() ) {
+      co_return m_buffers.error();
     }
 
-    auto& buffers = mbuffers.value();
-    auto data = buffers.to_bytes();
-    f.p_callbacks_->recv_seq_.concat( std::move( buffers ) );
-
-    tls_client.received_data( data );
+    for ( auto buf : *m_buffers ) {
+      tls_client.received_data( buf.readable_bytes() );
+    }
   }
 
-  co_return std::move( recv_seq );
+  f.p_callbacks_->received_record_ = false;
+  co_return std::move( f.p_callbacks_->recv_seq_ );
 }
 
 task<result<void>>
@@ -446,7 +436,7 @@ server::async_handshake()
   auto& send_buf = f.p_callbacks_->send_buf_;
 
   if ( tls_server.is_active() || tls_server.is_closed() ) {
-    fiona::detail::throw_errno_as_error_code( EINVAL );
+    co_return error_code::from_errno( EINVAL );
   }
 
   while ( !tls_server.is_handshake_complete() ) {
@@ -473,22 +463,20 @@ server::async_recv()
 {
   auto& f = static_cast<detail::server_impl&>( *pstream_ );
   auto& tls_server = f.tls_server_;
-  auto& recv_seq = f.p_callbacks_->recv_seq_;
 
   while ( !f.p_callbacks_->received_record_ ) {
-    auto mbuffers = co_await tcp::stream::async_recv();
-    if ( mbuffers.has_error() ) {
-      co_return mbuffers.error();
+    auto m_buffers = co_await tcp::stream::async_recv();
+    if ( m_buffers.has_error() ) {
+      co_return m_buffers.error();
     }
 
-    auto& buffers = mbuffers.value();
-    auto data = buffers.to_bytes();
-    f.p_callbacks_->recv_seq_.concat( std::move( buffers ) );
-
-    tls_server.received_data( data );
+    for ( auto buf : *m_buffers ) {
+      tls_server.received_data( buf.readable_bytes() );
+    }
   }
 
-  co_return std::move( recv_seq );
+  f.p_callbacks_->received_record_ = false;
+  co_return std::move( f.p_callbacks_->recv_seq_ );
 }
 
 task<result<std::size_t>>
@@ -526,12 +514,12 @@ server::async_shutdown()
   auto m_bufs = co_await tcp::stream::async_recv();
   tls_server.received_data( m_bufs.value().to_bytes() );
   if ( !f.p_callbacks_->close_notify_received_ ) {
-    fiona::detail::throw_errno_as_error_code( EINVAL );
+    co_return error_code::from_errno( EINVAL );
   }
 
   auto mnbytes = co_await tcp::stream::async_send( send_buf );
   if ( mnbytes.has_error() ) {
-    fiona::detail::throw_errno_as_error_code( EINVAL );
+    co_return error_code::from_errno( EINVAL );
   }
   send_buf.clear();
 
