@@ -657,8 +657,8 @@ TEST_CASE( "large messages" )
 
   num_runs = 0;
 
-  std::size_t const msg_size = 1024 * 1024;
-  std::vector<std::uint8_t> msg( msg_size, 0x00 );
+  std::size_t const msg_size = 2 * 1024 * 1024;
+  std::vector<std::uint8_t> msg( msg_size, 0 );
   auto rng = Catch::Generators::random( 0, 255 );
   for ( auto& b : msg ) {
     b = static_cast<std::uint8_t>( rng.get() );

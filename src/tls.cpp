@@ -29,15 +29,15 @@
 #include <botan/x509path.h>
 #include <botan/x509self.h>
 
-#include "buffers_adaptor.hpp"
-#include "stream_impl.hpp"
-
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <ios>
 #include <memory>
 #include <vector>
+
+#include "buffers_adaptor.hpp"
+#include "stream_impl.hpp"
 
 using namespace std::chrono_literals;
 
@@ -147,10 +147,16 @@ struct tls_context_frame
 struct tls_callbacks final : public Botan::TLS::Callbacks
 {
   std::vector<unsigned char> send_buf_;
-  recv_buffer_sequence recv_seq_;
+  recv_buffer_sequence input_sequence_;
+  recv_buffer_sequence output_sequence_;
+
   bool received_record_ = false;
   bool close_notify_received_ = false;
   bool failed_cert_verification_ = false;
+
+  tls_callbacks() = default;
+  tls_callbacks( tls_callbacks const& ) = delete;
+  tls_callbacks& operator=( tls_callbacks const& ) = delete;
 
   ~tls_callbacks() override;
 
@@ -164,14 +170,20 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
   {
     received_record_ = true;
 
-    recv_buffer buf( plaintext.size() );
-    {
-      auto bs = buf.spare_capacity_mut();
-      std::memcpy( bs.data(), plaintext.data(), bs.size() );
-      buf.set_len( bs.size() );
-    }
+    while ( !plaintext.empty() ) {
+      auto buf = output_sequence_.pop_front();
 
-    recv_seq_.push_back( std::move( buf ) );
+      recv_buffer_view bv = buf;
+      bv.set_len( 0 );
+      auto dst = bv.spare_capacity_mut();
+      auto n = std::min( dst.size(), plaintext.size() );
+      std::memcpy( dst.data(), plaintext.data(), n );
+      bv.set_len( n );
+
+      input_sequence_.push_back( std::move( buf ) );
+
+      plaintext = plaintext.subspan( n );
+    }
   }
 
   void tls_alert( Botan::TLS::Alert alert ) override
@@ -222,9 +234,8 @@ struct client_impl : public tcp::detail::client_impl
   client_impl& operator=( client_impl const& ) = delete;
 
   client_impl( tls_context ctx, executor ex )
-      : tcp::detail::client_impl( ex ),
-        p_callbacks_( std::make_shared<tls_callbacks>() ), tls_ctx_( ctx ),
-        server_info_( "localhost", 0 ),
+      : tcp::detail::client_impl( ex ), p_callbacks_( new tls_callbacks() ),
+        tls_ctx_( ctx ), server_info_( "localhost", 0 ),
         tls_client_( p_callbacks_,
                      tls_ctx_.p_tls_frame_->session_mgr_,
                      tls_ctx_.p_tls_frame_->creds_mgr_,
@@ -382,13 +393,18 @@ client::async_recv()
       co_return m_buffers.error();
     }
 
-    for ( auto buf : *m_buffers ) {
-      tls_client.received_data( buf.readable_bytes() );
+    auto bufs = std::move( m_buffers ).value();
+    while ( !bufs.empty() ) {
+      auto buf = bufs.pop_front();
+      auto data = buf.readable_bytes();
+      f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
+
+      tls_client.received_data( data );
     }
   }
 
   f.p_callbacks_->received_record_ = false;
-  co_return std::move( f.p_callbacks_->recv_seq_ );
+  co_return std::move( f.p_callbacks_->input_sequence_ );
 }
 
 task<result<void>>
@@ -470,13 +486,18 @@ server::async_recv()
       co_return m_buffers.error();
     }
 
-    for ( auto buf : *m_buffers ) {
-      tls_server.received_data( buf.readable_bytes() );
+    auto bufs = std::move( m_buffers ).value();
+    while ( !bufs.empty() ) {
+      auto buf = bufs.pop_front();
+      auto data = buf.readable_bytes();
+      f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
+
+      tls_server.received_data( data );
     }
   }
 
   f.p_callbacks_->received_record_ = false;
-  co_return std::move( f.p_callbacks_->recv_seq_ );
+  co_return std::move( f.p_callbacks_->input_sequence_ );
 }
 
 task<result<std::size_t>>
