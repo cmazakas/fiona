@@ -5,7 +5,6 @@
 #ifndef FIONA_SRC_STREAM_IMPL
 #define FIONA_SRC_STREAM_IMPL
 
-#include <fiona/borrowed_buffer.hpp>
 #include <fiona/error.hpp>
 #include <fiona/executor.hpp>
 

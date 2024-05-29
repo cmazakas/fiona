@@ -1,6 +1,5 @@
-#include "helpers.hpp"               // for FIONA_TASK
+#include "helpers.hpp"        // for FIONA_TASK
 
-#include <fiona/borrowed_buffer.hpp> // for borrowed_buffer
 #include <fiona/dns.hpp>      // for dns_entry_list, dns_awaitable, dns_resolver
 #include <fiona/error.hpp>    // for result, error_code
 #include <fiona/executor.hpp> // for executor
