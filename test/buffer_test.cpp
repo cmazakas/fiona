@@ -289,3 +289,54 @@ TEST_CASE( "concat" )
     }
   }
 }
+
+TEST_CASE( "pop_front" )
+{
+  auto string_to_buf = []( std::string_view str ) {
+    fiona::recv_buffer buf( str.size() );
+    auto out = buf.spare_capacity_mut().begin();
+    auto r = std::ranges::copy( str, out );
+    buf.set_len( static_cast<std::size_t>( r.out - out ) );
+    return buf;
+  };
+
+  auto verify_range = []( fiona::recv_buffer_sequence& buf_seq ) {
+    for ( auto view : buf_seq ) {
+      CHECK( view.size() > 0 );
+    }
+  };
+
+  fiona::recv_buffer_sequence bufs;
+  bufs.push_back( string_to_buf( "rocky" ) );
+  bufs.push_back( string_to_buf( "chase" ) );
+  bufs.push_back( string_to_buf( "rubble" ) );
+  bufs.push_back( string_to_buf( "zouma" ) );
+  bufs.push_back( string_to_buf( "skye" ) );
+
+  CHECK( bufs.num_bufs() == 5 );
+
+  CHECK( bufs.pop_front().as_str() == "rocky" );
+  CHECK( ( *bufs.begin() ).as_str() == "chase" );
+  verify_range( bufs );
+  CHECK( bufs.num_bufs() == 4 );
+
+  CHECK( bufs.pop_front().as_str() == "chase" );
+  CHECK( ( *bufs.begin() ).as_str() == "rubble" );
+  verify_range( bufs );
+  CHECK( bufs.num_bufs() == 3 );
+
+  CHECK( bufs.pop_front().as_str() == "rubble" );
+  CHECK( ( *bufs.begin() ).as_str() == "zouma" );
+  verify_range( bufs );
+  CHECK( bufs.num_bufs() == 2 );
+
+  CHECK( bufs.pop_front().as_str() == "zouma" );
+  CHECK( ( *bufs.begin() ).as_str() == "skye" );
+  verify_range( bufs );
+  CHECK( bufs.num_bufs() == 1 );
+
+  CHECK( bufs.pop_front().as_str() == "skye" );
+  CHECK( bufs.begin() == bufs.end() );
+  verify_range( bufs );
+  CHECK( bufs.num_bufs() == 0 );
+}

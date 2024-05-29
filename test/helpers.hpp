@@ -13,6 +13,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_translate_exception.hpp>
+#include <catch2/generators/catch_generators_random.hpp>
 
 #include <array>
 #include <chrono>

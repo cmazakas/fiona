@@ -253,6 +253,9 @@ public:
 
   iterator begin() const
   {
+    if ( empty() ) {
+      return end();
+    }
     return { reinterpret_cast<detail::buf_header_impl*>( head_ ) };
   }
 
@@ -374,6 +377,30 @@ public:
     }
 
     ++num_bufs_;
+  }
+
+  recv_buffer pop_front()
+  {
+    BOOST_ASSERT( !empty() );
+
+    recv_buffer buf;
+    auto old = head_;
+    head_ = recv_buffer_view( head_ ).header().next_;
+    if ( head_ ) {
+      recv_buffer_view( head_ ).header().prev_ = nullptr;
+    }
+    buf.p_ = old;
+
+    --num_bufs_;
+    // single element list, original head == tail
+    if ( num_bufs_ == 0 ) {
+      sentry_.next_ = nullptr;
+      sentry_.prev_ = nullptr;
+      head_ = nullptr;
+      tail_ = nullptr;
+    }
+
+    return buf;
   }
 
   void concat( recv_buffer_sequence rhs ) noexcept
