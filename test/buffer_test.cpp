@@ -6,7 +6,7 @@
 #include <iterator>
 #include <vector>
 
-TEST_CASE( "buffer_test - recv_buffer" )
+TEST_CASE( "recv_buffer" )
 {
   {
     fiona::recv_buffer buf;
@@ -80,7 +80,7 @@ TEST_CASE( "buffer_test - recv_buffer" )
   }
 }
 
-TEST_CASE( "buffer_test - owned buffer sequence" )
+TEST_CASE( "owned buffer sequence" )
 {
   fiona::recv_buffer_sequence buf_seq;
   CHECK( buf_seq.num_bufs() == 0 );
@@ -147,7 +147,7 @@ TEST_CASE( "buffer_test - owned buffer sequence" )
   CHECK( pos == buf_seq.begin() );
 }
 
-TEST_CASE( "buffer_test - end() stability" )
+TEST_CASE( "end() stability" )
 {
   fiona::recv_buffer_sequence buf_seq;
   auto end = buf_seq.end();
@@ -158,7 +158,7 @@ TEST_CASE( "buffer_test - end() stability" )
   CHECK( end == buf_seq.begin() );
 }
 
-TEST_CASE( "buffer_test - move stability" )
+TEST_CASE( "move stability" )
 {
   fiona::recv_buffer_sequence buf_seq;
   for ( int i = 0; i < 16; ++i ) {
@@ -199,14 +199,14 @@ TEST_CASE( "buffer_test - move stability" )
   } );
 }
 
-TEST_CASE( "buffer_test - push_back empty" )
+TEST_CASE( "push_back empty" )
 {
   fiona::recv_buffer_sequence bs;
   bs.push_back( fiona::recv_buffer( 0 ) );
   CHECK( bs.num_bufs() == 1 );
 }
 
-TEST_CASE( "buffer_test - concat" )
+TEST_CASE( "concat" )
 {
   {
     fiona::recv_buffer_sequence bs1, bs2;
