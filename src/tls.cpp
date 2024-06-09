@@ -45,6 +45,114 @@ namespace fiona {
 namespace tls {
 namespace detail {
 
+struct botan_error_category : public std::error_category
+{
+  botan_error_category() noexcept {}
+  ~botan_error_category() override;
+
+  char const*
+  name() const noexcept override
+  {
+    return "botan";
+  }
+
+  std::string
+  message( int condition ) const override
+  {
+    switch ( static_cast<Botan::ErrorType>( condition ) ) {
+    case Botan::ErrorType::Unknown:
+      return "Some unknown error";
+    case Botan::ErrorType::SystemError:
+      return "An error while calling a system interface";
+    case Botan::ErrorType::NotImplemented:
+      return "An operation seems valid, but not supported by the current "
+             "version";
+    case Botan::ErrorType::OutOfMemory:
+      return "Memory allocation failure";
+    case Botan::ErrorType::InternalError:
+      return "An internal error occurred";
+    case Botan::ErrorType::IoError:
+      return "An I/O error occurred";
+
+    case Botan::ErrorType::InvalidObjectState:
+      return "Invalid object state";
+    case Botan::ErrorType::KeyNotSet:
+      return "A key was not set on an object when this is required";
+    case Botan::ErrorType::InvalidArgument:
+      return "The application provided an argument which is invalid";
+    case Botan::ErrorType::InvalidKeyLength:
+      return "A key with invalid length was provided";
+    case Botan::ErrorType::InvalidNonceLength:
+      return "A nonce with invalid length was provided";
+    case Botan::ErrorType::LookupError:
+      return "An object type was requested but cannot be found";
+    case Botan::ErrorType::EncodingFailure:
+      return "Encoding a message or datum failed";
+    case Botan::ErrorType::DecodingFailure:
+      return "Decoding a message or datum failed";
+    case Botan::ErrorType::TLSError:
+      return "A TLS error (error_code will be the alert type)";
+    case Botan::ErrorType::HttpError:
+      return "An error during an HTTP operation";
+    case Botan::ErrorType::InvalidTag:
+      return "A message with an invalid authentication tag was detected";
+    case Botan::ErrorType::RoughtimeError:
+      return "An error during Roughtime validation";
+
+    case Botan::ErrorType::CommonCryptoError:
+      return "An error when interacting with CommonCrypto API";
+    case Botan::ErrorType::Pkcs11Error:
+      return "An error when interacting with a PKCS11 device";
+    case Botan::ErrorType::TPMError:
+      return "An error when interacting with a TPM device";
+    case Botan::ErrorType::DatabaseError:
+      return "An error when interacting with a database";
+
+    case Botan::ErrorType::ZlibError:
+      return "An error when interacting with zlib";
+    case Botan::ErrorType::Bzip2Error:
+      return "An error when interacting with bzip2";
+    case Botan::ErrorType::LzmaError:
+      return "An error when interacting with lzma";
+    }
+
+    return "unhandled Botan error, this is a bug in Fiona";
+  }
+};
+
+botan_error_category::~botan_error_category() = default;
+
+static std::error_code
+make_error_code( Botan::ErrorType e )
+{
+  static botan_error_category const errc;
+  std::error_code ec( static_cast<int>( e ), errc );
+  return ec;
+}
+
+//------------------------------------------------------------------------------
+
+struct tls_policy final : public Botan::TLS::Policy
+{
+  // bool
+  // reuse_session_tickets() const override
+  // {
+  //   return true;
+  // }
+
+  // std::size_t
+  // new_session_tickets_upon_handshake_success() const override
+  // {
+  //   return 7;
+  // }
+
+  ~tls_policy() override;
+};
+
+tls_policy::~tls_policy() = default;
+
+//------------------------------------------------------------------------------
+
 struct tls_credentials_manager final : public Botan::Credentials_Manager
 {
   struct cert_key_pair
@@ -84,7 +192,6 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
       std::string const& type,
       std::string const& hostname ) override
   {
-
     if ( type == "tls-server" ) {
       for ( auto const& [cert, pkey] : cert_key_pairs_ ) {
         auto pos = std::find( algos.begin(), algos.end(), pkey->algo_name() );
@@ -131,14 +238,14 @@ struct tls_context_frame
   std::shared_ptr<Botan::System_RNG> rng_;
   std::shared_ptr<Botan::TLS::Session_Manager_In_Memory> session_mgr_;
   std::shared_ptr<tls_credentials_manager> creds_mgr_;
-  std::shared_ptr<Botan::TLS::Policy> policy_;
+  std::shared_ptr<tls_policy> policy_;
 
   tls_context_frame()
       : rng_( std::make_shared<Botan::System_RNG>() ),
         session_mgr_(
             std::make_shared<Botan::TLS::Session_Manager_In_Memory>( rng_ ) ),
         creds_mgr_( std::make_shared<tls_credentials_manager>() ),
-        policy_( std::make_shared<Botan::TLS::Policy>() )
+        policy_( std::make_shared<tls_policy>() )
   {
   }
 };
@@ -156,6 +263,7 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
   bool failed_cert_verification_ = false;
 
   tls_callbacks() = default;
+
   tls_callbacks( tls_callbacks const& ) = delete;
   tls_callbacks& operator=( tls_callbacks const& ) = delete;
 
@@ -218,9 +326,15 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
         tls_current_timestamp(), 0ms, ocsp_responses );
 
     if ( !result.successful_validation() ) {
-      failed_cert_verification_ = true;
+      throw "invalid certificate";
     }
   }
+
+  // void
+  // tls_session_established( Botan::TLS::Session_Summary const& session )
+  // override
+  // {
+  // }
 };
 
 tls_callbacks::~tls_callbacks() = default;
@@ -404,7 +518,12 @@ client::async_recv()
       auto data = buf.readable_bytes();
       f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
 
-      tls_client.received_data( data );
+      try {
+        tls_client.received_data( data );
+      } catch ( Botan::Exception const& ex ) {
+        auto err = ex.error_type();
+        co_return detail::make_error_code( err );
+      }
     }
   }
 
@@ -497,7 +616,12 @@ server::async_recv()
       auto data = buf.readable_bytes();
       f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
 
-      tls_server.received_data( data );
+      try {
+        tls_server.received_data( data );
+      } catch ( Botan::Exception const& ex ) {
+        auto err = ex.error_type();
+        co_return detail::make_error_code( err );
+      }
     }
   }
 

@@ -65,6 +65,17 @@ CATCH_TRANSLATE_EXCEPTION( fiona::error_code const& ex )
   return ex.message();
 }
 
+inline std::vector<std::uint8_t>
+make_random_input( std::size_t n )
+{
+  std::vector<std::uint8_t> v( n, 0 );
+  auto rng = Catch::Generators::random( 0, 255 );
+  for ( auto& b : v ) {
+    b = static_cast<std::uint8_t>( rng.get() );
+  }
+  return v;
+}
+
 #if defined( BOOST_GCC )
 
 #if !defined( __SANITIZE_ADDRESS__ ) && !defined( __SANITIZE_THREAD__ ) &&     \
