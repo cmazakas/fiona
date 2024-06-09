@@ -34,14 +34,19 @@ public:
   FIONA_DECL
   executor get_executor() const noexcept;
 
-  io_context_params params() const noexcept { return pframe_->params_; }
+  io_context_params
+  params() const noexcept
+  {
+    return pframe_->params_;
+  }
 
   FIONA_DECL
   void spawn( task<void> t );
 
-  void register_buffer_sequence( std::size_t num_bufs,
-                                 std::size_t buf_size,
-                                 std::uint16_t buffer_group_id )
+  void
+  register_buffer_sequence( std::size_t num_bufs,
+                            std::size_t buf_size,
+                            std::uint16_t buffer_group_id )
   {
     auto ring = &pframe_->io_ring_;
     pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,

@@ -21,11 +21,9 @@ namespace detail {
 
 struct timer_impl;
 
-void FIONA_DECL
-intrusive_ptr_add_ref( timer_impl* );
+void FIONA_DECL intrusive_ptr_add_ref( timer_impl* );
 
-void FIONA_DECL
-intrusive_ptr_release( timer_impl* );
+void FIONA_DECL intrusive_ptr_release( timer_impl* );
 
 } // namespace detail
 } // namespace fiona
@@ -105,7 +103,8 @@ public:
   ~timer() = default;
 
   template <class Rep, class Period>
-  timer_awaitable async_wait( std::chrono::duration<Rep, Period> d )
+  timer_awaitable
+  async_wait( std::chrono::duration<Rep, Period> d )
   {
     auto ts = detail::duration_to_timespec( d );
     return { ptimer_, ts };

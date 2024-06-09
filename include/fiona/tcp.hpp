@@ -55,17 +55,13 @@ namespace fiona {
 namespace tcp {
 namespace detail {
 
-void FIONA_DECL
-intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
+void FIONA_DECL intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
 
-void FIONA_DECL
-intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
+void FIONA_DECL intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
 
-void FIONA_DECL
-intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
+void FIONA_DECL intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 
-void FIONA_DECL
-intrusive_ptr_release( stream_impl* pstream ) noexcept;
+void FIONA_DECL intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
 } // namespace detail
 } // namespace tcp
@@ -143,7 +139,8 @@ public:
   executor get_executor() const noexcept;
 
   template <class Rep, class Period>
-  void timeout( std::chrono::duration<Rep, Period> const d )
+  void
+  timeout( std::chrono::duration<Rep, Period> const d )
   {
     auto ts = fiona::detail::duration_to_timespec( d );
     timeout( ts );
@@ -193,7 +190,11 @@ public:
   FIONA_DECL
   ~stream_close_awaitable();
 
-  bool await_ready() const { return false; }
+  bool
+  await_ready() const
+  {
+    return false;
+  }
 
   FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
@@ -239,7 +240,11 @@ public:
   FIONA_DECL
   ~send_awaitable();
 
-  bool await_ready() const noexcept { return false; }
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
 
   FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );
@@ -296,7 +301,11 @@ public:
   FIONA_DECL
   ~accept_awaitable();
 
-  bool await_ready() const { return false; }
+  bool
+  await_ready() const
+  {
+    return false;
+  }
 
   FIONA_DECL
   void await_suspend( std::coroutine_handle<> h );

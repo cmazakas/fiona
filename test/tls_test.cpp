@@ -49,13 +49,15 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
 
   ~tls_callbacks() override;
 
-  void tls_emit_data( std::span<std::uint8_t const> data ) override
+  void
+  tls_emit_data( std::span<std::uint8_t const> data ) override
   {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_record_received( uint64_t seq_no,
-                            std::span<std::uint8_t const> data ) override
+  void
+  tls_record_received( uint64_t seq_no,
+                       std::span<std::uint8_t const> data ) override
   {
     (void)seq_no;
 
@@ -63,7 +65,8 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
     recv_buf_.insert( recv_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_alert( Botan::TLS::Alert alert ) override
+  void
+  tls_alert( Botan::TLS::Alert alert ) override
   {
     // if the alert type is a close_notify, we should start a graceful shutdown
     // of the connection, otherwise we're permitted to probably just do a
@@ -74,20 +77,25 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
     close_notify_received_ = true;
   }
 
-  void tls_session_activated() override {}
-
-  void tls_session_established(
-      const Botan::TLS::Session_Summary& /* session */ ) override
+  void
+  tls_session_activated() override
   {
   }
 
-  void tls_verify_cert_chain(
-      const std::vector<Botan::X509_Certificate>& cert_chain,
-      const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
-      const std::vector<Botan::Certificate_Store*>& trusted_roots,
+  void
+  tls_session_established(
+      Botan::TLS::Session_Summary const& /* session */ ) override
+  {
+  }
+
+  void
+  tls_verify_cert_chain(
+      std::vector<Botan::X509_Certificate> const& cert_chain,
+      std::vector<std::optional<Botan::OCSP::Response>> const& ocsp_responses,
+      std::vector<Botan::Certificate_Store*> const& trusted_roots,
       Botan::Usage_Type usage,
       std::string_view hostname,
-      const Botan::TLS::Policy& policy ) override
+      Botan::TLS::Policy const& policy ) override
   {
 
     Botan::Path_Validation_Restrictions restrictions(
@@ -149,9 +157,9 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
   }
 
   std::shared_ptr<Botan::Private_Key>
-  private_key_for( const Botan::X509_Certificate& cert,
-                   const std::string& /* type */,
-                   const std::string& /* context */ ) override
+  private_key_for( Botan::X509_Certificate const& cert,
+                   std::string const& /* type */,
+                   std::string const& /* context */ ) override
   {
     for ( auto const& [mcert, pkey] : cert_key_pairs_ ) {
       if ( cert == mcert ) {
@@ -162,12 +170,13 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
     return nullptr;
   }
 
-  std::vector<Botan::X509_Certificate> find_cert_chain(
-      const std::vector<std::string>& algos,
-      const std::vector<Botan::AlgorithmIdentifier>& cert_signature_schemes,
-      const std::vector<Botan::X509_DN>& acceptable_cas,
-      const std::string& type,
-      const std::string& hostname ) override
+  std::vector<Botan::X509_Certificate>
+  find_cert_chain(
+      std::vector<std::string> const& algos,
+      std::vector<Botan::AlgorithmIdentifier> const& cert_signature_schemes,
+      std::vector<Botan::X509_DN> const& acceptable_cas,
+      std::string const& type,
+      std::string const& hostname ) override
   {
     BOTAN_UNUSED( cert_signature_schemes );
     BOTAN_UNUSED( acceptable_cas );
@@ -186,8 +195,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
     }
 
     if ( type == "tls-client" ) {
-      for ( const auto& dn : acceptable_cas ) {
-        for ( const auto& cred : cert_key_pairs_ ) {
+      for ( auto const& dn : acceptable_cas ) {
+        for ( auto const& cred : cert_key_pairs_ ) {
           if ( dn == cred.cert.issuer_dn() ) {
             return { cred.cert };
           }
@@ -199,8 +208,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
   }
 
   std::vector<Botan::Certificate_Store*>
-  trusted_certificate_authorities( const std::string& type,
-                                   const std::string& context ) override
+  trusted_certificate_authorities( std::string const& type,
+                                   std::string const& context ) override
   {
     BOTAN_UNUSED( type, context );
     // return a list of certificates of CAs we trust for tls server certificates
@@ -514,8 +523,8 @@ TEST_CASE( "large messages" )
 {
   struct server_op
   {
-    static fiona::task<void> recv_op( fiona::tls::server stream,
-                                      std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    recv_op( fiona::tls::server stream, std::span<std::uint8_t const> msg )
     {
       std::vector<std::uint8_t> received_msg;
 
@@ -537,8 +546,8 @@ TEST_CASE( "large messages" )
       co_return;
     }
 
-    static fiona::task<void> send_op( fiona::tls::server stream,
-                                      std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    send_op( fiona::tls::server stream, std::span<std::uint8_t const> msg )
     {
       auto m_sent = co_await stream.async_send( msg );
       CHECK( m_sent.has_value() );
@@ -546,8 +555,8 @@ TEST_CASE( "large messages" )
       co_return;
     }
 
-    static fiona::task<void> run( fiona::tcp::acceptor acceptor,
-                                  std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    run( fiona::tcp::acceptor acceptor, std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
       ctx.add_certificate_key_pair(
@@ -585,8 +594,8 @@ TEST_CASE( "large messages" )
 
   struct client_op
   {
-    static fiona::task<void> recv_op( fiona::tls::client stream,
-                                      std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    recv_op( fiona::tls::client stream, std::span<std::uint8_t const> msg )
     {
       std::vector<std::uint8_t> received_msg;
 
@@ -608,8 +617,8 @@ TEST_CASE( "large messages" )
       co_return;
     }
 
-    static fiona::task<void> send_op( fiona::tls::client stream,
-                                      std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    send_op( fiona::tls::client stream, std::span<std::uint8_t const> msg )
     {
       auto m_sent = co_await stream.async_send( msg );
       CHECK( m_sent.has_value() );
@@ -617,9 +626,10 @@ TEST_CASE( "large messages" )
       co_return;
     }
 
-    static fiona::task<void> run( fiona::executor ex,
-                                  std::uint16_t port,
-                                  std::span<std::uint8_t const> msg )
+    static fiona::task<void>
+    run( fiona::executor ex,
+         std::uint16_t port,
+         std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
       ctx.add_certificate_authority(

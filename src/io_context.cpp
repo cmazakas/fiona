@@ -46,7 +46,8 @@ struct frame : public fiona::detail::awaitable_base
 
   frame( fiona::executor ex, int fd ) : ex_{ ex }, fd_{ fd } {}
 
-  void schedule_recv()
+  void
+  schedule_recv()
   {
     auto ring = fiona::detail::executor_access_policy::ring( ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
@@ -56,7 +57,8 @@ struct frame : public fiona::detail::awaitable_base
     intrusive_ptr_add_ref( this );
   }
 
-  void await_process_cqe( io_uring_cqe* cqe ) override
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
   {
     if ( cqe->res != sizeof( void* ) ) {
       BOOST_ASSERT( cqe->res < 0 );
@@ -96,7 +98,8 @@ struct frame : public fiona::detail::awaitable_base
     schedule_recv();
   }
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
@@ -113,7 +116,8 @@ struct pipe_awaitable
 
   ~pipe_awaitable() { cancel(); }
 
-  void cancel()
+  void
+  cancel()
   {
     auto& self = *p_;
     auto ring = fiona::detail::executor_access_policy::ring( self.ex_ );

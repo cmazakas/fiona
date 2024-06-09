@@ -83,7 +83,8 @@ struct accept_frame : public fiona::detail::awaitable_base
   accept_frame( acceptor_impl* pacceptor ) : pacceptor_( pacceptor ) {}
   virtual ~accept_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     peer_fd_ = -1;
@@ -93,7 +94,8 @@ struct accept_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
@@ -211,7 +213,8 @@ public:
 
   virtual ~acceptor_impl() override;
 
-  std::uint16_t port() const noexcept
+  std::uint16_t
+  port() const noexcept
   {
     if ( is_ipv4_ ) {
       auto paddr = reinterpret_cast<sockaddr_in const*>( &addr_storage_ );
@@ -267,7 +270,7 @@ accept_frame::~accept_frame() {}
 
 } // namespace detail
 
-inline constexpr int const static default_backlog = 256;
+inline constexpr int static const default_backlog = 256;
 
 acceptor::acceptor( executor ex, sockaddr const* addr )
     : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) }

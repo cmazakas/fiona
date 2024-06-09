@@ -58,7 +58,8 @@ struct waker
   int fd_ = -1;
   std::coroutine_handle<> h_;
 
-  void wake() const
+  void
+  wake() const
   {
     auto p = p_.lock();
     if ( !p ) {
@@ -94,9 +95,10 @@ public:
   inline void post( task<void> t ) const;
   inline waker make_waker( std::coroutine_handle<> h ) const;
 
-  void register_buffer_sequence( std::size_t num_bufs,
-                                 std::size_t buf_size,
-                                 std::uint16_t buffer_group_id )
+  void
+  register_buffer_sequence( std::size_t num_bufs,
+                            std::size_t buf_size,
+                            std::uint16_t buffer_group_id )
   {
     auto ring = &pframe_->io_ring_;
     pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,
@@ -108,12 +110,14 @@ namespace detail {
 
 struct executor_access_policy
 {
-  static inline io_uring* ring( executor ex ) noexcept
+  static inline io_uring*
+  ring( executor ex ) noexcept
   {
     return &ex.pframe_->io_ring_;
   }
 
-  static inline task_map_type& tasks( executor ex ) noexcept
+  static inline task_map_type&
+  tasks( executor ex ) noexcept
   {
     return ex.pframe_->tasks_;
   }
@@ -124,19 +128,22 @@ struct executor_access_policy
     return ex.pframe_->run_queue_;
   }
 
-  static inline std::lock_guard<std::mutex> lock_guard( executor ex )
+  static inline std::lock_guard<std::mutex>
+  lock_guard( executor ex )
   {
     return std::lock_guard<std::mutex>( ex.pframe_->m_ );
   }
 
-  static void unhandled_exception( executor ex, std::exception_ptr ep )
+  static void
+  unhandled_exception( executor ex, std::exception_ptr ep )
   {
     if ( !ex.pframe_->exception_ptr_ ) {
       ex.pframe_->exception_ptr_ = ep;
     }
   }
 
-  static inline int get_available_fd( executor ex )
+  static inline int
+  get_available_fd( executor ex )
   {
     auto& fds = ex.pframe_->fds_;
     if ( fds.empty() ) {
@@ -152,7 +159,8 @@ struct executor_access_policy
     return fd;
   }
 
-  static inline void release_fd( executor ex, int fd )
+  static inline void
+  release_fd( executor ex, int fd )
   {
     if ( fd < 0 ) {
       return;
@@ -167,8 +175,8 @@ struct executor_access_policy
     BOOST_ASSERT( itb.second );
   }
 
-  static inline buf_ring* get_buffer_group( executor ex,
-                                            std::size_t bgid ) noexcept
+  static inline buf_ring*
+  get_buffer_group( executor ex, std::size_t bgid ) noexcept
   {
     for ( auto& bg : ex.pframe_->buf_rings_ ) {
       if ( bgid == bg.bgid() ) {
@@ -178,9 +186,14 @@ struct executor_access_policy
     return nullptr;
   }
 
-  static inline int get_pipefd( executor ex ) { return ex.pframe_->pipefd_[0]; }
+  static inline int
+  get_pipefd( executor ex )
+  {
+    return ex.pframe_->pipefd_[0];
+  }
 
-  static inline waker get_waker( executor ex, std::coroutine_handle<> h )
+  static inline waker
+  get_waker( executor ex, std::coroutine_handle<> h )
   {
     return { ex.pframe_, ex.pframe_->m_, ex.pframe_->pipefd_[1], h };
   }
@@ -213,7 +226,8 @@ struct internal_task
     ++h_.promise().count_;
   }
 
-  internal_task& operator=( internal_task const& rhs )
+  internal_task&
+  operator=( internal_task const& rhs )
   {
     if ( this != &rhs ) {
       if ( --h_.promise().count_ == 0 ) {
@@ -231,7 +245,8 @@ struct internal_task
     rhs.h_ = nullptr;
   }
 
-  internal_task& operator=( internal_task&& rhs ) noexcept
+  internal_task&
+  operator=( internal_task&& rhs ) noexcept
   {
     if ( this != &rhs ) {
       auto h = h_;
@@ -270,29 +285,37 @@ struct promise_variant
   }
 
   template <class... Args>
-  void emplace( Args&&... args )
+  void
+  emplace( Args&&... args )
   {
     BOOST_ASSERT( rt_ == result_type::uninitialized );
     new ( std::addressof( s_.value_ ) ) T( std::forward<Args>( args )... );
     rt_ = result_type::ok;
   }
 
-  void set_error()
+  void
+  set_error()
   {
     new ( std::addressof( s_.exception_ ) )
         std::exception_ptr( std::current_exception() );
     rt_ = result_type::error;
   }
 
-  bool has_error() const noexcept { return rt_ == result_type::error; }
+  bool
+  has_error() const noexcept
+  {
+    return rt_ == result_type::error;
+  }
 
-  std::exception_ptr get_error() const
+  std::exception_ptr
+  get_error() const
   {
     BOOST_ASSERT( rt_ == result_type::error );
     return s_.exception_;
   }
 
-  T& result() &
+  T&
+  result() &
   {
     if ( rt_ == result_type::error ) {
       std::rethrow_exception( s_.exception_ );
@@ -300,7 +323,8 @@ struct promise_variant
     return s_.value_;
   }
 
-  T&& result() &&
+  T&&
+  result() &&
   {
     if ( rt_ == result_type::error ) {
       std::rethrow_exception( s_.exception_ );
@@ -318,25 +342,33 @@ struct promise_variant<void>
   result_type rt_ = result_type::uninitialized;
 
   template <class... Args>
-  void emplace( Args&&... )
+  void
+  emplace( Args&&... )
   {
   }
 
-  void set_error()
+  void
+  set_error()
   {
     exception_ = std::exception_ptr( std::current_exception() );
     rt_ = result_type::error;
   }
 
-  bool has_error() const noexcept { return rt_ == result_type::error; }
+  bool
+  has_error() const noexcept
+  {
+    return rt_ == result_type::error;
+  }
 
-  std::exception_ptr get_error() const
+  std::exception_ptr
+  get_error() const
   {
     BOOST_ASSERT( rt_ == result_type::error );
     return exception_;
   }
 
-  void result()
+  void
+  result()
   {
     if ( exception_ ) {
       std::rethrow_exception( exception_ );
@@ -350,7 +382,11 @@ struct internal_promise_base
 private:
   struct final_awaitable
   {
-    bool await_ready() const noexcept { return false; }
+    bool
+    await_ready() const noexcept
+    {
+      return false;
+    }
 
     template <class Promise>
     std::coroutine_handle<>
@@ -378,7 +414,11 @@ private:
       return std::noop_coroutine();
     }
 
-    void await_resume() noexcept { BOOST_ASSERT( false ); }
+    void
+    await_resume() noexcept
+    {
+      BOOST_ASSERT( false );
+    }
   };
 
 public:
@@ -390,10 +430,19 @@ public:
   internal_promise_base() = delete;
   internal_promise_base( task_map_type& tasks ) : tasks_{ tasks } {}
 
-  std::suspend_always initial_suspend() { return {}; }
-  final_awaitable final_suspend() noexcept { return {}; }
+  std::suspend_always
+  initial_suspend()
+  {
+    return {};
+  }
+  final_awaitable
+  final_suspend() noexcept
+  {
+    return {};
+  }
 
-  void unhandled_exception()
+  void
+  unhandled_exception()
   {
     // current ref count + the ref count found in the corresponding awaitable
     auto const has_awaiter = ( count_ > 1 );
@@ -414,14 +463,16 @@ struct internal_promise : public internal_promise_base<T>
   {
   }
 
-  internal_task<T> get_return_object()
+  internal_task<T>
+  get_return_object()
   {
     return internal_task<T>(
         std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
   template <class Expr>
-  void return_value( Expr&& expr )
+  void
+  return_value( Expr&& expr )
   {
     this->variant_.emplace( std::forward<Expr>( expr ) );
   }
@@ -436,13 +487,17 @@ struct internal_promise<void> : public internal_promise_base<void>
   {
   }
 
-  internal_task<void> get_return_object()
+  internal_task<void>
+  get_return_object()
   {
     return internal_task<void>(
         std::coroutine_handle<internal_promise>::from_promise( *this ) );
   }
 
-  void return_void() {}
+  void
+  return_void()
+  {
+  }
 };
 
 } // namespace detail
@@ -468,9 +523,14 @@ struct spawn_awaitable
     }
   }
 
-  bool await_ready() const noexcept { return false; }
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
 
-  bool await_suspend( std::coroutine_handle<> awaiting_coroutine )
+  bool
+  await_suspend( std::coroutine_handle<> awaiting_coroutine )
   {
     BOOST_ASSERT( task_.h_.promise().count_ > 0 );
 
@@ -480,7 +540,8 @@ struct spawn_awaitable
     return !task_ended;
   }
 
-  T await_resume()
+  T
+  await_resume()
   {
     was_awaited_ = true;
     return std::move( task_.h_.promise().variant_ ).result();

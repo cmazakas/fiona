@@ -21,7 +21,11 @@ struct FIONA_DECL ref_count
   int count_ = 0;
   virtual ~ref_count();
 
-  int use_count() const noexcept { return count_; }
+  int
+  use_count() const noexcept
+  {
+    return count_;
+  }
 };
 
 inline void

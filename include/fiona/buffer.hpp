@@ -52,11 +52,13 @@ protected:
 
   unsigned char* p_ = detail::default_buf_header();
 
-  detail::buf_header_impl& header() noexcept
+  detail::buf_header_impl&
+  header() noexcept
   {
     return *reinterpret_cast<detail::buf_header_impl*>( p_ );
   }
-  detail::buf_header_impl const& header() const noexcept
+  detail::buf_header_impl const&
+  header() const noexcept
   {
     return *reinterpret_cast<detail::buf_header_impl*>( p_ );
   }
@@ -73,30 +75,54 @@ public:
 
   ~recv_buffer_view() = default;
 
-  unsigned char* data() noexcept { return p_ + S; }
-  unsigned char const* data() const noexcept { return p_ + S; }
-  std::size_t size() const noexcept { return header().size_; }
-  std::size_t capacity() const noexcept { return header().capacity_; }
-  bool empty() const noexcept { return size() == 0; }
+  unsigned char*
+  data() noexcept
+  {
+    return p_ + S;
+  }
+  unsigned char const*
+  data() const noexcept
+  {
+    return p_ + S;
+  }
+  std::size_t
+  size() const noexcept
+  {
+    return header().size_;
+  }
+  std::size_t
+  capacity() const noexcept
+  {
+    return header().capacity_;
+  }
+  bool
+  empty() const noexcept
+  {
+    return size() == 0;
+  }
 
-  void set_len( std::size_t size ) noexcept
+  void
+  set_len( std::size_t size ) noexcept
   {
     BOOST_ASSERT( capacity() > 0 );
     header().size_ = size;
   }
 
   // todo: rename this
-  std::span<unsigned char> readable_bytes() noexcept
+  std::span<unsigned char>
+  readable_bytes() noexcept
   {
     return { data(), size() };
   }
 
-  std::string_view as_str() const noexcept
+  std::string_view
+  as_str() const noexcept
   {
     return { reinterpret_cast<char const*>( data() ), size() };
   }
 
-  std::span<unsigned char> spare_capacity_mut() noexcept
+  std::span<unsigned char>
+  spare_capacity_mut() noexcept
   {
     return { data() + size(), capacity() - size() };
   }
@@ -111,10 +137,19 @@ private:
   constexpr static std::align_val_t const A{
       alignof( detail::buf_header_impl ) };
 
-  static void* aligned_alloc( std::size_t n ) { return ::operator new( n, A ); }
-  static void aligned_delete( void* p ) { ::operator delete( p, A ); }
+  static void*
+  aligned_alloc( std::size_t n )
+  {
+    return ::operator new( n, A );
+  }
+  static void
+  aligned_delete( void* p )
+  {
+    ::operator delete( p, A );
+  }
 
-  unsigned char* to_raw_parts() noexcept
+  unsigned char*
+  to_raw_parts() noexcept
   {
     auto p = p_;
     p_ = detail::default_buf_header();
@@ -140,7 +175,8 @@ public:
   {
   }
 
-  recv_buffer& operator=( recv_buffer&& rhs ) noexcept
+  recv_buffer&
+  operator=( recv_buffer&& rhs ) noexcept
   {
     if ( this != &rhs ) {
       if ( capacity() > 0 ) {
@@ -208,23 +244,27 @@ public:
     iterator( iterator&& ) = default;
     iterator& operator=( iterator&& ) = default;
 
-    recv_buffer_view operator*() noexcept
+    recv_buffer_view
+    operator*() noexcept
     {
       return { reinterpret_cast<unsigned char*>( p_ ) };
     }
-    recv_buffer_view operator*() const noexcept
+    recv_buffer_view
+    operator*() const noexcept
     {
       return { reinterpret_cast<unsigned char*>( p_ ) };
     }
 
-    iterator& operator++() noexcept
+    iterator&
+    operator++() noexcept
     {
       BOOST_ASSERT( p_ );
       p_ = reinterpret_cast<detail::buf_header_impl*>( p_->next_ );
       return *this;
     }
 
-    iterator operator++( int ) noexcept
+    iterator
+    operator++( int ) noexcept
     {
       BOOST_ASSERT( p_ );
       auto const old = p_;
@@ -232,26 +272,33 @@ public:
       return old;
     }
 
-    iterator& operator--() noexcept
+    iterator&
+    operator--() noexcept
     {
       p_ = reinterpret_cast<detail::buf_header_impl*>( p_->prev_ );
       return *this;
     }
 
-    iterator operator--( int ) noexcept
+    iterator
+    operator--( int ) noexcept
     {
       auto const old = p_;
       p_ = reinterpret_cast<detail::buf_header_impl*>( p_->prev_ );
       return old;
     }
 
-    bool operator==( iterator const& rhs ) const { return p_ == rhs.p_; }
+    bool
+    operator==( iterator const& rhs ) const
+    {
+      return p_ == rhs.p_;
+    }
     bool operator!=( iterator const& ) const = default;
   };
 
   using const_iterator = iterator;
 
-  iterator begin() const
+  iterator
+  begin() const
   {
     if ( empty() ) {
       return end();
@@ -259,13 +306,22 @@ public:
     return { reinterpret_cast<detail::buf_header_impl*>( head_ ) };
   }
 
-  iterator end() const
+  iterator
+  end() const
   {
     return { const_cast<detail::buf_header_impl*>( psentry_ ) };
   }
 
-  std::size_t num_bufs() const noexcept { return num_bufs_; }
-  bool empty() const noexcept { return num_bufs() == 0; }
+  std::size_t
+  num_bufs() const noexcept
+  {
+    return num_bufs_;
+  }
+  bool
+  empty() const noexcept
+  {
+    return num_bufs() == 0;
+  }
 
   FIONA_DECL
   std::string to_string() const;
@@ -279,7 +335,8 @@ struct recv_buffer_sequence : public recv_buffer_sequence_view
 private:
   detail::buf_header_impl sentry_;
 
-  void free_list()
+  void
+  free_list()
   {
     if ( !head_ ) {
       return;
@@ -330,7 +387,8 @@ public:
     rhs.num_bufs_ = 0;
   }
 
-  recv_buffer_sequence& operator=( recv_buffer_sequence&& rhs )
+  recv_buffer_sequence&
+  operator=( recv_buffer_sequence&& rhs )
   {
     if ( this != &rhs ) {
       if ( !empty() ) {
@@ -355,7 +413,8 @@ public:
 
   ~recv_buffer_sequence() { free_list(); }
 
-  void push_back( recv_buffer rbuf ) noexcept
+  void
+  push_back( recv_buffer rbuf ) noexcept
   {
     BOOST_ASSERT( rbuf.p_ != detail::default_buf_header() );
 
@@ -379,7 +438,8 @@ public:
     ++num_bufs_;
   }
 
-  recv_buffer pop_front()
+  recv_buffer
+  pop_front()
   {
     BOOST_ASSERT( !empty() );
 
@@ -403,7 +463,8 @@ public:
     return buf;
   }
 
-  void concat( recv_buffer_sequence rhs ) noexcept
+  void
+  concat( recv_buffer_sequence rhs ) noexcept
   {
     if ( rhs.empty() ) {
       return;

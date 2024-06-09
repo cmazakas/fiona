@@ -75,7 +75,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
     return nullptr;
   }
 
-  std::vector<Botan::X509_Certificate> find_cert_chain(
+  std::vector<Botan::X509_Certificate>
+  find_cert_chain(
       std::vector<std::string> const& algos,
       std::vector<
           Botan::AlgorithmIdentifier> const& /* cert_signature_schemes */,
@@ -98,8 +99,8 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
     }
 
     if ( type == "tls-client" ) {
-      for ( const auto& dn : acceptable_cas ) {
-        for ( const auto& cred : cert_key_pairs_ ) {
+      for ( auto const& dn : acceptable_cas ) {
+        for ( auto const& cred : cert_key_pairs_ ) {
           if ( dn == cred.cert.issuer_dn() ) {
             return { cred.cert };
           }
@@ -160,13 +161,15 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
 
   ~tls_callbacks() override;
 
-  void tls_emit_data( std::span<std::uint8_t const> data ) override
+  void
+  tls_emit_data( std::span<std::uint8_t const> data ) override
   {
     send_buf_.insert( send_buf_.end(), data.begin(), data.end() );
   }
 
-  void tls_record_received( std::uint64_t /* seq_no */,
-                            std::span<std::uint8_t const> plaintext ) override
+  void
+  tls_record_received( std::uint64_t /* seq_no */,
+                       std::span<std::uint8_t const> plaintext ) override
   {
     received_record_ = true;
 
@@ -186,7 +189,8 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
     }
   }
 
-  void tls_alert( Botan::TLS::Alert alert ) override
+  void
+  tls_alert( Botan::TLS::Alert alert ) override
   {
     // if the alert type is a close_notify, we should start a graceful shutdown
     // of the connection, otherwise we're permitted to probably just do a
@@ -196,13 +200,14 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
     }
   }
 
-  void tls_verify_cert_chain(
-      const std::vector<Botan::X509_Certificate>& cert_chain,
-      const std::vector<std::optional<Botan::OCSP::Response>>& ocsp_responses,
-      const std::vector<Botan::Certificate_Store*>& trusted_roots,
+  void
+  tls_verify_cert_chain(
+      std::vector<Botan::X509_Certificate> const& cert_chain,
+      std::vector<std::optional<Botan::OCSP::Response>> const& ocsp_responses,
+      std::vector<Botan::Certificate_Store*> const& trusted_roots,
       Botan::Usage_Type usage,
       std::string_view hostname,
-      const Botan::TLS::Policy& policy ) override
+      Botan::TLS::Policy const& policy ) override
   {
 
     Botan::Path_Validation_Restrictions restrictions(

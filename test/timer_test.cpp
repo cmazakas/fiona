@@ -20,8 +20,7 @@
 #pragma clang diagnostic ignored "-Wunreachable-code"
 #endif
 
-std::chrono::milliseconds
-get_sleep_duration();
+std::chrono::milliseconds get_sleep_duration();
 
 static int num_runs = 0;
 

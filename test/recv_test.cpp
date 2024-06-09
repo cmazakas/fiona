@@ -386,8 +386,8 @@ TEST_CASE( "concurrent send and recv" )
 
   struct server_op
   {
-    static fiona::task<void> start( fiona::tcp::acceptor acceptor,
-                                    int const num_clients )
+    static fiona::task<void>
+    start( fiona::tcp::acceptor acceptor, int const num_clients )
     {
       for ( int i = 0; i < num_clients; ++i ) {
         auto m_stream = co_await acceptor.async_accept();
@@ -400,8 +400,8 @@ TEST_CASE( "concurrent send and recv" )
       co_return;
     }
 
-    static fiona::task<void> send_server_msg( fiona::tcp::stream stream,
-                                              int idx )
+    static fiona::task<void>
+    send_server_msg( fiona::tcp::stream stream, int idx )
     {
       if ( idx == 0 ) {
         co_return;
@@ -415,7 +415,8 @@ TEST_CASE( "concurrent send and recv" )
       co_return;
     }
 
-    static fiona::task<void> session( fiona::tcp::stream stream )
+    static fiona::task<void>
+    session( fiona::tcp::stream stream )
     {
       auto ex = stream.get_executor();
       stream.set_buffer_group( 0 );
@@ -448,8 +449,8 @@ TEST_CASE( "concurrent send and recv" )
 
   struct client_op
   {
-    static fiona::task<void> start( fiona::executor ex,
-                                    std::uint16_t const port )
+    static fiona::task<void>
+    start( fiona::executor ex, std::uint16_t const port )
     {
       fiona::tcp::client client( ex );
 
@@ -487,8 +488,8 @@ TEST_CASE( "concurrent send and recv" )
       co_return;
     }
 
-    static fiona::task<void> send_client_msg( fiona::tcp::stream stream,
-                                              int idx )
+    static fiona::task<void>
+    send_client_msg( fiona::tcp::stream stream, int idx )
     {
       if ( idx == 0 ) {
         co_return;

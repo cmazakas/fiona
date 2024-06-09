@@ -38,9 +38,14 @@ struct custom_awaitable
     }
   }
 
-  bool await_ready() const noexcept { return false; }
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
 
-  void await_suspend( std::coroutine_handle<> h )
+  void
+  await_suspend( std::coroutine_handle<> h )
   {
     auto waker = ex.make_waker( h );
 
@@ -65,7 +70,8 @@ struct custom_awaitable
     } );
   }
 
-  std::vector<int> await_resume()
+  std::vector<int>
+  await_resume()
   {
     std::lock_guard<std::mutex> lg{ *m };
     return std::move( *nums );

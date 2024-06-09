@@ -12,10 +12,8 @@ inline constexpr char const* localhost_ipv4 = "127.0.0.1";
 constexpr int num_clients = 5000;
 constexpr int num_msgs = 1000;
 
-void
-fiona_echo_bench();
+void fiona_echo_bench();
 
-void
-asio_echo_bench();
+void asio_echo_bench();
 
 #endif // FIONA_BENCHES_ECHO_COMMON_HPP

@@ -1,4 +1,4 @@
-AlwaysBreakAfterReturnType: TopLevel
+AlwaysBreakAfterReturnType: AllDefinitions
 PointerAlignment: Left
 AlwaysBreakTemplateDeclarations: Yes
 SpacesInParentheses: true
@@ -15,3 +15,4 @@ BraceWrapping:
   AfterStruct: true
   AfterClass: true
   AfterFunction: true
+QualifierAlignment: Right

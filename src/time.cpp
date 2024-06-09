@@ -53,7 +53,8 @@ struct timeout_frame : public detail::awaitable_base
 
   virtual ~timeout_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     ts_ = { .tv_sec = 0, .tv_nsec = 0 };
     h_ = nullptr;
@@ -62,7 +63,8 @@ struct timeout_frame : public detail::awaitable_base
     ec_ = {};
   }
 
-  void await_process_cqe( io_uring_cqe* cqe ) override
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
   {
     done_ = true;
     auto e = -cqe->res;
@@ -71,7 +73,8 @@ struct timeout_frame : public detail::awaitable_base
     }
   }
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
@@ -88,14 +91,16 @@ struct cancel_frame : public detail::awaitable_base
   cancel_frame( timer_impl* ptimer ) : ptimer_( ptimer ) {}
   virtual ~cancel_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     initiated_ = false;
     done_ = false;
     ec_ = {};
   }
 
-  void await_process_cqe( io_uring_cqe* cqe ) override
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
   {
     done_ = true;
     if ( cqe->res < 0 ) {
@@ -103,7 +108,8 @@ struct cancel_frame : public detail::awaitable_base
     }
   }
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }

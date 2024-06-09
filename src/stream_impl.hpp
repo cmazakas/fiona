@@ -42,7 +42,8 @@ struct FIONA_DECL cancel_frame : public fiona::detail::awaitable_base
   cancel_frame( stream_impl* pstream ) : pstream_( pstream ) {}
   virtual ~cancel_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     res_ = 0;
@@ -50,18 +51,24 @@ struct FIONA_DECL cancel_frame : public fiona::detail::awaitable_base
     done_ = false;
   }
 
-  void await_process_cqe( io_uring_cqe* cqe ) override
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
   {
     done_ = true;
     res_ = cqe->res;
   }
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
 
-  bool is_active() const noexcept { return initiated_ && !done_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
 };
 
 struct FIONA_DECL timeout_cancel_frame : public fiona::detail::awaitable_base
@@ -75,15 +82,24 @@ struct FIONA_DECL timeout_cancel_frame : public fiona::detail::awaitable_base
   timeout_cancel_frame( stream_impl* pstream ) : pstream_( pstream ) {}
   virtual ~timeout_cancel_frame() override;
 
-  void await_process_cqe( io_uring_cqe* cqe ) override
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
   {
     initiated_ = false;
     res_ = cqe->res;
   }
 
-  std::coroutine_handle<> handle() noexcept override { return nullptr; }
+  std::coroutine_handle<>
+  handle() noexcept override
+  {
+    return nullptr;
+  }
 
-  bool is_active() const noexcept { return initiated_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_;
+  }
 };
 
 struct FIONA_DECL close_frame : public fiona::detail::awaitable_base
@@ -98,7 +114,8 @@ struct FIONA_DECL close_frame : public fiona::detail::awaitable_base
   close_frame( stream_impl* pstream ) : pstream_( pstream ) {}
   virtual ~close_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     res_ = 0;
@@ -106,14 +123,19 @@ struct FIONA_DECL close_frame : public fiona::detail::awaitable_base
     done_ = false;
   }
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  bool is_active() const noexcept { return initiated_ && !done_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
 };
 
 struct FIONA_DECL send_frame : public fiona::detail::awaitable_base
@@ -129,7 +151,8 @@ struct FIONA_DECL send_frame : public fiona::detail::awaitable_base
 
   ~send_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     res_ = 0;
@@ -139,12 +162,17 @@ struct FIONA_DECL send_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
 
-  bool is_active() const noexcept { return initiated_ && !done_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
 };
 
 struct FIONA_DECL recv_frame : public fiona::detail::awaitable_base
@@ -165,13 +193,18 @@ struct FIONA_DECL recv_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
 
   inline void schedule_recv();
-  bool is_active() const noexcept { return initiated_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_;
+  }
 };
 
 struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base
@@ -184,7 +217,8 @@ struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base
   timeout_frame( stream_impl* pstream ) : pstream_( pstream ) {}
   virtual ~timeout_frame() override;
 
-  void reset()
+  void
+  reset()
   {
     initiated_ = false;
     cancelled_ = false;
@@ -192,8 +226,16 @@ struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override { return nullptr; }
-  bool is_active() const noexcept { return initiated_; }
+  std::coroutine_handle<>
+  handle() noexcept override
+  {
+    return nullptr;
+  }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_;
+  }
 };
 
 struct FIONA_DECL stream_impl : public virtual ref_count,
@@ -429,7 +471,8 @@ struct FIONA_DECL socket_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     if ( res_ < 0 ) {
       return boost::exchange( h_, nullptr );
@@ -439,7 +482,8 @@ struct FIONA_DECL socket_frame : public fiona::detail::awaitable_base
     return nullptr;
   }
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     res_ = 0;
@@ -447,7 +491,11 @@ struct FIONA_DECL socket_frame : public fiona::detail::awaitable_base
     done_ = false;
   }
 
-  bool is_active() const noexcept { return initiated_ && !done_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
 };
 
 struct FIONA_DECL connect_frame : public fiona::detail::awaitable_base
@@ -464,12 +512,14 @@ struct FIONA_DECL connect_frame : public fiona::detail::awaitable_base
 
   inline void await_process_cqe( io_uring_cqe* cqe ) override;
 
-  std::coroutine_handle<> handle() noexcept override
+  std::coroutine_handle<>
+  handle() noexcept override
   {
     return boost::exchange( h_, nullptr );
   }
 
-  void reset()
+  void
+  reset()
   {
     h_ = nullptr;
     res_ = 0;
@@ -477,7 +527,11 @@ struct FIONA_DECL connect_frame : public fiona::detail::awaitable_base
     done_ = false;
   }
 
-  bool is_active() const noexcept { return initiated_ && !done_; }
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
 };
 
 struct FIONA_DECL client_impl : public stream_impl,
