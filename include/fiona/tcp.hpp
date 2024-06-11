@@ -23,10 +23,6 @@
 #include "fiona_export.h"
 
 namespace fiona {
-namespace tls {
-struct client;
-}
-
 namespace tcp {
 namespace detail {
 

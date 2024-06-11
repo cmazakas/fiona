@@ -60,7 +60,7 @@ struct FIONA_TLS_EXPORT client : private tcp::client
 {
 public:
   client() = default;
-  client( tls_context ctx, executor ex );
+  client( tls_context ctx, executor ex, std::string_view hostname );
 
   client( client const& ) = default;
   client& operator=( client const& ) = default;

@@ -2,8 +2,10 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
+#include "fiona/dns.hpp"
 #include "helpers.hpp"
 
+#include <fiona/dns.hpp>
 #include <fiona/executor.hpp>
 #include <fiona/io_context.hpp>
 #include <fiona/ip.hpp>
@@ -451,7 +453,7 @@ tls_client( fiona::executor ex, std::uint16_t const port )
   fiona::tls::tls_context ctx;
   ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
 
-  fiona::tls::client client( ctx, ex );
+  fiona::tls::client client( ctx, ex, "localhost" );
 
   ex.register_buffer_sequence( 4 * 1024, 8, 1 );
   client.set_buffer_group( 1 );
@@ -633,7 +635,7 @@ TEST_CASE( "large messages" )
       fiona::tls::tls_context ctx;
       ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
 
-      fiona::tls::client client( ctx, ex );
+      fiona::tls::client client( ctx, ex, "localhost" );
 
       ex.register_buffer_sequence( 4 * 1024, 8, 1 );
       client.set_buffer_group( 1 );
@@ -814,7 +816,7 @@ TEST_CASE( "multiple clients" )
              std::uint16_t port,
              std::span<std::uint8_t const> msg )
     {
-      fiona::tls::client client( ctx, ex );
+      fiona::tls::client client( ctx, ex, "localhost" );
       client.set_buffer_group( 1 );
 
       auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -877,4 +879,77 @@ TEST_CASE( "multiple clients" )
   ioc.run();
 
   CHECK( num_runs == 2 * num_clients );
+}
+
+TEST_CASE( "https google request" )
+{
+  struct client_op
+  {
+    static fiona::task<void>
+    run( fiona::executor ex )
+    {
+      ex.register_buffer_sequence( 1024, 256, 0 );
+
+      fiona::dns_resolver resolver( ex );
+
+      auto m_addrlist =
+          co_await resolver.async_resolve( "www.google.com", "https" );
+      CHECK( m_addrlist.has_value() );
+
+      auto addrlist = std::move( m_addrlist ).value();
+      sockaddr const* addr = nullptr;
+      for ( auto const* pai = addrlist.data(); pai; pai = pai->ai_next ) {
+        if ( ( pai->ai_family == AF_INET ) || ( pai->ai_family == AF_INET6 ) ) {
+          addr = pai->ai_addr;
+          break;
+        }
+      }
+
+      fiona::tls::tls_context ctx;
+      fiona::tls::client client( ctx, ex, "google.com" );
+      client.set_buffer_group( 0 );
+
+      auto m_ok = co_await client.async_connect( addr );
+      CHECK( m_ok.has_value() );
+
+      m_ok = co_await client.async_handshake();
+      CHECK( m_ok.has_value() );
+
+      std::string_view req = "GET / HTTP/1.1\r\nconnection: close\r\n\r\n";
+      auto m_n = co_await client.async_send( req );
+      CHECK( m_n.value() == req.size() );
+
+      fiona::recv_buffer_sequence bufs;
+      while ( true ) {
+        auto m_bs = co_await client.async_recv();
+        if ( m_bs.has_error() && m_bs.error() == std::errc::timed_out ) {
+          break;
+        }
+
+        bufs.concat( std::move( m_bs ).value() );
+        if ( bufs.back().empty() ) {
+          break;
+        }
+      }
+
+      std::cout << bufs.to_string() << std::endl;
+
+      m_ok = co_await client.async_shutdown();
+      CHECK( m_ok.has_value() );
+
+      m_ok = co_await client.async_close();
+      CHECK( m_ok.has_value() );
+
+      ++num_runs;
+      co_return;
+    }
+  };
+
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  ioc.spawn( client_op::run( ioc.get_executor() ) );
+  ioc.run();
+
+  CHECK( num_runs == 1 );
 }

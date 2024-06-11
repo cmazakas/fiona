@@ -323,6 +323,20 @@ public:
     return num_bufs() == 0;
   }
 
+  recv_buffer_view
+  front() const noexcept
+  {
+    BOOST_ASSERT( !empty() );
+    return recv_buffer_view( head_ );
+  }
+
+  recv_buffer_view
+  back() const noexcept
+  {
+    BOOST_ASSERT( !empty() );
+    return recv_buffer_view( tail_ );
+  }
+
   FIONA_EXPORT
   std::string to_string() const;
 

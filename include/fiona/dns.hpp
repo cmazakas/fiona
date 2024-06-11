@@ -7,6 +7,8 @@
 #include <coroutine>          // for coroutine_handle
 #include <memory>             // for shared_ptr
 
+#include <netdb.h>
+
 #include "fiona_export.h"
 
 namespace fiona {
@@ -28,7 +30,10 @@ private:
 public:
   dns_entry_list() = default;
 
+  FIONA_EXPORT
   dns_entry_list( dns_entry_list&& rhs ) noexcept;
+
+  FIONA_EXPORT
   dns_entry_list& operator=( dns_entry_list&& rhs ) noexcept;
 
   dns_entry_list( dns_entry_list const& ) = delete;

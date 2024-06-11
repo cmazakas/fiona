@@ -10,6 +10,7 @@
 #include <fiona/executor.hpp>
 
 #include <botan/certstor.h>
+#include <botan/certstor_system.h>
 #include <botan/credentials_manager.h>
 #include <botan/data_src.h>
 #include <botan/pk_keys.h>
@@ -166,6 +167,7 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
   // consider:
   // https://botan.randombit.net/doxygen/classBotan_1_1Certificate__Store.html
   Botan::Certificate_Store_In_Memory cert_store_;
+  Botan::System_Certificate_Store system_store_;
 
   tls_credentials_manager() = default;
   ~tls_credentials_manager() override;
@@ -225,7 +227,7 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
     BOTAN_UNUSED( type, context );
     // return a list of certificates of CAs we trust for tls server certificates
     // ownership of the pointers remains with Credentials_Manager
-    return { &cert_store_ };
+    return { &cert_store_, &system_store_ };
   }
 };
 
@@ -282,11 +284,24 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
     received_record_ = true;
 
     while ( !plaintext.empty() ) {
+      if ( input_sequence_.num_bufs() > 0 ) {
+        auto back = input_sequence_.back();
+        auto dst = back.spare_capacity_mut();
+        if ( dst.size() > 0 ) {
+          auto n = std::min( dst.size(), plaintext.size() );
+          std::memcpy( dst.data(), plaintext.data(), n );
+          back.set_len( back.size() + n );
+          plaintext = plaintext.subspan( n );
+          continue;
+        }
+      }
+
       auto buf = output_sequence_.pop_front();
 
       recv_buffer_view bv = buf;
       bv.set_len( 0 );
       auto dst = bv.spare_capacity_mut();
+      BOOST_ASSERT( dst.size() > 0 );
       auto n = std::min( dst.size(), plaintext.size() );
       std::memcpy( dst.data(), plaintext.data(), n );
       bv.set_len( n );
@@ -352,9 +367,9 @@ struct client_impl : public tcp::detail::client_impl
   client_impl( client_impl const& ) = delete;
   client_impl& operator=( client_impl const& ) = delete;
 
-  client_impl( tls_context ctx, executor ex )
+  client_impl( tls_context ctx, executor ex, std::string_view hostname )
       : tcp::detail::client_impl( ex ), p_callbacks_( new tls_callbacks() ),
-        tls_ctx_( ctx ), server_info_( "localhost", 0 ),
+        tls_ctx_( ctx ), server_info_( hostname, 0 ),
         tls_client_( p_callbacks_,
                      tls_ctx_.p_tls_frame_->session_mgr_,
                      tls_ctx_.p_tls_frame_->creds_mgr_,
@@ -431,9 +446,9 @@ tls_context::add_certificate_key_pair( std::string_view cert_path,
 
 //------------------------------------------------------------------------------
 
-client::client( tls_context ctx, executor ex )
+client::client( tls_context ctx, executor ex, std::string_view hostname )
 {
-  pstream_ = new detail::client_impl( ctx, ex );
+  pstream_ = new detail::client_impl( ctx, ex, hostname );
 }
 
 client::~client() {}
@@ -457,12 +472,12 @@ client::async_handshake()
   send_buf.clear();
 
   while ( !tls_client.is_handshake_complete() ) {
-    auto mbuffers = co_await tcp::stream::async_recv();
-    if ( mbuffers.has_error() ) {
-      co_return mbuffers.error();
+    auto m_buffers = co_await tcp::stream::async_recv();
+    if ( m_buffers.has_error() ) {
+      co_return m_buffers.error();
     }
 
-    auto& buf = mbuffers.value();
+    auto& buf = m_buffers.value();
     auto data = buf.to_bytes();
     tls_client.received_data( data );
 
@@ -506,7 +521,10 @@ client::async_recv()
   auto& f = static_cast<detail::client_impl&>( *pstream_ );
   auto& tls_client = f.tls_client_;
 
-  while ( !f.p_callbacks_->received_record_ ) {
+  auto& cb = *f.p_callbacks_;
+
+  std::size_t bytes_processed = 0;
+  while ( !cb.received_record_ ) {
     auto m_buffers = co_await tcp::stream::async_recv();
     if ( m_buffers.has_error() ) {
       co_return m_buffers.error();
@@ -515,11 +533,20 @@ client::async_recv()
     auto bufs = std::move( m_buffers ).value();
     while ( !bufs.empty() ) {
       auto buf = bufs.pop_front();
+
+      auto const hit_eof = ( buf.capacity() == 0 );
+      if ( hit_eof ) {
+        cb.input_sequence_.push_back( std::move( buf ) );
+        cb.received_record_ = true;
+        break;
+      }
+
       auto data = buf.readable_bytes();
-      f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
+      cb.output_sequence_.push_back( std::move( buf ) );
 
       try {
         tls_client.received_data( data );
+        bytes_processed += data.size();
       } catch ( Botan::Exception const& ex ) {
         auto err = ex.error_type();
         co_return detail::make_error_code( err );
@@ -527,8 +554,8 @@ client::async_recv()
     }
   }
 
-  f.p_callbacks_->received_record_ = false;
-  co_return std::move( f.p_callbacks_->input_sequence_ );
+  cb.received_record_ = false;
+  co_return std::move( cb.input_sequence_ );
 }
 
 task<result<void>>
