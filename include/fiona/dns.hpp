@@ -1,13 +1,13 @@
 #ifndef FIONA_DNS_HPP
 #define FIONA_DNS_HPP
 
-#include <fiona/error.hpp>         // for result
-#include <fiona/executor.hpp>      // for executor
+#include <fiona/error.hpp>    // for result
+#include <fiona/executor.hpp> // for executor
 
-#include <fiona/detail/config.hpp> // for FIONA_DECL
+#include <coroutine>          // for coroutine_handle
+#include <memory>             // for shared_ptr
 
-#include <coroutine>               // for coroutine_handle
-#include <memory>                  // for shared_ptr
+#include "fiona_export.h"
 
 namespace fiona {
 struct dns_frame;
@@ -34,10 +34,10 @@ public:
   dns_entry_list( dns_entry_list const& ) = delete;
   dns_entry_list& operator=( dns_entry_list const& ) = delete;
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~dns_entry_list();
 
-  FIONA_DECL
+  FIONA_EXPORT
   addrinfo const* data() const noexcept;
 };
 
@@ -54,13 +54,13 @@ private:
 public:
   ~dns_awaitable() = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<dns_entry_list> await_resume();
 };
 
@@ -71,7 +71,7 @@ private:
   std::shared_ptr<dns_frame> pframe_ = nullptr;
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   dns_resolver( fiona::executor ex );
 
   dns_resolver( dns_resolver&& ) = default;
@@ -82,7 +82,7 @@ public:
 
   ~dns_resolver() = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   dns_awaitable async_resolve( char const* node, char const* service );
 };
 } // namespace fiona

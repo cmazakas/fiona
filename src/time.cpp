@@ -7,7 +7,6 @@
 #include <fiona/error.hpp>                   // for error_code, result, thr...
 #include <fiona/executor.hpp>                // for executor, executor_acce...
 
-#include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/get_sqe.hpp>          // for get_sqe, submit_ring
 
 #include <boost/assert.hpp>                  // for BOOST_ASSERT

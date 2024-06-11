@@ -16,6 +16,7 @@
 #include <liburing.h>
 
 #include "awaitable_base.hpp"
+#include "fiona_export.h"
 
 namespace fiona {
 namespace tcp {
@@ -29,7 +30,7 @@ using fiona::detail::ref_count;
 using clock_type = std::chrono::steady_clock;
 using timepoint_type = std::chrono::time_point<clock_type>;
 
-struct FIONA_DECL cancel_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
@@ -71,7 +72,7 @@ struct FIONA_DECL cancel_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL timeout_cancel_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT timeout_cancel_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
   int res_ = 0;
@@ -102,7 +103,7 @@ struct FIONA_DECL timeout_cancel_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL close_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT close_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
@@ -138,7 +139,7 @@ struct FIONA_DECL close_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL send_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT send_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
@@ -175,7 +176,7 @@ struct FIONA_DECL send_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL recv_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT recv_frame : public fiona::detail::awaitable_base
 {
   fiona::recv_buffer_sequence buffers_;
   fiona::error_code ec_;
@@ -207,7 +208,7 @@ struct FIONA_DECL recv_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT timeout_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
   bool initiated_ = false;
@@ -238,13 +239,13 @@ struct FIONA_DECL timeout_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL stream_impl : public virtual ref_count,
-                                public cancel_frame,
-                                public close_frame,
-                                public send_frame,
-                                public recv_frame,
-                                public timeout_frame,
-                                public timeout_cancel_frame
+struct FIONA_EXPORT stream_impl : public virtual ref_count,
+                                  public cancel_frame,
+                                  public close_frame,
+                                  public send_frame,
+                                  public recv_frame,
+                                  public timeout_frame,
+                                  public timeout_cancel_frame
 {
 
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
@@ -457,7 +458,7 @@ detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
   intrusive_ptr_add_ref( this );
 }
 
-struct FIONA_DECL socket_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT socket_frame : public fiona::detail::awaitable_base
 {
   client_impl* pclient_ = nullptr;
   std::coroutine_handle<> h_;
@@ -498,7 +499,7 @@ struct FIONA_DECL socket_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL connect_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT connect_frame : public fiona::detail::awaitable_base
 {
   client_impl* pclient_ = nullptr;
   std::coroutine_handle<> h_;
@@ -534,9 +535,9 @@ struct FIONA_DECL connect_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_DECL client_impl : public stream_impl,
-                                public socket_frame,
-                                public connect_frame
+struct FIONA_EXPORT client_impl : public stream_impl,
+                                  public socket_frame,
+                                  public connect_frame
 {
   sockaddr_storage addr_storage_ = {};
 

@@ -2,7 +2,6 @@
 #define FIONA_IO_CONTEXT_HPP
 
 #include <fiona/detail/common.hpp> // for io_context_frame, buf_ring
-#include <fiona/detail/config.hpp> // for FIONA_DECL
 #include <fiona/params.hpp>        // for io_context_params
 #include <fiona/task.hpp>          // for task
 
@@ -28,10 +27,10 @@ public:
   {
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~io_context();
 
-  FIONA_DECL
+  FIONA_EXPORT
   executor get_executor() const noexcept;
 
   io_context_params
@@ -40,7 +39,7 @@ public:
     return pframe_->params_;
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   void spawn( task<void> t );
 
   void
@@ -53,7 +52,7 @@ public:
                                       buffer_group_id );
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   void run();
 };
 

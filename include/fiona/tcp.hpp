@@ -9,7 +9,6 @@
 #include <fiona/error.hpp>                   // for result
 #include <fiona/executor.hpp>                // for executor
 
-#include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/time.hpp>             // for duration_to_timespec
 
 #include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
@@ -20,6 +19,8 @@
 #include <cstdint>                           // for uint16_t
 #include <span>                              // for span
 #include <string_view>                       // for string_view
+
+#include "fiona_export.h"
 
 namespace fiona {
 namespace tls {
@@ -55,13 +56,13 @@ namespace fiona {
 namespace tcp {
 namespace detail {
 
-void FIONA_DECL intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
+void FIONA_EXPORT intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
 
-void FIONA_DECL intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
+void FIONA_EXPORT intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
 
-void FIONA_DECL intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
+void FIONA_EXPORT intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
 
-void FIONA_DECL intrusive_ptr_release( stream_impl* pstream ) noexcept;
+void FIONA_EXPORT intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
 } // namespace detail
 } // namespace tcp
@@ -84,7 +85,7 @@ public:
   acceptor( acceptor&& ) = default;
   acceptor& operator=( acceptor&& ) = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   acceptor( executor ex, sockaddr const* addr );
 
   acceptor( executor ex, sockaddr_in const* addr )
@@ -98,20 +99,20 @@ public:
 
   bool operator==( acceptor const& ) const = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   std::uint16_t port() const noexcept;
 
-  FIONA_DECL
+  FIONA_EXPORT
   executor get_executor() const noexcept;
 
-  FIONA_DECL
+  FIONA_EXPORT
   accept_awaitable async_accept();
 
-  FIONA_DECL
+  FIONA_EXPORT
   accept_raw_awaitable async_accept_raw();
 };
 
-struct FIONA_DECL stream
+struct FIONA_EXPORT stream
 {
 protected:
   friend struct accept_awaitable;
@@ -155,7 +156,7 @@ public:
   recv_awaitable async_recv();
 };
 
-struct FIONA_DECL client : public stream
+struct FIONA_EXPORT client : public stream
 {
 public:
   client() {}
@@ -187,7 +188,7 @@ private:
   stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   ~stream_close_awaitable();
 
   bool
@@ -196,10 +197,10 @@ public:
     return false;
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<void> await_resume();
 };
 
@@ -214,13 +215,13 @@ private:
   stream_cancel_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<int> await_resume();
 };
 
@@ -237,7 +238,7 @@ private:
                   boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   ~send_awaitable();
 
   bool
@@ -246,10 +247,10 @@ public:
     return false;
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<std::size_t> await_resume();
 };
 
@@ -271,16 +272,16 @@ public:
   recv_awaitable( recv_awaitable&& ) = delete;
   recv_awaitable& operator=( recv_awaitable&& ) = delete;
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~recv_awaitable();
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<recv_buffer_sequence> await_resume();
 };
 
@@ -298,7 +299,7 @@ public:
   accept_awaitable( accept_awaitable const& ) = delete;
   accept_awaitable( accept_awaitable&& ) = delete;
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~accept_awaitable();
 
   bool
@@ -307,10 +308,10 @@ public:
     return false;
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<stream> await_resume();
 };
 
@@ -326,7 +327,7 @@ public:
   accept_raw_awaitable( accept_awaitable const& ) = delete;
   accept_raw_awaitable( accept_awaitable&& ) = delete;
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<int> await_resume();
 };
 
@@ -340,16 +341,16 @@ private:
   connect_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   ~connect_awaitable();
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<void> await_resume();
 };
 

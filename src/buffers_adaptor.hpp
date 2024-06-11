@@ -4,7 +4,5 @@
 
 #include <fiona/buffer.hpp>
 
-#include <fiona/detail/config.hpp>
-
 namespace fiona {
 } // namespace fiona

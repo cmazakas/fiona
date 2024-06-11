@@ -6,7 +6,6 @@
 #include <fiona/task.hpp>          // for task
 
 #include <fiona/detail/common.hpp> // for io_context_frame, task_map_type, buf_ring
-#include <fiona/detail/config.hpp>
 
 #include <boost/assert.hpp>        // for BOOST_ASSERT
 #include <boost/container_hash/hash.hpp>          // for hash
@@ -23,6 +22,8 @@
 
 #include <errno.h>   // for EINVAL, errno
 #include <unistd.h>  // for write
+
+#include "fiona_export.h"
 
 namespace fiona {
 namespace detail {

@@ -6,6 +6,7 @@ if (${CMAKE_CXX_STANDARD} LESS "20")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+include(GenerateExportHeader)
 
 find_package(liburing 2.5 REQUIRED)
 find_package(Boost 1.84 REQUIRED)
@@ -63,22 +64,18 @@ target_sources(
   FILES ${fiona_headers}
 )
 
-target_compile_definitions(fiona PRIVATE FIONA_SOURCE)
-if (BUILD_SHARED_LIBS)
-  target_compile_definitions(fiona PRIVATE FIONA_DYN_LINK)
-endif()
+generate_export_header(fiona)
+target_include_directories(fiona PUBLIC ${CMAKE_BINARY_DIR})
 
 add_library(Fiona::fiona ALIAS fiona)
 
 if(Botan_FOUND)
   add_library(fiona_tls src/tls.cpp)
   target_link_libraries(fiona_tls PUBLIC Fiona::fiona Botan::Botan-static)
-  add_library(Fiona::tls ALIAS fiona_tls)
+  generate_export_header(fiona_tls)
+  target_include_directories(fiona_tls PUBLIC ${CMAKE_BINARY_DIR})
 
-  target_compile_definitions(fiona_tls PRIVATE FIONA_TLS_SOURCE)
-  if (BUILD_SHARED_LIBS)
-    target_compile_definitions(fiona_tls PRIVATE FIONA_DYN_LINK)
-  endif()
+  add_library(Fiona::tls ALIAS fiona_tls)
 endif()
 
 option(FIONA_BUILD_TESTING "" OFF)

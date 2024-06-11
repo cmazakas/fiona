@@ -5,8 +5,6 @@
 #ifndef FIONA_BUFFER_HPP
 #define FIONA_BUFFER_HPP
 
-#include <fiona/detail/config.hpp>
-
 #include <boost/assert.hpp>
 #include <boost/core/exchange.hpp>
 
@@ -17,6 +15,8 @@
 #include <span>
 #include <string_view>
 #include <vector>
+
+#include "fiona_export.h"
 
 namespace fiona {
 struct recv_buffer;
@@ -323,10 +323,10 @@ public:
     return num_bufs() == 0;
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   std::string to_string() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   std::vector<unsigned char> to_bytes() const;
 };
 

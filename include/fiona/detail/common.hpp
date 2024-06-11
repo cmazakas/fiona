@@ -2,7 +2,6 @@
 #define FIONA_DETAIL_COMMON_HPP
 
 #include <fiona/buffer.hpp>                       // for recv_buffer
-#include <fiona/detail/config.hpp>                // for FIONA_DECL
 #include <fiona/params.hpp>                       // for io_context_params
 
 #include <boost/container_hash/hash.hpp>          // for hash
@@ -45,10 +44,10 @@ public:
   buf_ring( buf_ring&& rhs ) = delete;
   buf_ring& operator=( buf_ring&& rhs ) = delete;
 
-  FIONA_DECL
+  FIONA_EXPORT
   buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid );
 
-  FIONA_DECL
+  FIONA_EXPORT
   buf_ring( io_uring* ring,
             std::uint32_t num_bufs,
             std::size_t buf_size,
@@ -143,10 +142,10 @@ struct io_context_frame
   std::exception_ptr exception_ptr_;
   std::array<int, 2> pipefd_ = { -1, -1 };
 
-  FIONA_DECL
+  FIONA_EXPORT
   io_context_frame( io_context_params const& io_ctx_params );
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~io_context_frame();
 };
 

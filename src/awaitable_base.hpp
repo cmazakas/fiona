@@ -5,18 +5,18 @@
 #ifndef FIONA_DETAIL_AWAITABLE_BASE_HPP
 #define FIONA_DETAIL_AWAITABLE_BASE_HPP
 
-#include <fiona/detail/config.hpp>
-
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <coroutine>
+
+#include "fiona_export.h"
 
 struct io_uring_cqe;
 
 namespace fiona {
 namespace detail {
 
-struct FIONA_DECL ref_count
+struct FIONA_EXPORT ref_count
 {
   int count_ = 0;
   virtual ~ref_count();
@@ -42,7 +42,7 @@ intrusive_ptr_release( ref_count* prc )
   }
 }
 
-struct FIONA_DECL awaitable_base : public virtual ref_count
+struct FIONA_EXPORT awaitable_base : public virtual ref_count
 {
   virtual ~awaitable_base() override;
   virtual void await_process_cqe( io_uring_cqe* cqe ) = 0;

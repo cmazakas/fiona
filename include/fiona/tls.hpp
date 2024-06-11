@@ -10,11 +10,11 @@
 #include <fiona/task.hpp>
 #include <fiona/tcp.hpp>
 
-#include <fiona/detail/config.hpp>
-
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <memory>
+
+#include "fiona_tls_export.h"
 
 namespace fiona {
 namespace tls {
@@ -38,7 +38,7 @@ private:
   std::shared_ptr<detail::tls_context_frame> p_tls_frame_;
 
 public:
-  FIONA_TLS_DECL
+  FIONA_TLS_EXPORT
   tls_context();
 
   ~tls_context() = default;
@@ -46,17 +46,17 @@ public:
   tls_context( tls_context const& ) = default;
   tls_context& operator=( tls_context const& ) = default;
 
-  FIONA_TLS_DECL
+  FIONA_TLS_EXPORT
   void add_certificate_authority( std::string_view filepath );
 
-  FIONA_TLS_DECL
+  FIONA_TLS_EXPORT
   void add_certificate_key_pair( std::string_view cert_path,
                                  std::string_view key_path );
 };
 
 //------------------------------------------------------------------------------
 
-struct FIONA_TLS_DECL client : private tcp::client
+struct FIONA_TLS_EXPORT client : private tcp::client
 {
 public:
   client() = default;
@@ -83,7 +83,7 @@ public:
   task<result<void>> async_shutdown();
 };
 
-struct FIONA_TLS_DECL server : private tcp::stream
+struct FIONA_TLS_EXPORT server : private tcp::stream
 {
 public:
   server() = default;

@@ -6,7 +6,6 @@
 
 #include <fiona/buffer.hpp>                  // for recv_buffer
 #include <fiona/detail/common.hpp>
-#include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/get_sqe.hpp>          // for reserve_sqes
 #include <fiona/error.hpp>                   // for error_code, result
 #include <fiona/executor.hpp>                // for executor_access_...
@@ -226,13 +225,13 @@ public:
   }
 };
 
-void FIONA_DECL
+void FIONA_EXPORT
 intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept
 {
   intrusive_ptr_add_ref( static_cast<ref_count*>( pacceptor ) );
 }
 
-void FIONA_DECL
+void FIONA_EXPORT
 intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept
 {
   intrusive_ptr_release( static_cast<ref_count*>( pacceptor ) );
@@ -395,13 +394,13 @@ accept_raw_awaitable::await_resume()
 
 namespace detail {
 
-void FIONA_DECL
+void FIONA_EXPORT
 intrusive_ptr_add_ref( stream_impl* pstream ) noexcept
 {
   intrusive_ptr_add_ref( static_cast<ref_count*>( pstream ) );
 }
 
-void FIONA_DECL
+void FIONA_EXPORT
 intrusive_ptr_release( stream_impl* pstream ) noexcept
 {
   intrusive_ptr_release( static_cast<ref_count*>( pstream ) );

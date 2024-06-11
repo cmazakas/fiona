@@ -8,7 +8,6 @@
 #include <fiona/error.hpp>                   // for result
 #include <fiona/executor.hpp>                // for executor
 
-#include <fiona/detail/config.hpp>           // for FIONA_DECL
 #include <fiona/detail/time.hpp>             // for duration_to_timespec
 
 #include <boost/smart_ptr/intrusive_ptr.hpp> // for intrusive_ptr
@@ -16,14 +15,16 @@
 #include <chrono>                            // for duration
 #include <coroutine>                         // for coroutine_handle
 
+#include "fiona_export.h"
+
 namespace fiona {
 namespace detail {
 
 struct timer_impl;
 
-void FIONA_DECL intrusive_ptr_add_ref( timer_impl* );
+void FIONA_EXPORT intrusive_ptr_add_ref( timer_impl* );
 
-void FIONA_DECL intrusive_ptr_release( timer_impl* );
+void FIONA_EXPORT intrusive_ptr_release( timer_impl* );
 
 } // namespace detail
 } // namespace fiona
@@ -39,21 +40,21 @@ private:
 
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
-  FIONA_DECL
+  FIONA_EXPORT
   timer_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer,
                    __kernel_timespec ts );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   ~timer_awaitable();
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<void> await_resume();
 };
 
@@ -67,16 +68,16 @@ private:
   timer_cancel_awaitable( boost::intrusive_ptr<detail::timer_impl> ptimer );
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   ~timer_cancel_awaitable();
 
-  FIONA_DECL
+  FIONA_EXPORT
   bool await_ready() const;
 
-  FIONA_DECL
+  FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
 
-  FIONA_DECL
+  FIONA_EXPORT
   result<void> await_resume();
 };
 
@@ -86,20 +87,20 @@ private:
   boost::intrusive_ptr<detail::timer_impl> ptimer_ = nullptr;
 
 public:
-  FIONA_DECL
+  FIONA_EXPORT
   timer( executor ex );
 
-  FIONA_DECL
+  FIONA_EXPORT
   timer( timer const& ) = default;
-  FIONA_DECL
+  FIONA_EXPORT
   timer& operator=( timer const& ) = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   timer( timer&& ) = default;
-  FIONA_DECL
+  FIONA_EXPORT
   timer& operator=( timer&& ) = default;
 
-  FIONA_DECL
+  FIONA_EXPORT
   ~timer() = default;
 
   template <class Rep, class Period>
@@ -110,10 +111,10 @@ public:
     return { ptimer_, ts };
   }
 
-  FIONA_DECL
+  FIONA_EXPORT
   timer_cancel_awaitable async_cancel();
 
-  FIONA_DECL
+  FIONA_EXPORT
   executor get_executor() const noexcept;
 };
 
