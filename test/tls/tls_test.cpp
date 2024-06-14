@@ -2,8 +2,7 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-#include "fiona/dns.hpp"
-#include "helpers.hpp"
+#include "../helpers.hpp"
 
 #include <fiona/dns.hpp>
 #include <fiona/executor.hpp>
@@ -131,11 +130,11 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
   tls_credentials_manager()
   {
     {
-      Botan::X509_Certificate cert( "../../test/tls/botan/ca.crt.pem" );
+      Botan::X509_Certificate cert( "ca.crt.pem" );
       cert_store_.add_certificate( cert );
     }
 
-    std::string key = "../../test/tls/botan/server.key.pem";
+    std::string key = "server.key.pem";
     REQUIRE( std::filesystem::exists( key ) );
     Botan::DataSource_Stream data_source( key );
 
@@ -144,7 +143,7 @@ struct tls_credentials_manager final : public Botan::Credentials_Manager
 
     std::vector<Botan::X509_Certificate> certs;
 
-    std::string cert_file = "../../test/tls/botan/server.crt.pem";
+    std::string cert_file = "server.crt.pem";
     REQUIRE( std::filesystem::exists( cert_file ) );
 
     Botan::DataSource_Stream cert_data_source( cert_file );
@@ -414,8 +413,7 @@ fiona::task<void>
 tls_server( fiona::tcp::acceptor acceptor )
 {
   fiona::tls::tls_context ctx;
-  ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
-                                "../../test/tls/botan/server.key.pem" );
+  ctx.add_certificate_key_pair( "server.crt.pem", "server.key.pem" );
 
   auto m_fd = co_await acceptor.async_accept_raw();
   auto ex = acceptor.get_executor();
@@ -451,7 +449,7 @@ fiona::task<void>
 tls_client( fiona::executor ex, std::uint16_t const port )
 {
   fiona::tls::tls_context ctx;
-  ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
+  ctx.add_certificate_authority( "ca.crt.pem" );
 
   fiona::tls::client client( ctx, ex, "localhost" );
 
@@ -561,8 +559,7 @@ TEST_CASE( "large messages" )
     run( fiona::tcp::acceptor acceptor, std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
-      ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
-                                    "../../test/tls/botan/server.key.pem" );
+      ctx.add_certificate_key_pair( "server.crt.pem", "server.key.pem" );
 
       auto m_fd = co_await acceptor.async_accept_raw();
       auto ex = acceptor.get_executor();
@@ -633,7 +630,7 @@ TEST_CASE( "large messages" )
          std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
-      ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
+      ctx.add_certificate_authority( "ca.crt.pem" );
 
       fiona::tls::client client( ctx, ex, "localhost" );
 
@@ -755,8 +752,7 @@ TEST_CASE( "multiple clients" )
     run( fiona::tcp::acceptor acceptor, std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
-      ctx.add_certificate_key_pair( "../../test/tls/botan/server.crt.pem",
-                                    "../../test/tls/botan/server.key.pem" );
+      ctx.add_certificate_key_pair( "server.crt.pem", "server.key.pem" );
 
       auto ex = acceptor.get_executor();
       ex.register_buffer_sequence( 4 * 1024, 1024, 0 );
@@ -848,7 +844,7 @@ TEST_CASE( "multiple clients" )
          std::span<std::uint8_t const> msg )
     {
       fiona::tls::tls_context ctx;
-      ctx.add_certificate_authority( "../../test/tls/botan/ca.crt.pem" );
+      ctx.add_certificate_authority( "ca.crt.pem" );
 
       ex.register_buffer_sequence( 4 * 1024, 1024, 1 );
 

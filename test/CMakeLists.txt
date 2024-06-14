@@ -1,18 +1,40 @@
-set(fiona_test_sources
+find_package(Catch2 3.0 REQUIRED)
 
-  test/buffer_test.cpp
-  test/timer_test.cpp
-  test/ipv6_test.cpp
-  test/recv_test.cpp
-  test/waker_test.cpp
-  test/post_test.cpp
-  test/tcp_test.cpp
-  test/dns_test.cpp
-)
+include(Catch)
 
-set(fiona_tls_test_sources
+function(fiona_test testname)
+  add_executable(${testname} helpers.hpp ${testname}.cpp)
+  target_link_libraries(
+    ${testname}
+    PRIVATE
+      Fiona::core
+      Boost::config
+      Catch2::Catch2 Catch2::Catch2WithMain
+  )
+  catch_discover_tests(${testname} TEST_PREFIX "${testname}:")
+endfunction()
 
-  test/tls_test.cpp
+function(fiona_tls_test testname)
+  add_executable(${testname} helpers.hpp tls/${testname}.cpp)
+  target_link_libraries(
+    ${testname}
+    PRIVATE
+      Fiona::core
+      Fiona::tls
+      Boost::config
+      Catch2::Catch2 Catch2::Catch2WithMain
+  )
+  catch_discover_tests(
+    ${testname}
+    TEST_PREFIX "${testname}:"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/tls/botan"
+  )
+endfunction()
+
+file(
+  GLOB fiona_test_sources
+  CONFIGURE_DEPENDS
+  "*_test.cpp"
 )
 
 foreach(test_source ${fiona_test_sources})
@@ -21,8 +43,16 @@ foreach(test_source ${fiona_test_sources})
   fiona_test(${test_filename})
 endforeach()
 
-foreach(test_source ${fiona_tls_test_sources})
-  cmake_path(SET test_path ${test_source})
-  cmake_path(GET test_path STEM test_filename)
-  fiona_tls_test(${test_filename})
-endforeach()
+if(Botan_FOUND)
+  file(
+    GLOB fiona_tls_test_sources
+    CONFIGURE_DEPENDS
+    "tls/*_test.cpp"
+  )
+
+  foreach(test_source ${fiona_tls_test_sources})
+    cmake_path(SET test_path ${test_source})
+    cmake_path(GET test_path STEM test_filename)
+    fiona_tls_test(${test_filename})
+  endforeach()
+endif()
