@@ -412,6 +412,71 @@ struct server_impl : public tcp::detail::stream_impl
 
 server_impl::~server_impl() = default;
 
+//------------------------------------------------------------------------------
+
+namespace {
+
+task<result<recv_buffer_sequence>>
+async_recv_impl( std::shared_ptr<tls_callbacks> p_cb,
+                 tcp::stream stream,
+                 Botan::TLS::Channel& tls_chan )
+{
+  auto& cb = *p_cb;
+
+  while ( !cb.received_record_ ) {
+    auto m_buffers = co_await stream.async_recv();
+    if ( m_buffers.has_error() ) {
+      co_return m_buffers.error();
+    }
+
+    auto bufs = std::move( m_buffers ).value();
+    while ( !bufs.empty() ) {
+      auto buf = bufs.pop_front();
+
+      auto const hit_eof = ( buf.capacity() == 0 );
+      if ( hit_eof ) {
+        cb.input_sequence_.push_back( std::move( buf ) );
+        cb.received_record_ = true;
+        break;
+      }
+
+      auto data = buf.readable_bytes();
+      cb.output_sequence_.push_back( std::move( buf ) );
+
+      try {
+        tls_chan.received_data( data );
+      } catch ( Botan::Exception const& ex ) {
+        auto err = ex.error_type();
+        co_return detail::make_error_code( err );
+      }
+    }
+  }
+
+  cb.received_record_ = false;
+  co_return std::move( cb.input_sequence_ );
+}
+
+task<result<std::size_t>>
+async_send_impl( std::shared_ptr<tls_callbacks> p_cb,
+                 tcp::stream stream,
+                 Botan::TLS::Channel& tls_chan,
+                 std::span<unsigned char const> data )
+{
+  auto& send_buf = p_cb->send_buf_;
+
+  tls_chan.send( data );
+
+  auto mn = co_await stream.async_send( send_buf );
+  send_buf.clear();
+  if ( mn.has_error() ) {
+    co_return mn.error();
+  }
+
+  co_return data.size();
+}
+
+} // namespace
+
 } // namespace detail
 
 //------------------------------------------------------------------------------
@@ -495,17 +560,9 @@ client::async_send( std::span<unsigned char const> data )
 {
   auto& f = *static_cast<detail::client_impl*>( pstream_.get() );
   auto& tls_client = f.tls_client_;
-  auto& send_buf = f.p_callbacks_->send_buf_;
 
-  tls_client.send( data );
-
-  auto mn = co_await tcp::stream::async_send( send_buf );
-  send_buf.clear();
-  if ( mn.has_error() ) {
-    co_return mn.error();
-  }
-
-  co_return data.size();
+  co_return co_await detail::async_send_impl( f.p_callbacks_, *this, tls_client,
+                                              data );
 }
 
 task<result<std::size_t>>
@@ -519,43 +576,8 @@ task<result<recv_buffer_sequence>>
 client::async_recv()
 {
   auto& f = static_cast<detail::client_impl&>( *pstream_ );
-  auto& tls_client = f.tls_client_;
-
-  auto& cb = *f.p_callbacks_;
-
-  std::size_t bytes_processed = 0;
-  while ( !cb.received_record_ ) {
-    auto m_buffers = co_await tcp::stream::async_recv();
-    if ( m_buffers.has_error() ) {
-      co_return m_buffers.error();
-    }
-
-    auto bufs = std::move( m_buffers ).value();
-    while ( !bufs.empty() ) {
-      auto buf = bufs.pop_front();
-
-      auto const hit_eof = ( buf.capacity() == 0 );
-      if ( hit_eof ) {
-        cb.input_sequence_.push_back( std::move( buf ) );
-        cb.received_record_ = true;
-        break;
-      }
-
-      auto data = buf.readable_bytes();
-      cb.output_sequence_.push_back( std::move( buf ) );
-
-      try {
-        tls_client.received_data( data );
-        bytes_processed += data.size();
-      } catch ( Botan::Exception const& ex ) {
-        auto err = ex.error_type();
-        co_return detail::make_error_code( err );
-      }
-    }
-  }
-
-  cb.received_record_ = false;
-  co_return std::move( cb.input_sequence_ );
+  co_return co_await detail::async_recv_impl( f.p_callbacks_, *this,
+                                              f.tls_client_ );
 }
 
 task<result<void>>
@@ -630,30 +652,8 @@ server::async_recv()
 {
   auto& f = static_cast<detail::server_impl&>( *pstream_ );
   auto& tls_server = f.tls_server_;
-
-  while ( !f.p_callbacks_->received_record_ ) {
-    auto m_buffers = co_await tcp::stream::async_recv();
-    if ( m_buffers.has_error() ) {
-      co_return m_buffers.error();
-    }
-
-    auto bufs = std::move( m_buffers ).value();
-    while ( !bufs.empty() ) {
-      auto buf = bufs.pop_front();
-      auto data = buf.readable_bytes();
-      f.p_callbacks_->output_sequence_.push_back( std::move( buf ) );
-
-      try {
-        tls_server.received_data( data );
-      } catch ( Botan::Exception const& ex ) {
-        auto err = ex.error_type();
-        co_return detail::make_error_code( err );
-      }
-    }
-  }
-
-  f.p_callbacks_->received_record_ = false;
-  co_return std::move( f.p_callbacks_->input_sequence_ );
+  co_return co_await detail::async_recv_impl( f.p_callbacks_, *this,
+                                              tls_server );
 }
 
 task<result<std::size_t>>
@@ -661,17 +661,9 @@ server::async_send( std::span<unsigned char const> data )
 {
   auto& f = *static_cast<detail::server_impl*>( pstream_.get() );
   auto& tls_server = f.tls_server_;
-  auto& send_buf = f.p_callbacks_->send_buf_;
 
-  tls_server.send( data );
-
-  auto mn = co_await tcp::stream::async_send( send_buf );
-  send_buf.clear();
-  if ( mn.has_error() ) {
-    co_return mn.error();
-  }
-
-  co_return data.size();
+  co_return co_await detail::async_send_impl( f.p_callbacks_, *this, tls_server,
+                                              data );
 }
 
 task<result<std::size_t>>
