@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(fiona LANGUAGES CXX)
 
-if (${CMAKE_CXX_STANDARD} LESS "20")
+if (CMAKE_CXX_STANDARD LESS "20")
   message(FATAL_ERROR "fiona is a C++20 library; current CMAKE_CXX_STANDARD is: ${CMAKE_CXX_STANDARD}")
 endif()
 
@@ -20,7 +20,7 @@ find_package(
     smart_ptr
     system
     unordered
-  )
+)
 find_package(Botan 3.3.0 CONFIG COMPONENTS tls)
 
 file(
