@@ -32,7 +32,7 @@
 #include <liburing/io_uring.h>                    // for io_uring_cqe, io_u...
 #include <unistd.h>                               // for close, pipe
 
-#include "awaitable_base.hpp"                     // for awaitable_base
+#include "detail/awaitable_base.hpp"              // for awaitable_base
 
 namespace {
 

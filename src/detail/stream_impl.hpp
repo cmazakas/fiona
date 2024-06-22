@@ -335,6 +335,7 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
 
     auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 
+    // std::cout << "recv'd in buffer: " << buffer_id << std::endl;
     auto& buf = pbuf_ring_->get_buf( buffer_id );
     BOOST_ASSERT( buf.capacity() );
     auto buffer = std::move( buf );

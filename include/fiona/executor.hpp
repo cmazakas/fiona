@@ -102,9 +102,15 @@ public:
                             std::uint16_t buffer_group_id )
   {
     auto ring = &pframe_->io_ring_;
-    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,
-                                      buffer_group_id );
+    auto [pos, inserted] = pframe_->buf_rings_.try_emplace(
+        buffer_group_id, ring, num_bufs, buf_size, buffer_group_id );
+
+    if ( !inserted ) {
+      detail::throw_errno_as_error_code( EEXIST );
+    }
   }
+
+  inline void recyle_buffer( recv_buffer buf, std::uint16_t buffer_group_id );
 };
 
 namespace detail {
@@ -179,10 +185,10 @@ struct executor_access_policy
   static inline buf_ring*
   get_buffer_group( executor ex, std::size_t bgid ) noexcept
   {
-    for ( auto& bg : ex.pframe_->buf_rings_ ) {
-      if ( bgid == bg.bgid() ) {
-        return &bg;
-      }
+    auto& buf_rings = ex.pframe_->buf_rings_;
+    if ( auto pos = buf_rings.find( static_cast<std::uint16_t>( bgid ) );
+         pos != buf_rings.end() ) {
+      return &pos->second;
     }
     return nullptr;
   }
@@ -597,6 +603,18 @@ waker
 executor::make_waker( std::coroutine_handle<> h ) const
 {
   return detail::executor_access_policy::get_waker( *this, h );
+}
+
+void
+executor::recyle_buffer( recv_buffer buf, std::uint16_t buffer_group_id )
+{
+  auto p_buf_ring = detail::executor_access_policy::get_buffer_group(
+      *this, buffer_group_id );
+
+  if ( !p_buf_ring ) {
+    detail::throw_errno_as_error_code( EINVAL );
+  }
+  p_buf_ring->recycle_buffer( std::move( buf ) );
 }
 
 template <class T>

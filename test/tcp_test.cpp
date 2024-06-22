@@ -715,7 +715,7 @@ TEST_CASE( "tcp echo" )
   fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
-  auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
+  auto handle_request = []( fiona::executor ex, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void> {
     stream.timeout( std::chrono::seconds( 5 ) );
 
@@ -724,10 +724,14 @@ TEST_CASE( "tcp echo" )
     stream.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto mbuffers = co_await stream.async_recv();
-      CHECK( mbuffers.has_value() );
+      auto m_buffers = co_await stream.async_recv();
+      CHECK( m_buffers.has_value() );
 
-      auto octets = mbuffers.value().to_bytes();
+      auto octets = m_buffers.value().to_bytes();
+      REQUIRE( octets.size() > 0 );
+      auto buf = m_buffers->pop_front();
+      ex.recyle_buffer( std::move( buf ), bgid );
+
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -779,9 +783,12 @@ TEST_CASE( "tcp echo" )
       auto result = co_await client.async_send( msg );
       CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
 
-      auto mbuffers = co_await client.async_recv();
+      auto m_buffers = co_await client.async_recv();
 
-      auto octets = mbuffers.value().to_bytes();
+      auto octets = m_buffers.value().to_bytes();
+      auto buf = m_buffers->pop_front();
+      ex.recyle_buffer( std::move( buf ), bgid );
+
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -858,10 +865,14 @@ TEST_CASE( "tcp echo saturating" )
     stream.set_buffer_group( bgid );
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto mbuffers = co_await stream.async_recv();
-      CHECK( mbuffers.has_value() );
+      auto m_buffers = co_await stream.async_recv();
+      CHECK( m_buffers.has_value() );
 
-      auto octets = mbuffers.value().to_bytes();
+      auto octets = m_buffers.value().to_bytes();
+
+      auto buf = m_buffers->pop_front();
+      stream.get_executor().recyle_buffer( std::move( buf ), bgid );
+
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );
@@ -913,9 +924,12 @@ TEST_CASE( "tcp echo saturating" )
       auto result = co_await client.async_send( msg );
       CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
 
-      auto mbuffers = co_await client.async_recv();
+      auto m_buffers = co_await client.async_recv();
+      auto octets = m_buffers.value().to_bytes();
 
-      auto octets = mbuffers.value().to_bytes();
+      auto buf = m_buffers->pop_front();
+      ex.recyle_buffer( std::move( buf ), bgid );
+
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       CHECK( m == msg );

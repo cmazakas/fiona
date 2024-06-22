@@ -23,6 +23,13 @@
 #include "fiona_export.h"
 
 namespace fiona {
+namespace tls {
+struct client;
+struct server;
+} // namespace tls
+} // namespace fiona
+
+namespace fiona {
 namespace tcp {
 namespace detail {
 
@@ -53,11 +60,9 @@ namespace tcp {
 namespace detail {
 
 void FIONA_EXPORT intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept;
-
 void FIONA_EXPORT intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept;
 
 void FIONA_EXPORT intrusive_ptr_add_ref( stream_impl* pstream ) noexcept;
-
 void FIONA_EXPORT intrusive_ptr_release( stream_impl* pstream ) noexcept;
 
 } // namespace detail
@@ -70,7 +75,7 @@ namespace tcp {
 struct acceptor
 {
 private:
-  boost::intrusive_ptr<detail::acceptor_impl> pacceptor_;
+  boost::intrusive_ptr<detail::acceptor_impl> p_acceptor_;
 
 public:
   acceptor() = delete;
@@ -110,10 +115,13 @@ public:
 
 struct FIONA_EXPORT stream
 {
-protected:
+private:
+  friend struct client;
+  friend struct tls::client;
+  friend struct tls::server;
   friend struct accept_awaitable;
 
-  boost::intrusive_ptr<detail::stream_impl> pstream_;
+  boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
   void timeout( __kernel_timespec ts );
   void cancel_timer();
@@ -179,9 +187,9 @@ private:
   friend struct stream;
   friend struct client;
 
-  boost::intrusive_ptr<detail::stream_impl> pstream_;
+  boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
-  stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
+  stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
   FIONA_EXPORT
@@ -206,9 +214,9 @@ private:
   friend struct stream;
   friend struct client;
 
-  boost::intrusive_ptr<detail::stream_impl> pstream_;
+  boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
-  stream_cancel_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
+  stream_cancel_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
   FIONA_EXPORT
@@ -228,10 +236,10 @@ private:
   friend struct client;
 
   std::span<unsigned char const> buf_;
-  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
+  boost::intrusive_ptr<detail::stream_impl> p_stream_ = nullptr;
 
   send_awaitable( std::span<unsigned char const> buf,
-                  boost::intrusive_ptr<detail::stream_impl> pstream );
+                  boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
   FIONA_EXPORT
@@ -255,9 +263,9 @@ struct recv_awaitable
 private:
   friend struct stream;
 
-  boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
+  boost::intrusive_ptr<detail::stream_impl> p_stream_ = nullptr;
 
-  recv_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
+  recv_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
   recv_awaitable() = delete;
@@ -283,12 +291,13 @@ public:
 
 struct accept_awaitable
 {
-protected:
+private:
   friend struct acceptor;
+  friend struct accept_raw_awaitable;
 
-  boost::intrusive_ptr<detail::acceptor_impl> pacceptor_ = nullptr;
+  boost::intrusive_ptr<detail::acceptor_impl> p_acceptor_ = nullptr;
 
-  accept_awaitable( boost::intrusive_ptr<detail::acceptor_impl> pacceptor );
+  accept_awaitable( boost::intrusive_ptr<detail::acceptor_impl> p_acceptor );
 
 public:
   accept_awaitable() = delete;
@@ -316,7 +325,8 @@ struct accept_raw_awaitable : public accept_awaitable
 private:
   friend struct acceptor;
 
-  accept_raw_awaitable( boost::intrusive_ptr<detail::acceptor_impl> pacceptor );
+  accept_raw_awaitable(
+      boost::intrusive_ptr<detail::acceptor_impl> p_acceptor );
 
 public:
   accept_raw_awaitable() = delete;

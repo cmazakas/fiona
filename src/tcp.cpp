@@ -31,8 +31,8 @@
 #include <sys/socket.h>                      // for AF_INET6, AF_INET
 #include <unistd.h>                          // for close
 
-#include "awaitable_base.hpp"                // for intrusive_ptr_ad...
-#include "stream_impl.hpp"                   // for stream_impl, cli...
+#include "detail/awaitable_base.hpp"         // for intrusive_ptr_ad...
+#include "detail/stream_impl.hpp"            // for stream_impl, cli...
 
 namespace fiona {
 
@@ -72,14 +72,14 @@ stream_impl::timeout_frame::~timeout_frame() = default;
 
 struct accept_frame : public fiona::detail::awaitable_base
 {
-  acceptor_impl* pacceptor_ = nullptr;
+  acceptor_impl* p_acceptor_ = nullptr;
   std::coroutine_handle<> h_;
   int peer_fd_ = -1;
   bool initiated_ = false;
   bool done_ = false;
 
   accept_frame() = delete;
-  accept_frame( acceptor_impl* pacceptor ) : pacceptor_( pacceptor ) {}
+  accept_frame( acceptor_impl* p_acceptor ) : p_acceptor_( p_acceptor ) {}
   virtual ~accept_frame() override;
 
   void
@@ -243,7 +243,7 @@ detail::accept_frame::await_process_cqe( io_uring_cqe* cqe )
   auto res = cqe->res;
   if ( res < 0 ) {
     BOOST_ASSERT( peer_fd_ >= 0 );
-    fiona::detail::executor_access_policy::release_fd( pacceptor_->ex_,
+    fiona::detail::executor_access_policy::release_fd( p_acceptor_->ex_,
                                                        peer_fd_ );
     peer_fd_ = res;
   }
@@ -272,45 +272,45 @@ accept_frame::~accept_frame() {}
 inline constexpr int static const default_backlog = 256;
 
 acceptor::acceptor( executor ex, sockaddr const* addr )
-    : pacceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) }
+    : p_acceptor_{ new detail::acceptor_impl( ex, addr, default_backlog ) }
 {
 }
 
 std::uint16_t
 acceptor::port() const noexcept
 {
-  return pacceptor_->port();
+  return p_acceptor_->port();
 }
 
 executor
 acceptor::get_executor() const noexcept
 {
-  return pacceptor_->ex_;
+  return p_acceptor_->ex_;
 }
 
 accept_awaitable
 acceptor::async_accept()
 {
-  return { pacceptor_ };
+  return { p_acceptor_ };
 }
 
 accept_raw_awaitable
 acceptor::async_accept_raw()
 {
-  return { pacceptor_ };
+  return { p_acceptor_ };
 }
 
 accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
-    : pacceptor_( pacceptor )
+    : p_acceptor_( pacceptor )
 {
 }
 
 accept_awaitable::~accept_awaitable()
 {
-  auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
+  auto& af = static_cast<detail::accept_frame&>( *p_acceptor_ );
   if ( af.initiated_ && !af.done_ ) {
-    auto ex = pacceptor_->ex_;
+    auto ex = p_acceptor_->ex_;
     auto ring = fiona::detail::executor_access_policy::ring( ex );
 
     fiona::detail::reserve_sqes( ring, 1 );
@@ -326,9 +326,9 @@ accept_awaitable::~accept_awaitable()
 void
 accept_awaitable::await_suspend( std::coroutine_handle<> h )
 {
-  auto ex = pacceptor_->ex_;
-  auto fd = pacceptor_->fd_;
-  auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
+  auto ex = p_acceptor_->ex_;
+  auto fd = p_acceptor_->fd_;
+  auto& af = static_cast<detail::accept_frame&>( *p_acceptor_ );
   if ( af.initiated_ ) {
     throw_busy();
   }
@@ -357,8 +357,8 @@ accept_awaitable::await_suspend( std::coroutine_handle<> h )
 result<stream>
 accept_awaitable::await_resume()
 {
-  auto ex = pacceptor_->ex_;
-  auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
+  auto ex = p_acceptor_->ex_;
+  auto& af = static_cast<detail::accept_frame&>( *p_acceptor_ );
   auto peer_fd = af.peer_fd_;
 
   af.reset();
@@ -367,7 +367,7 @@ accept_awaitable::await_resume()
   }
 
   auto s = stream( ex, peer_fd );
-  s.pstream_->connected_ = true;
+  s.p_stream_->connected_ = true;
   return { std::move( s ) };
 }
 
@@ -380,8 +380,8 @@ accept_raw_awaitable::accept_raw_awaitable(
 result<int>
 accept_raw_awaitable::await_resume()
 {
-  auto ex = pacceptor_->ex_;
-  auto& af = static_cast<detail::accept_frame&>( *pacceptor_ );
+  auto ex = p_acceptor_->ex_;
+  auto& af = static_cast<detail::accept_frame&>( *p_acceptor_ );
   auto peer_fd = af.peer_fd_;
 
   af.reset();
@@ -408,39 +408,39 @@ intrusive_ptr_release( stream_impl* pstream ) noexcept
 } // namespace detail
 
 stream::stream( executor ex, int fd )
-    : pstream_( new detail::stream_impl( ex, fd ) )
+    : p_stream_( new detail::stream_impl( ex, fd ) )
 {
 }
 
 stream::~stream()
 {
-  if ( !pstream_ ) {
+  if ( !p_stream_ ) {
     return;
   }
 
-  auto use_count = pstream_->use_count() -
-                   pstream_->detail::cancel_frame::is_active() -
-                   pstream_->detail::close_frame::is_active() -
-                   pstream_->detail::send_frame::is_active() -
-                   pstream_->detail::recv_frame::is_active() -
-                   pstream_->detail::timeout_frame::is_active() -
-                   pstream_->detail::timeout_cancel_frame::is_active();
+  auto use_count = p_stream_->use_count() -
+                   p_stream_->detail::cancel_frame::is_active() -
+                   p_stream_->detail::close_frame::is_active() -
+                   p_stream_->detail::send_frame::is_active() -
+                   p_stream_->detail::recv_frame::is_active() -
+                   p_stream_->detail::timeout_frame::is_active() -
+                   p_stream_->detail::timeout_cancel_frame::is_active();
 
   BOOST_ASSERT( use_count > 0 );
 
   if ( use_count == 1 ) {
     cancel_timer();
     cancel_recv();
-    pstream_ = nullptr;
+    p_stream_ = nullptr;
   }
 }
 
 void
 stream::timeout( __kernel_timespec ts )
 {
-  pstream_->ts_ = ts;
+  p_stream_->ts_ = ts;
 
-  auto ex = pstream_->ex_;
+  auto ex = p_stream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   fiona::detail::reserve_sqes( ring, 1 );
@@ -451,7 +451,7 @@ stream::timeout( __kernel_timespec ts )
     io_uring_prep_timeout_remove(
         sqe,
         reinterpret_cast<std::uintptr_t>(
-            static_cast<detail::timeout_frame*>( pstream_.get() ) ),
+            static_cast<detail::timeout_frame*>( p_stream_.get() ) ),
         0 );
     io_uring_sqe_set_data( sqe, nullptr /* &pstream_->timeout_frame_ */ );
     io_uring_sqe_set_flags( sqe, /* IOSQE_IO_LINK | */ IOSQE_CQE_SKIP_SUCCESS );
@@ -461,13 +461,13 @@ stream::timeout( __kernel_timespec ts )
 void
 stream::cancel_timer()
 {
-  if ( pstream_ && pstream_->timeout_frame::initiated_ ) {
-    pstream_->timeout_frame::cancelled_ = true;
-    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+  if ( p_stream_ && p_stream_->timeout_frame::initiated_ ) {
+    p_stream_->timeout_frame::cancelled_ = true;
+    auto ring = fiona::detail::executor_access_policy::ring( p_stream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
     {
       auto user_data = reinterpret_cast<std::uintptr_t>(
-          static_cast<detail::timeout_frame*>( pstream_.get() ) );
+          static_cast<detail::timeout_frame*>( p_stream_.get() ) );
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_timeout_remove( sqe, user_data, 0 );
       io_uring_sqe_set_data( sqe, nullptr );
@@ -480,13 +480,13 @@ stream::cancel_timer()
 void
 stream::cancel_recv()
 {
-  if ( pstream_ && pstream_->recv_frame::initiated_ ) {
-    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+  if ( p_stream_ && p_stream_->recv_frame::initiated_ ) {
+    auto ring = fiona::detail::executor_access_policy::ring( p_stream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
     {
       auto sqe = io_uring_get_sqe( ring );
       io_uring_prep_cancel(
-          sqe, static_cast<detail::recv_frame*>( pstream_.get() ), 0 );
+          sqe, static_cast<detail::recv_frame*>( p_stream_.get() ), 0 );
       io_uring_sqe_set_data( sqe, nullptr );
       io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
       fiona::detail::submit_ring( ring );
@@ -497,13 +497,13 @@ stream::cancel_recv()
 executor
 stream::get_executor() const noexcept
 {
-  return pstream_->ex_;
+  return p_stream_->ex_;
 }
 
 void
 stream::set_buffer_group( std::uint16_t bgid )
 {
-  auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
+  auto& rf = static_cast<detail::recv_frame&>( *p_stream_ );
   if ( rf.initiated_ ) {
     throw_busy();
   }
@@ -514,13 +514,13 @@ stream::set_buffer_group( std::uint16_t bgid )
 stream_close_awaitable
 stream::async_close()
 {
-  return { pstream_ };
+  return { p_stream_ };
 }
 
 stream_cancel_awaitable
 stream::async_cancel()
 {
-  return { pstream_ };
+  return { p_stream_ };
 }
 
 send_awaitable
@@ -533,19 +533,19 @@ stream::async_send( std::string_view msg )
 send_awaitable
 stream::async_send( std::span<unsigned char const> buf )
 {
-  return { buf, pstream_ };
+  return { buf, p_stream_ };
 }
 
 recv_awaitable
 stream::async_recv()
 {
   // BOOST_ASSERT( pstream_->recv_frame::buffer_group_id_ >= 0 );
-  return { pstream_ };
+  return { p_stream_ };
 }
 
 stream_close_awaitable::stream_close_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream )
+    : p_stream_( pstream )
 {
 }
 
@@ -554,29 +554,29 @@ stream_close_awaitable::~stream_close_awaitable() {}
 void
 stream_close_awaitable::await_suspend( std::coroutine_handle<> h )
 {
-  auto ex = pstream_->ex_;
+  auto ex = p_stream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   fiona::detail::reserve_sqes( ring, 1 );
 
   {
-    auto fd = pstream_->fd_;
+    auto fd = p_stream_->fd_;
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd ) );
     io_uring_sqe_set_data(
-        sqe, static_cast<detail::close_frame*>( pstream_.get() ) );
+        sqe, static_cast<detail::close_frame*>( p_stream_.get() ) );
   }
 
-  intrusive_ptr_add_ref( pstream_.get() );
+  intrusive_ptr_add_ref( p_stream_.get() );
 
-  pstream_->close_frame::initiated_ = true;
-  pstream_->close_frame::h_ = h;
+  p_stream_->close_frame::initiated_ = true;
+  p_stream_->close_frame::h_ = h;
 }
 
 result<void>
 stream_close_awaitable::await_resume()
 {
-  auto& cf = static_cast<detail::close_frame&>( *pstream_ );
+  auto& cf = static_cast<detail::close_frame&>( *p_stream_ );
   auto res = cf.res_;
   cf.reset();
 
@@ -589,23 +589,23 @@ stream_close_awaitable::await_resume()
 
 stream_cancel_awaitable::stream_cancel_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream )
+    : p_stream_( pstream )
 {
 }
 
 bool
 stream_cancel_awaitable::await_ready() const
 {
-  return pstream_->fd_ == -1;
+  return p_stream_->fd_ == -1;
 }
 
 void
 stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
 {
-  auto ex = pstream_->ex_;
+  auto ex = p_stream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
-  auto fd = pstream_->fd_;
-  auto& cf = static_cast<detail::cancel_frame&>( *pstream_ );
+  auto fd = p_stream_->fd_;
+  auto& cf = static_cast<detail::cancel_frame&>( *p_stream_ );
 
   fiona::detail::reserve_sqes( ring, 1 );
 
@@ -614,23 +614,23 @@ stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
   auto sqe = io_uring_get_sqe( ring );
   io_uring_prep_cancel_fd(
       sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
-  io_uring_sqe_set_data( sqe,
-                         static_cast<detail::cancel_frame*>( pstream_.get() ) );
+  io_uring_sqe_set_data(
+      sqe, static_cast<detail::cancel_frame*>( p_stream_.get() ) );
 
   intrusive_ptr_add_ref( &cf );
 
   cf.initiated_ = true;
   cf.h_ = h;
-  pstream_->stream_cancelled_ = true;
+  p_stream_->stream_cancelled_ = true;
 }
 
 result<int>
 stream_cancel_awaitable::await_resume()
 {
-  auto fd = pstream_->fd_;
-  auto res = pstream_->cancel_frame::res_;
+  auto fd = p_stream_->fd_;
+  auto res = p_stream_->cancel_frame::res_;
 
-  pstream_->cancel_frame::reset();
+  p_stream_->cancel_frame::reset();
 
   if ( fd == -1 ) {
     return { 0 };
@@ -646,18 +646,18 @@ stream_cancel_awaitable::await_resume()
 send_awaitable::send_awaitable(
     std::span<unsigned char const> buf,
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : buf_( buf ), pstream_( pstream )
+    : buf_( buf ), p_stream_( pstream )
 {
 }
 
 send_awaitable::~send_awaitable()
 {
-  if ( pstream_->send_frame::initiated_ && !pstream_->send_frame::done_ ) {
-    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+  if ( p_stream_->send_frame::initiated_ && !p_stream_->send_frame::done_ ) {
+    auto ring = fiona::detail::executor_access_policy::ring( p_stream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_cancel(
-        sqe, static_cast<detail::send_frame*>( pstream_.get() ), 0 );
+        sqe, static_cast<detail::send_frame*>( p_stream_.get() ), 0 );
     io_uring_sqe_set_data( sqe, nullptr );
     io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
     fiona::detail::submit_ring( ring );
@@ -667,14 +667,14 @@ send_awaitable::~send_awaitable()
 void
 send_awaitable::await_suspend( std::coroutine_handle<> h )
 {
-  auto& sf = static_cast<detail::send_frame&>( *pstream_ );
+  auto& sf = static_cast<detail::send_frame&>( *p_stream_ );
 
   if ( sf.initiated_ ) {
     throw_busy();
   }
 
-  auto ex = pstream_->ex_;
-  auto fd = pstream_->fd_;
+  auto ex = p_stream_->ex_;
+  auto fd = p_stream_->fd_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
   fiona::detail::reserve_sqes( ring, 1 );
@@ -696,9 +696,9 @@ send_awaitable::await_suspend( std::coroutine_handle<> h )
 result<std::size_t>
 send_awaitable::await_resume()
 {
-  auto res = pstream_->send_frame::res_;
+  auto res = p_stream_->send_frame::res_;
 
-  pstream_->send_frame::reset();
+  p_stream_->send_frame::reset();
 
   if ( res < 0 ) {
     return fiona::error_code::from_errno( -res );
@@ -709,7 +709,7 @@ send_awaitable::await_resume()
 
 recv_awaitable::recv_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
-    : pstream_( pstream )
+    : p_stream_( pstream )
 {
 }
 
@@ -718,13 +718,13 @@ recv_awaitable::~recv_awaitable() {}
 bool
 recv_awaitable::await_ready() const
 {
-  return !pstream_->recv_frame::buffers_.empty();
+  return !p_stream_->recv_frame::buffers_.empty();
 }
 
 bool
 recv_awaitable::await_suspend( std::coroutine_handle<> h )
 {
-  auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
+  auto& rf = static_cast<detail::recv_frame&>( *p_stream_ );
   rf.h_ = h;
 
   if ( rf.ec_ ) {
@@ -737,13 +737,13 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h )
     return true;
   }
 
-  auto bgid = pstream_->recv_frame::buffer_group_id_;
+  auto bgid = p_stream_->recv_frame::buffer_group_id_;
   if ( bgid == -1 ) {
     fiona::detail::throw_errno_as_error_code( EINVAL );
   }
 
   rf.pbuf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
-      pstream_->ex_, static_cast<unsigned>( bgid ) );
+      p_stream_->ex_, static_cast<unsigned>( bgid ) );
   rf.schedule_recv();
   return true;
 }
@@ -751,7 +751,7 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h )
 result<recv_buffer_sequence>
 recv_awaitable::await_resume()
 {
-  auto& rf = static_cast<detail::recv_frame&>( *pstream_ );
+  auto& rf = static_cast<detail::recv_frame&>( *p_stream_ );
 
   BOOST_ASSERT( !rf.buffers_.empty() || rf.ec_ );
 
@@ -762,12 +762,16 @@ recv_awaitable::await_resume()
   }
 
   auto pbuf_ring = fiona::detail::executor_access_policy::get_buffer_group(
-      pstream_->ex_,
-      static_cast<std::size_t>( pstream_->recv_frame::buffer_group_id_ ) );
+      p_stream_->ex_,
+      static_cast<std::size_t>( p_stream_->recv_frame::buffer_group_id_ ) );
 
   int len = 0;
   for ( auto buffer : rf.buffers_ ) {
     if ( buffer.empty() ) {
+      break;
+    }
+
+    if ( pbuf_ring->buf_id_pos_ == pbuf_ring->buf_ids_.begin() ) {
       break;
     }
 
@@ -776,6 +780,8 @@ recv_awaitable::await_resume()
 
     auto buffer_id = *( --pbuf_ring->buf_id_pos_ );
     auto& buf = pbuf_ring->get_buf( buffer_id );
+    BOOST_ASSERT( buf.capacity() == 0 );
+
     buf = fiona::recv_buffer( pbuf_ring->buf_size_ );
     BOOST_ASSERT( buf.capacity() > 0 );
     io_uring_buf_ring_add( pbuf_ring->get(), buf.data(),
@@ -803,14 +809,14 @@ client_impl::connect_frame::~connect_frame() {}
 
 } // namespace detail
 
-client::client( executor ex ) { pstream_ = new detail::client_impl( ex ); }
+client::client( executor ex ) { p_stream_ = new detail::client_impl( ex ); }
 client::~client()
 {
-  if ( !pstream_ ) {
+  if ( !p_stream_ ) {
     return;
   }
 
-  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+  auto pclient = static_cast<detail::client_impl*>( p_stream_.get() );
 
   auto use_count = pclient->use_count() -
                    pclient->detail::cancel_frame::is_active() -
@@ -826,7 +832,7 @@ client::~client()
   if ( use_count == 1 ) {
     cancel_timer();
     cancel_recv();
-    pstream_ = nullptr;
+    p_stream_ = nullptr;
   }
 }
 
@@ -850,7 +856,7 @@ client::async_connect( sockaddr const* addr )
     fiona::detail::throw_errno_as_error_code( EINVAL );
   }
 
-  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
+  auto pclient = static_cast<detail::client_impl*>( p_stream_.get() );
 
   std::memcpy( &pclient->addr_storage_, addr,
                is_ipv4 ? sizeof( sockaddr_in ) : sizeof( sockaddr_in6 ) );

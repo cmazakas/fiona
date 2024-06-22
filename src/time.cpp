@@ -23,7 +23,7 @@
 #include <liburing/io_uring.h>               // for io_uring_cqe
 #include <linux/time_types.h>                // for __kernel_timespec
 
-#include "awaitable_base.hpp"                // for awaitable_base, intrusi...
+#include "detail/awaitable_base.hpp"         // for awaitable_base, intrusi...
 
 namespace fiona {
 namespace {

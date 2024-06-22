@@ -513,7 +513,7 @@ tls_context::add_certificate_key_pair( std::string_view cert_path,
 
 client::client( tls_context ctx, executor ex, std::string_view hostname )
 {
-  pstream_ = new detail::client_impl( ctx, ex, hostname );
+  p_stream_ = new detail::client_impl( ctx, ex, hostname );
 }
 
 client::~client() {}
@@ -521,7 +521,7 @@ client::~client() {}
 task<result<void>>
 client::async_handshake()
 {
-  auto& f = *static_cast<detail::client_impl*>( pstream_.get() );
+  auto& f = *static_cast<detail::client_impl*>( p_stream_.get() );
   auto& tls_client = f.tls_client_;
   auto& send_buf = f.p_callbacks_->send_buf_;
 
@@ -558,7 +558,7 @@ client::async_handshake()
 task<result<std::size_t>>
 client::async_send( std::span<unsigned char const> data )
 {
-  auto& f = *static_cast<detail::client_impl*>( pstream_.get() );
+  auto& f = *static_cast<detail::client_impl*>( p_stream_.get() );
   auto& tls_client = f.tls_client_;
 
   co_return co_await detail::async_send_impl( f.p_callbacks_, *this, tls_client,
@@ -575,7 +575,7 @@ client::async_send( std::string_view msg )
 task<result<recv_buffer_sequence>>
 client::async_recv()
 {
-  auto& f = static_cast<detail::client_impl&>( *pstream_ );
+  auto& f = static_cast<detail::client_impl&>( *p_stream_ );
   co_return co_await detail::async_recv_impl( f.p_callbacks_, *this,
                                               f.tls_client_ );
 }
@@ -583,7 +583,7 @@ client::async_recv()
 task<result<void>>
 client::async_shutdown()
 {
-  auto& f = static_cast<detail::client_impl&>( *pstream_ );
+  auto& f = static_cast<detail::client_impl&>( *p_stream_ );
   auto& tls_client = f.tls_client_;
   auto& send_buf = f.p_callbacks_->send_buf_;
 
@@ -612,7 +612,7 @@ client::async_shutdown()
 
 server::server( tls_context ctx, executor ex, int fd )
 {
-  pstream_ = new detail::server_impl( ctx, ex, fd );
+  p_stream_ = new detail::server_impl( ctx, ex, fd );
 }
 
 server::~server() = default;
@@ -620,7 +620,7 @@ server::~server() = default;
 task<result<void>>
 server::async_handshake()
 {
-  auto& f = *static_cast<detail::server_impl*>( pstream_.get() );
+  auto& f = *static_cast<detail::server_impl*>( p_stream_.get() );
   auto& tls_server = f.tls_server_;
   auto& send_buf = f.p_callbacks_->send_buf_;
 
@@ -650,7 +650,7 @@ server::async_handshake()
 task<result<recv_buffer_sequence>>
 server::async_recv()
 {
-  auto& f = static_cast<detail::server_impl&>( *pstream_ );
+  auto& f = static_cast<detail::server_impl&>( *p_stream_ );
   auto& tls_server = f.tls_server_;
   co_return co_await detail::async_recv_impl( f.p_callbacks_, *this,
                                               tls_server );
@@ -659,7 +659,7 @@ server::async_recv()
 task<result<std::size_t>>
 server::async_send( std::span<unsigned char const> data )
 {
-  auto& f = *static_cast<detail::server_impl*>( pstream_.get() );
+  auto& f = *static_cast<detail::server_impl*>( p_stream_.get() );
   auto& tls_server = f.tls_server_;
 
   co_return co_await detail::async_send_impl( f.p_callbacks_, *this, tls_server,
@@ -676,7 +676,7 @@ server::async_send( std::string_view msg )
 task<result<void>>
 server::async_shutdown()
 {
-  auto& f = static_cast<detail::server_impl&>( *pstream_ );
+  auto& f = static_cast<detail::server_impl&>( *p_stream_ );
   auto& tls_server = f.tls_server_;
   auto& send_buf = f.p_callbacks_->send_buf_;
 

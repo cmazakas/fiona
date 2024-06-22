@@ -7,6 +7,7 @@
 #include <boost/container_hash/hash.hpp>          // for hash
 #include <boost/unordered/unordered_flat_map.hpp> // for unordered_flat_map
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
+#include <boost/unordered/unordered_node_map.hpp>
 
 #include <array>                                  // for array
 #include <coroutine>                              // for coroutine_handle
@@ -41,9 +42,6 @@ public:
   buf_ring( buf_ring const& ) = delete;
   buf_ring& operator=( buf_ring const& ) = delete;
 
-  buf_ring( buf_ring&& rhs ) = delete;
-  buf_ring& operator=( buf_ring&& rhs ) = delete;
-
   FIONA_EXPORT
   buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid );
 
@@ -53,8 +51,7 @@ public:
             std::size_t buf_size,
             std::uint16_t bgid );
 
-  // TODO: this probably needs to be exported but we currently lack test
-  // coverage for this
+  FIONA_EXPORT
   ~buf_ring();
 
   recv_buffer&
@@ -69,16 +66,21 @@ public:
   {
     return buf_ring_;
   }
+
   std::uint32_t
   size() const noexcept
   {
     return static_cast<std::uint32_t>( bufs_.size() );
   }
+
   std::uint16_t
   bgid() const noexcept
   {
     return bgid_;
   }
+
+  FIONA_EXPORT
+  void recycle_buffer( recv_buffer buf );
 };
 
 struct hasher
@@ -136,7 +138,7 @@ struct io_context_frame
   std::mutex m_;
   task_map_type tasks_;
   io_context_params params_;
-  std::list<buf_ring> buf_rings_;
+  boost::unordered_node_map<std::uint16_t, buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
   std::deque<std::coroutine_handle<>> run_queue_;
   std::exception_ptr exception_ptr_;

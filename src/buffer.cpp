@@ -1,11 +1,9 @@
 #include <fiona/buffer.hpp>
 
-#include <algorithm>
-#include <cstring>
-#include <span>
-#include <string>
-
-#include "buffers_adaptor.hpp"
+#include <algorithm> // for min
+#include <cstring>   // for memcpy
+#include <span>      // for span
+#include <string>    // for string
 
 namespace fiona {
 namespace {

@@ -5,18 +5,19 @@
 #ifndef FIONA_BUFFER_HPP
 #define FIONA_BUFFER_HPP
 
-#include <boost/assert.hpp>
-#include <boost/core/exchange.hpp>
+#include <boost/assert.hpp>        // for BOOST_ASSERT
+#include <boost/core/exchange.hpp> // for exchange
 
-#include <cstddef>
-#include <iostream>
-#include <iterator>
-#include <new>
-#include <span>
-#include <string_view>
-#include <vector>
+#include <cstddef>                 // for size_t, ptrdiff_t
+#include <iterator>                // for bidirectional_iterator_tag
+#include <new>                     // for align_val_t, operator new
+#include <span>                    // for span
+#include <string>                  // for string
+#include <string_view>             // for string_view
+#include <utility>                 // for move
+#include <vector>                  // for vector
 
-#include "fiona_export.h"
+#include "fiona_export.h"          // for FIONA_EXPORT
 
 namespace fiona {
 struct recv_buffer;
@@ -44,7 +45,8 @@ default_buf_header()
 
 struct recv_buffer_view
 {
-protected:
+private:
+  friend struct recv_buffer;
   friend struct recv_buffer_sequence;
   friend struct recv_buffer_sequence_view;
 
@@ -80,21 +82,25 @@ public:
   {
     return p_ + S;
   }
+
   unsigned char const*
   data() const noexcept
   {
     return p_ + S;
   }
+
   std::size_t
   size() const noexcept
   {
     return header().size_;
   }
+
   std::size_t
   capacity() const noexcept
   {
     return header().capacity_;
   }
+
   bool
   empty() const noexcept
   {
@@ -199,14 +205,16 @@ public:
 
 struct recv_buffer_sequence_view
 {
-protected:
-  detail::buf_header_impl* psentry_;
+private:
+  friend struct recv_buffer_sequence;
+
+  detail::buf_header_impl* p_sentry_;
   unsigned char* head_ = nullptr;
   unsigned char* tail_ = nullptr;
   std::size_t num_bufs_ = 0;
 
-  recv_buffer_sequence_view( detail::buf_header_impl* psentry )
-      : psentry_( psentry )
+  recv_buffer_sequence_view( detail::buf_header_impl* p_sentry )
+      : p_sentry_( p_sentry )
   {
   }
 
@@ -249,6 +257,7 @@ public:
     {
       return { reinterpret_cast<unsigned char*>( p_ ) };
     }
+
     recv_buffer_view
     operator*() const noexcept
     {
@@ -292,6 +301,7 @@ public:
     {
       return p_ == rhs.p_;
     }
+
     bool operator!=( iterator const& ) const = default;
   };
 
@@ -309,7 +319,7 @@ public:
   iterator
   end() const
   {
-    return { const_cast<detail::buf_header_impl*>( psentry_ ) };
+    return { const_cast<detail::buf_header_impl*>( p_sentry_ ) };
   }
 
   std::size_t
@@ -317,6 +327,7 @@ public:
   {
     return num_bufs_;
   }
+
   bool
   empty() const noexcept
   {
@@ -386,14 +397,14 @@ public:
 
     if ( tail_ ) {
       recv_buffer_view tail_view( tail_ );
-      tail_view.header().next_ = reinterpret_cast<unsigned char*>( psentry_ );
-      psentry_->prev_ = tail_;
+      tail_view.header().next_ = reinterpret_cast<unsigned char*>( p_sentry_ );
+      p_sentry_->prev_ = tail_;
     }
 
     if ( head_ ) {
       recv_buffer_view head_view( head_ );
-      head_view.header().prev_ = reinterpret_cast<unsigned char*>( psentry_ );
-      psentry_->next_ = head_;
+      head_view.header().prev_ = reinterpret_cast<unsigned char*>( p_sentry_ );
+      p_sentry_->next_ = head_;
     }
 
     rhs.head_ = nullptr;

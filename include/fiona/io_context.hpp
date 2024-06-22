@@ -2,6 +2,7 @@
 #define FIONA_IO_CONTEXT_HPP
 
 #include <fiona/detail/common.hpp> // for io_context_frame, buf_ring
+#include <fiona/error.hpp>
 #include <fiona/params.hpp>        // for io_context_params
 #include <fiona/task.hpp>          // for task
 
@@ -48,8 +49,12 @@ public:
                             std::uint16_t buffer_group_id )
   {
     auto ring = &pframe_->io_ring_;
-    pframe_->buf_rings_.emplace_back( ring, num_bufs, buf_size,
-                                      buffer_group_id );
+    auto [pos, inserted] = pframe_->buf_rings_.try_emplace(
+        buffer_group_id, ring, num_bufs, buf_size, buffer_group_id );
+
+    if ( !inserted ) {
+      detail::throw_errno_as_error_code( EEXIST );
+    }
   }
 
   FIONA_EXPORT

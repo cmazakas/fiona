@@ -38,7 +38,6 @@ file(
 add_library(fiona ${fiona_sources})
 
 target_include_directories(fiona PUBLIC include)
-target_include_directories(fiona PRIVATE src/detail)
 
 target_link_libraries(
   fiona
@@ -92,5 +91,5 @@ if(FIONA_BUILD_TESTING)
   set_target_properties(fiona PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
   include(CTest)
   add_subdirectory(test)
-  # add_subdirectory(benches)
+  add_subdirectory(benches)
 endif()

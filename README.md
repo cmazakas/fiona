@@ -40,7 +40,11 @@ set(CMAKE_CXX_FLAGS_INIT "-Wall -Wextra -pedantic -fsanitize=address,undefined")
 
 For emulating a CI setup locally, use something like:
 ```bash
-#!/bin/bash
+#!/bin/#!/bin/bash
+
+export ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer-18
+export UBSAN_OPTIONS=print_stacktrace=1
+export ASAN_OPTIONS="detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"
 
 set -e
 
@@ -60,21 +64,24 @@ build_and_test() {
   local build_dir
   local cxx_flags_init
 
-  if [ -z "$3" ]
-  then
+  if [ -z "$3" ]; then
     build_dir=__ci_build__/${cc}/${build_type}/nosan
-    cxx_flags_init="-Wall -Wextra -pedantic -Werror"
+    cxx_flags_init="-Wall -Wextra -pedantic"
   else
     local sanitizers
     sanitizers=$(clean "$3")
     build_dir=__ci_build__/${cc}/${build_type}/${sanitizers}
-    cxx_flags_init="-Wall -Wextra -pedantic -Werror -fsanitize=$3"
+    cxx_flags_init="-Wall -Wextra -pedantic -fsanitize=$3"
   fi
 
   mkdir -p "$build_dir"
+  mkdir -p "__ci_build__/${cc}/${build_type}/test"
+  cp -r test/tls "__ci_build__/${cc}/${build_type}/test"
 
   cmake \
     --no-warn-unused-cli \
+    -DVCPKG_INSTALL_OPTIONS="--no-print-usage --only-binarycaching" \
+    -DBUILD_SHARED_LIBS=ON \
     -DBUILD_TESTING=ON \
     -DFIONA_BUILD_TESTING=ON \
     -DCMAKE_PREFIX_PATH=/home/exbigboss/cpp/__install__ \
@@ -108,28 +115,28 @@ clear
 
 rm -r __ci_build__
 
-build_and_test "clang++-17" "debug" "address,undefined"
+build_and_test "clang++-18" "release" "address,undefined"
+build_and_test "clang++-18" "release" "thread"
+build_and_test "clang++-18" "release"
+
 build_and_test "clang++-17" "release" "address,undefined"
 build_and_test "clang++-17" "release" "thread"
 build_and_test "clang++-17" "release"
 
-build_and_test "clang++-16" "debug" "address,undefined"
 build_and_test "clang++-16" "release" "address,undefined"
 build_and_test "clang++-16" "release" "thread"
 build_and_test "clang++-16" "release"
 
-build_and_test "clang++-15" "debug" "address,undefined"
-build_and_test "clang++-15" "release" "address,undefined"
-build_and_test "clang++-15" "release" "thread"
-build_and_test "clang++-15" "release"
+build_and_test "/home/exbigboss/cpp/__install__/bin/g++" "release" "address,undefined"
+build_and_test "/home/exbigboss/cpp/__install__/bin/g++" "release" "thread"
+build_and_test "/home/exbigboss/cpp/__install__/bin/g++" "release"
 
-build_and_test "g++-13" "debug" "address,undefined"
 build_and_test "g++-13" "release" "address,undefined"
 build_and_test "g++-13" "release" "thread"
 build_and_test "g++-13" "release"
 
-build_and_test "g++-12" "debug" "address,undefined"
 build_and_test "g++-12" "release" "address,undefined"
 build_and_test "g++-12" "release" "thread"
 build_and_test "g++-12" "release"
+
 ```
