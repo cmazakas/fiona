@@ -110,7 +110,7 @@ public:
     }
   }
 
-  inline void recyle_buffer( recv_buffer buf, std::uint16_t buffer_group_id );
+  inline void recycle_buffer( recv_buffer buf, std::uint16_t buffer_group_id );
 };
 
 namespace detail {
@@ -606,7 +606,7 @@ executor::make_waker( std::coroutine_handle<> h ) const
 }
 
 void
-executor::recyle_buffer( recv_buffer buf, std::uint16_t buffer_group_id )
+executor::recycle_buffer( recv_buffer buf, std::uint16_t buffer_group_id )
 {
   auto p_buf_ring = detail::executor_access_policy::get_buffer_group(
       *this, buffer_group_id );

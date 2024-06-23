@@ -730,7 +730,7 @@ TEST_CASE( "tcp echo" )
       auto octets = m_buffers.value().to_bytes();
       REQUIRE( octets.size() > 0 );
       auto buf = m_buffers->pop_front();
-      ex.recyle_buffer( std::move( buf ), bgid );
+      ex.recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
@@ -787,7 +787,7 @@ TEST_CASE( "tcp echo" )
 
       auto octets = m_buffers.value().to_bytes();
       auto buf = m_buffers->pop_front();
-      ex.recyle_buffer( std::move( buf ), bgid );
+      ex.recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
@@ -871,7 +871,7 @@ TEST_CASE( "tcp echo saturating" )
       auto octets = m_buffers.value().to_bytes();
 
       auto buf = m_buffers->pop_front();
-      stream.get_executor().recyle_buffer( std::move( buf ), bgid );
+      stream.get_executor().recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
@@ -928,7 +928,7 @@ TEST_CASE( "tcp echo saturating" )
       auto octets = m_buffers.value().to_bytes();
 
       auto buf = m_buffers->pop_front();
-      ex.recyle_buffer( std::move( buf ), bgid );
+      ex.recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
