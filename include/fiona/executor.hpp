@@ -82,11 +82,11 @@ struct executor
 {
 private:
   friend struct detail::executor_access_policy;
-  std::shared_ptr<detail::io_context_frame> pframe_;
+  std::shared_ptr<detail::io_context_frame> p_frame_;
 
 public:
   executor( std::shared_ptr<detail::io_context_frame> pframe ) noexcept
-      : pframe_( std::move( pframe ) )
+      : p_frame_( std::move( pframe ) )
   {
   }
 
@@ -101,8 +101,8 @@ public:
                             std::size_t buf_size,
                             std::uint16_t buffer_group_id )
   {
-    auto ring = &pframe_->io_ring_;
-    auto [pos, inserted] = pframe_->buf_rings_.try_emplace(
+    auto ring = &p_frame_->io_ring_;
+    auto [pos, inserted] = p_frame_->buf_rings_.try_emplace(
         buffer_group_id, ring, num_bufs, buf_size, buffer_group_id );
 
     if ( !inserted ) {
@@ -120,39 +120,39 @@ struct executor_access_policy
   static inline io_uring*
   ring( executor ex ) noexcept
   {
-    return &ex.pframe_->io_ring_;
+    return &ex.p_frame_->io_ring_;
   }
 
   static inline task_map_type&
   tasks( executor ex ) noexcept
   {
-    return ex.pframe_->tasks_;
+    return ex.p_frame_->tasks_;
   }
 
   static inline std::deque<std::coroutine_handle<>>&
   run_queue( executor ex ) noexcept
   {
-    return ex.pframe_->run_queue_;
+    return ex.p_frame_->run_queue_;
   }
 
   static inline std::lock_guard<std::mutex>
   lock_guard( executor ex )
   {
-    return std::lock_guard<std::mutex>( ex.pframe_->m_ );
+    return std::lock_guard<std::mutex>( ex.p_frame_->m_ );
   }
 
   static void
   unhandled_exception( executor ex, std::exception_ptr ep )
   {
-    if ( !ex.pframe_->exception_ptr_ ) {
-      ex.pframe_->exception_ptr_ = ep;
+    if ( !ex.p_frame_->exception_ptr_ ) {
+      ex.p_frame_->exception_ptr_ = ep;
     }
   }
 
   static inline int
   get_available_fd( executor ex )
   {
-    auto& fds = ex.pframe_->fds_;
+    auto& fds = ex.p_frame_->fds_;
     if ( fds.empty() ) {
       return -1;
     }
@@ -162,7 +162,7 @@ struct executor_access_policy
 
     BOOST_ASSERT( fd >= 0 );
     BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
-                  ex.pframe_->params_.num_files );
+                  ex.p_frame_->params_.num_files );
     return fd;
   }
 
@@ -174,9 +174,9 @@ struct executor_access_policy
     }
 
     BOOST_ASSERT( static_cast<std::uint32_t>( fd ) <
-                  ex.pframe_->params_.num_files );
+                  ex.p_frame_->params_.num_files );
 
-    auto& fds = ex.pframe_->fds_;
+    auto& fds = ex.p_frame_->fds_;
     auto itb = fds.insert( fd );
     (void)itb;
     BOOST_ASSERT( itb.second );
@@ -185,7 +185,7 @@ struct executor_access_policy
   static inline buf_ring*
   get_buffer_group( executor ex, std::size_t bgid ) noexcept
   {
-    auto& buf_rings = ex.pframe_->buf_rings_;
+    auto& buf_rings = ex.p_frame_->buf_rings_;
     if ( auto pos = buf_rings.find( static_cast<std::uint16_t>( bgid ) );
          pos != buf_rings.end() ) {
       return &pos->second;
@@ -196,13 +196,13 @@ struct executor_access_policy
   static inline int
   get_pipefd( executor ex )
   {
-    return ex.pframe_->pipefd_[0];
+    return ex.p_frame_->pipefd_[0];
   }
 
   static inline waker
   get_waker( executor ex, std::coroutine_handle<> h )
   {
-    return { ex.pframe_, ex.pframe_->m_, ex.pframe_->pipefd_[1], h };
+    return { ex.p_frame_, ex.p_frame_->m_, ex.p_frame_->pipefd_[1], h };
   }
 };
 
@@ -569,12 +569,12 @@ template <class T>
 spawn_awaitable<T>
 executor::spawn( task<T> t )
 {
-  auto internal_task = detail::scheduler( pframe_->tasks_, std::move( t ) );
-  auto [it, b] = pframe_->tasks_.emplace( internal_task.h_,
-                                          &internal_task.h_.promise().count_ );
+  auto internal_task = detail::scheduler( p_frame_->tasks_, std::move( t ) );
+  auto [it, b] = p_frame_->tasks_.emplace( internal_task.h_,
+                                           &internal_task.h_.promise().count_ );
 
   BOOST_ASSERT( b );
-  pframe_->run_queue_.push_back( it->first );
+  p_frame_->run_queue_.push_back( it->first );
 
   return { *this, internal_task };
 }
@@ -582,7 +582,7 @@ executor::spawn( task<T> t )
 void
 executor::post( task<void> t ) const
 {
-  auto fd = pframe_->pipefd_[1];
+  auto fd = p_frame_->pipefd_[1];
   auto p = t.into_address();
   auto data = reinterpret_cast<std::uintptr_t>( p );
   data |= detail::post_mask;
@@ -595,7 +595,7 @@ executor::post( task<void> t ) const
 
   // do this to make tsan happy
   {
-    auto guard = std::lock_guard<std::mutex>( pframe_->m_ );
+    auto guard = std::lock_guard<std::mutex>( p_frame_->m_ );
   }
 }
 

@@ -25,7 +25,7 @@ buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid )
   }
 
   buf_ring_ = buf_ring;
-  buf_id_pos_ = buf_ids_.begin();
+  buf_id_pos_ = buf_ids_.data();
 }
 
 buf_ring::buf_ring( io_uring* ring,
@@ -62,7 +62,7 @@ buf_ring::~buf_ring()
 void
 buf_ring::recycle_buffer( recv_buffer buf )
 {
-  if ( buf_id_pos_ == buf_ids_.begin() ) {
+  if ( buf_id_pos_ == buf_ids_.data() ) {
     return;
   }
 

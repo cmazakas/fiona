@@ -31,7 +31,7 @@ struct buf_ring
 public:
   std::vector<recv_buffer> bufs_;
   std::vector<std::size_t> buf_ids_;
-  std::vector<std::size_t>::iterator buf_id_pos_;
+  std::size_t* buf_id_pos_ = nullptr;
   std::size_t buf_size_ = 0;
   io_uring* ring_ = nullptr;
   io_uring_buf_ring* buf_ring_ = nullptr;
@@ -62,7 +62,7 @@ public:
   }
 
   io_uring_buf_ring*
-  get() const noexcept
+  as_ptr() const noexcept
   {
     return buf_ring_;
   }

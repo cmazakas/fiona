@@ -771,11 +771,11 @@ recv_awaitable::await_resume()
       break;
     }
 
-    if ( pbuf_ring->buf_id_pos_ == pbuf_ring->buf_ids_.begin() ) {
+    if ( pbuf_ring->buf_id_pos_ == pbuf_ring->buf_ids_.data() ) {
       break;
     }
 
-    BOOST_ASSERT( pbuf_ring->buf_id_pos_ != pbuf_ring->buf_ids_.begin() );
+    BOOST_ASSERT( pbuf_ring->buf_id_pos_ != pbuf_ring->buf_ids_.data() );
     BOOST_ASSERT( pbuf_ring->buf_size_ > 0 );
 
     auto buffer_id = *( --pbuf_ring->buf_id_pos_ );
@@ -784,7 +784,7 @@ recv_awaitable::await_resume()
 
     buf = fiona::recv_buffer( pbuf_ring->buf_size_ );
     BOOST_ASSERT( buf.capacity() > 0 );
-    io_uring_buf_ring_add( pbuf_ring->get(), buf.data(),
+    io_uring_buf_ring_add( pbuf_ring->as_ptr(), buf.data(),
                            static_cast<unsigned>( buf.capacity() ),
                            static_cast<unsigned short>( buffer_id ),
                            io_uring_buf_ring_mask( pbuf_ring->size() ), len );
@@ -792,7 +792,7 @@ recv_awaitable::await_resume()
   }
 
   if ( len > 0 ) {
-    io_uring_buf_ring_advance( pbuf_ring->get(), len );
+    io_uring_buf_ring_advance( pbuf_ring->as_ptr(), len );
   }
 
   auto buffers = std::move( rf.buffers_ );
