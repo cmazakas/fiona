@@ -129,14 +129,69 @@ struct key_equal
   }
 };
 
-using task_map_type =
-    boost::unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
+class task_map
+{
+  using map_type = boost::
+      unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
+  using iterator = typename map_type::iterator;
+
+  map_type tasks_;
+
+public:
+  task_map() = default;
+
+  task_map( task_map const& ) = delete;
+  task_map& operator=( task_map const& ) = delete;
+
+  bool
+  empty() const noexcept
+  {
+    return tasks_.empty();
+  }
+
+  template <class Promise>
+  void
+  add_task( std::coroutine_handle<Promise> h )
+  {
+    auto* p = &h.promise().count_;
+    tasks_.emplace( h, p );
+    *p += 1;
+  }
+
+  void
+  erase_task( std::coroutine_handle<> h )
+  {
+    auto pos = tasks_.find( h );
+    BOOST_ASSERT( pos != tasks_.end() );
+
+    auto p_count = pos->second;
+    BOOST_ASSERT( *p_count > 0 );
+
+    if ( --*p_count == 0 ) {
+      h.destroy();
+    }
+    tasks_.erase( pos );
+  }
+
+  void
+  clear()
+  {
+    while ( !tasks_.empty() ) {
+      auto pos = tasks_.begin();
+      auto [h, p_count] = *pos;
+      if ( --*p_count == 0 ) {
+        h.destroy();
+      }
+      tasks_.erase( pos );
+    }
+  }
+};
 
 struct io_context_frame
 {
   io_uring io_ring_;
   std::mutex m_;
-  task_map_type tasks_;
+  task_map tasks_;
   io_context_params params_;
   boost::unordered_node_map<std::uint16_t, buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;

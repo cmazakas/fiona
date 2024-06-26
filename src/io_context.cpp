@@ -88,11 +88,8 @@ struct frame : public fiona::detail::awaitable_base
       auto task =
           fiona::task<void>::from_address( reinterpret_cast<void*>( data ) );
       auto internal_task = fiona::detail::scheduler( tasks, std::move( task ) );
-      auto [it, b] =
-          tasks.emplace( internal_task.h_, &internal_task.h_.promise().count_ );
-
-      BOOST_ASSERT( b );
-      run_queue.push_back( it->first );
+      tasks.add_task( internal_task.h_ );
+      run_queue.push_back( internal_task.h_ );
     }
 
     schedule_recv();
@@ -142,23 +139,14 @@ struct cqe_guard
 
 struct guard
 {
-  fiona::detail::task_map_type& tasks;
+  fiona::detail::task_map& tasks;
   io_uring* ring;
 
   ~guard()
   {
     io_uring_submit( ring );
 
-    while ( !tasks.empty() ) {
-      auto pos = tasks.begin();
-      auto [h, pcount] = *pos;
-      // the awaitable for a task can still exist in some other task's frame who
-      // will then be responsible for cleaning up the coroutine
-      if ( --*pcount == 0 ) {
-        h.destroy();
-      }
-      tasks.erase( pos );
-    }
+    tasks.clear();
 
     boost::unordered_flat_set<void*> blacklist;
 

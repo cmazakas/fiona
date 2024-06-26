@@ -40,7 +40,7 @@ struct internal_promise;
 
 namespace fiona {
 template <class T>
-struct spawn_awaitable;
+class spawn_awaitable;
 }
 
 struct io_uring;
@@ -123,7 +123,7 @@ struct executor_access_policy
     return &ex.p_frame_->io_ring_;
   }
 
-  static inline task_map_type&
+  static inline task_map&
   tasks( executor ex ) noexcept
   {
     return ex.p_frame_->tasks_;
@@ -217,7 +217,7 @@ struct internal_task
   internal_task( std::coroutine_handle<promise_type> h ) : h_( h )
   {
     BOOST_ASSERT( h_.promise().count_ == 0 );
-    h_.promise().count_ = 2;
+    h_.promise().count_ = 1;
   }
 
   ~internal_task()
@@ -402,17 +402,7 @@ private:
       auto& tasks = h.promise().tasks_;
       auto continuation = h.promise().continuation_;
 
-      auto cnt = tasks.erase( h.address() );
-      (void)cnt;
-      BOOST_ASSERT( cnt == 1 );
-
-      // this means there are no living copies of the internal_task left
-      // which means that there's no post_awaitable alive so we're the only ones
-      // with visibility into this coroutine's frame
-      BOOST_ASSERT( h.promise().count_ > 0 );
-      if ( --h.promise().count_ == 0 ) {
-        h.destroy();
-      }
+      tasks.erase_task( h );
 
       if ( continuation ) {
         return continuation;
@@ -430,18 +420,19 @@ private:
 
 public:
   promise_variant<T> variant_;
-  task_map_type& tasks_;
+  task_map& tasks_;
   std::coroutine_handle<> continuation_ = nullptr;
   int count_ = 0;
 
   internal_promise_base() = delete;
-  internal_promise_base( task_map_type& tasks ) : tasks_{ tasks } {}
+  internal_promise_base( task_map& tasks ) : tasks_( tasks ) {}
 
   std::suspend_always
   initial_suspend()
   {
     return {};
   }
+
   final_awaitable
   final_suspend() noexcept
   {
@@ -465,7 +456,7 @@ template <class T>
 struct internal_promise : public internal_promise_base<T>
 {
   template <class... Args>
-  internal_promise( task_map_type& tasks, Args&&... )
+  internal_promise( task_map& tasks, Args&&... )
       : internal_promise_base<T>( tasks )
   {
   }
@@ -489,7 +480,7 @@ template <>
 struct internal_promise<void> : public internal_promise_base<void>
 {
   template <class... Args>
-  internal_promise( task_map_type& tasks, Args&&... )
+  internal_promise( task_map& tasks, Args&&... )
       : internal_promise_base( tasks )
   {
   }
@@ -510,12 +501,13 @@ struct internal_promise<void> : public internal_promise_base<void>
 } // namespace detail
 
 template <class T>
-struct spawn_awaitable
+class spawn_awaitable
 {
   executor ex_;
   detail::internal_task<T> task_;
   bool was_awaited_ = false;
 
+public:
   spawn_awaitable( executor ex, detail::internal_task<T> task )
       : ex_{ ex }, task_{ task }
   {
@@ -559,7 +551,7 @@ namespace detail {
 
 template <class T>
 internal_task<T>
-scheduler( detail::task_map_type& /* tasks */, task<T> t )
+scheduler( detail::task_map& /* tasks */, task<T> t )
 {
   co_return co_await t;
 }
@@ -570,12 +562,8 @@ spawn_awaitable<T>
 executor::spawn( task<T> t )
 {
   auto internal_task = detail::scheduler( p_frame_->tasks_, std::move( t ) );
-  auto [it, b] = p_frame_->tasks_.emplace( internal_task.h_,
-                                           &internal_task.h_.promise().count_ );
-
-  BOOST_ASSERT( b );
-  p_frame_->run_queue_.push_back( it->first );
-
+  p_frame_->tasks_.add_task( internal_task.h_ );
+  p_frame_->run_queue_.push_back( internal_task.h_ );
   return { *this, internal_task };
 }
 

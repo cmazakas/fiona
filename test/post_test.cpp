@@ -60,7 +60,7 @@ throw_exception( fiona::executor ex )
 
 } // namespace
 
-TEST_CASE( "post_test - awaiting a sibling coro" )
+TEST_CASE( "awaiting a sibling coro" )
 {
   num_runs = 0;
 
@@ -101,7 +101,7 @@ TEST_CASE( "post_test - awaiting a sibling coro" )
   CHECK( num_runs == 2 * 2 + 1 );
 }
 
-TEST_CASE( "post_test - ignoring exceptions" )
+TEST_CASE( "ignoring exceptions" )
 {
   // test the following:
   // * coroutine destroyed without a post_awaitable object in its frame
@@ -187,7 +187,7 @@ TEST_CASE( "post_test - ignoring exceptions" )
   CHECK( num_runs == 6 );
 }
 
-TEST_CASE( "post_test - posting a move-only type" )
+TEST_CASE( "posting a move-only type" )
 {
   num_runs = 0;
 
@@ -215,7 +215,7 @@ TEST_CASE( "post_test - posting a move-only type" )
   CHECK( num_runs == 3 );
 }
 
-TEST_CASE( "post_test - void returning function" )
+TEST_CASE( "void returning function" )
 {
   num_runs = 0;
 
@@ -262,7 +262,7 @@ symmetric_transfer_test()
 
 } // namespace
 
-TEST_CASE( "post_test - symmetric transfer" )
+TEST_CASE( "symmetric transfer" )
 {
   num_runs = 0;
 
@@ -274,7 +274,7 @@ TEST_CASE( "post_test - symmetric transfer" )
 
 #endif
 
-TEST_CASE( "post_test - destruction on a separate thread" )
+TEST_CASE( "destruction on a separate thread" )
 {
   num_runs = 0;
 
@@ -309,7 +309,7 @@ TEST_CASE( "post_test - destruction on a separate thread" )
   CHECK( num_runs == 2 );
 }
 
-TEST_CASE( "post_test - inter-thread posting" )
+TEST_CASE( "inter-thread posting" )
 {
   fiona::io_context ioc;
   std::vector<std::jthread> threads;
