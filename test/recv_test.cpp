@@ -84,7 +84,7 @@ TEST_CASE( "recv timeout" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buffer_sequence( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -152,7 +152,7 @@ TEST_CASE( "recv cancel" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buffer_sequence( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -213,7 +213,7 @@ TEST_CASE( "recv high traffic" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buffer_sequence( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -231,11 +231,12 @@ TEST_CASE( "recv high traffic" )
 TEST_CASE( "double registering same buffer group" )
 {
   fiona::io_context ioc;
+  auto ex = ioc.get_executor();
 
   std::uint16_t const buffer_group_id = 0;
-  ioc.register_buffer_sequence( 16, 64, buffer_group_id );
+  ex.register_buffer_sequence( 16, 64, buffer_group_id );
   try {
-    ioc.register_buffer_sequence( 32, 128, buffer_group_id );
+    ex.register_buffer_sequence( 32, 128, buffer_group_id );
     CHECK( false );
   } catch ( std::system_error const& ec ) {
     CHECK( ec.code() == std::errc::file_exists );
@@ -251,7 +252,7 @@ TEST_CASE( "buffer exhaustion" )
 
   constexpr static int const num_bufs = 8;
 
-  ioc.register_buffer_sequence( num_bufs, 64, 0 );
+  ex.register_buffer_sequence( num_bufs, 64, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -259,7 +260,7 @@ TEST_CASE( "buffer exhaustion" )
 
   static std::array<unsigned char, 64> const msg = { '\x12' };
 
-  ioc.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
+  ex.spawn( FIONA_TASK( fiona::tcp::acceptor acceptor ) {
     auto mstream = co_await acceptor.async_accept();
     auto& stream = mstream.value();
     stream.timeout( 500ms );
@@ -362,8 +363,8 @@ TEST_CASE( "buffer exhaustion" )
     ++num_runs;
   };
 
-  ioc.spawn( client( ex, port ) );
-  ioc.spawn( client( ex, port ) );
+  ex.spawn( client( ex, port ) );
+  ex.spawn( client( ex, port ) );
 
   ioc.run();
 
@@ -519,9 +520,9 @@ TEST_CASE( "concurrent send and recv" )
   ex.register_buffer_sequence( 1024, 128, 0 );
   ex.register_buffer_sequence( 1024, 128, 1 );
 
-  ioc.spawn( server_op::start( acceptor, num_clients ) );
+  ex.spawn( server_op::start( acceptor, num_clients ) );
   for ( int i = 0; i < num_clients; ++i ) {
-    ioc.spawn( client_op::start( ioc.get_executor(), port ) );
+    ex.spawn( client_op::start( ex, port ) );
   }
   ioc.run();
 

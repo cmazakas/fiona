@@ -23,7 +23,7 @@ TEST_CASE( "fetching the list of remote IP addresses" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto mentrylist =
@@ -56,7 +56,7 @@ TEST_CASE( "fetching a non-existent entry" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto m_entrylist =
@@ -90,7 +90,7 @@ TEST_CASE( "connecting a client" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     fiona::dns_resolver resolver( ex );
 
     auto mentrylist =

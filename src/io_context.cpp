@@ -197,13 +197,6 @@ io_context::get_executor() const noexcept
 }
 
 void
-io_context::spawn( task<void> t )
-{
-  auto ex = get_executor();
-  ex.spawn( std::move( t ) );
-}
-
-void
 io_context::run()
 {
   struct advance_guard

@@ -19,9 +19,10 @@ fiona_timer_bench()
   params.sq_entries = 16 * 1024;
 
   fiona::io_context ioc( params );
+  auto ex = ioc.get_executor();
 
   for ( int i = 0; i < 10'000; ++i ) {
-    ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
       fiona::timer timer( ex );
       for ( int i = 0; i < 10'000; ++i ) {
         auto mokay = co_await timer.async_wait( 1ms );
@@ -29,7 +30,7 @@ fiona_timer_bench()
         anums.fetch_add( 1, std::memory_order_relaxed );
       }
       co_return;
-    }( ioc.get_executor() ) );
+    }( ex ) );
   }
   ioc.run();
 

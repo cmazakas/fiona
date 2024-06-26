@@ -67,7 +67,7 @@ TEST_CASE( "awaiting a sibling coro" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
     {
       duration_guard dg( 2 * sleep_dur );
 
@@ -112,7 +112,7 @@ TEST_CASE( "ignoring exceptions" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     ++num_runs;
     fiona::timer timer( ex );
     co_await timer.async_wait( 500ms );
@@ -120,7 +120,7 @@ TEST_CASE( "ignoring exceptions" )
     co_return;
   }( ex ) );
 
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     auto h = fiona::spawn( ex, FIONA_TASK( fiona::executor ex ) {
       ++num_runs;
       fiona::timer timer( ex );
@@ -137,7 +137,7 @@ TEST_CASE( "ignoring exceptions" )
     CHECK( false );
   }( ex ) );
 
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     auto inner_task = FIONA_TASK( fiona::executor ex )
     {
       ++num_runs;
@@ -153,7 +153,7 @@ TEST_CASE( "ignoring exceptions" )
     co_return;
   }( ex ) );
 
-  ioc.spawn( FIONA_TASK( fiona::executor ex ) {
+  ex.spawn( FIONA_TASK( fiona::executor ex ) {
     auto inner_task = FIONA_TASK( fiona::executor ex )
     {
       auto h = fiona::spawn( ex, FIONA_TASK( fiona::executor ex ) {
@@ -267,7 +267,8 @@ TEST_CASE( "symmetric transfer" )
   num_runs = 0;
 
   fiona::io_context ioc;
-  ioc.spawn( symmetric_transfer_test() );
+  auto ex = ioc.get_executor();
+  ex.spawn( symmetric_transfer_test() );
   ioc.run();
   CHECK( num_runs == 1 );
 }
@@ -284,7 +285,7 @@ TEST_CASE( "destruction on a separate thread" )
     fiona::io_context ioc;
     auto ex = ioc.get_executor();
 
-    ioc.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
       fiona::timer timer( ex );
       auto r = co_await timer.async_wait( std::chrono::milliseconds( 250 ) );
       CHECK( r.has_value() );

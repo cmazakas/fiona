@@ -493,9 +493,9 @@ TEST_CASE( "botan hello world" )
   fiona::tcp::acceptor acceptor( ioc.get_executor(), &server_addr );
 
   auto port = acceptor.port();
-
-  ioc.spawn( server( std::move( acceptor ) ) );
-  ioc.spawn( client( ioc.get_executor(), port ) );
+  auto ex = ioc.get_executor();
+  ex.spawn( server( std::move( acceptor ) ) );
+  ex.spawn( client( ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );
@@ -512,8 +512,9 @@ TEST_CASE( "tls::client hello world" )
 
   auto port = acceptor.port();
 
-  ioc.spawn( tls_server( std::move( acceptor ) ) );
-  ioc.spawn( tls_client( ioc.get_executor(), port ) );
+  auto ex = ioc.get_executor();
+  ex.spawn( tls_server( std::move( acceptor ) ) );
+  ex.spawn( tls_client( ioc.get_executor(), port ) );
   ioc.run();
 
   CHECK( num_runs == 2 );
@@ -677,9 +678,9 @@ TEST_CASE( "large messages" )
   fiona::tcp::acceptor acceptor( ioc.get_executor(), &addr );
 
   auto const port = acceptor.port();
-
-  ioc.spawn( server_op::run( std::move( acceptor ), msg ) );
-  ioc.spawn( client_op::run( ioc.get_executor(), port, msg ) );
+  auto ex = ioc.get_executor();
+  ex.spawn( server_op::run( std::move( acceptor ), msg ) );
+  ex.spawn( client_op::run( ioc.get_executor(), port, msg ) );
   ioc.run();
 
   CHECK( num_runs == 2 );
@@ -870,8 +871,9 @@ TEST_CASE( "multiple clients" )
 
   auto const port = acceptor.port();
 
-  ioc.spawn( server_op::run( std::move( acceptor ), msg ) );
-  ioc.spawn( client_op::run( ioc.get_executor(), port, msg ) );
+  auto ex = ioc.get_executor();
+  ex.spawn( server_op::run( std::move( acceptor ), msg ) );
+  ex.spawn( client_op::run( ioc.get_executor(), port, msg ) );
   ioc.run();
 
   CHECK( num_runs == 2 * num_clients );
@@ -944,7 +946,9 @@ TEST_CASE( "https google request" )
   num_runs = 0;
 
   fiona::io_context ioc;
-  ioc.spawn( client_op::run( ioc.get_executor() ) );
+
+  auto ex = ioc.get_executor();
+  ex.spawn( client_op::run( ioc.get_executor() ) );
   ioc.run();
 
   CHECK( num_runs == 1 );

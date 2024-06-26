@@ -67,9 +67,9 @@ TEST_CASE( "ipv6 sanity check" )
   num_runs = 0;
 
   fiona::io_context ioc;
-  ioc.register_buffer_sequence( 1024, 128, 0 );
 
   auto ex = ioc.get_executor();
+  ex.register_buffer_sequence( 1024, 128, 0 );
 
   auto server_addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
   fiona::tcp::acceptor acceptor( ex, &server_addr );
@@ -77,8 +77,8 @@ TEST_CASE( "ipv6 sanity check" )
   auto port = acceptor.port();
 
   server_addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, port );
-  ioc.spawn( server( ex, std::move( acceptor ) ) );
-  ioc.spawn( client( ex, server_addr ) );
+  ex.spawn( server( ex, std::move( acceptor ) ) );
+  ex.spawn( client( ex, server_addr ) );
 
   ioc.run();
   CHECK( num_runs == 2 );
