@@ -129,7 +129,7 @@ struct key_equal
   }
 };
 
-class task_map
+struct task_map
 {
   using map_type = boost::
       unordered_flat_map<std::coroutine_handle<>, int*, hasher, key_equal>;
@@ -137,7 +137,6 @@ class task_map
 
   map_type tasks_;
 
-public:
   task_map() = default;
 
   task_map( task_map const& ) = delete;

@@ -324,10 +324,14 @@ TEST_CASE( "inter-thread posting" )
   fiona::timer timer( ex );
 
   auto task = []( fiona::timer& timer ) -> fiona::task<void> {
+    fiona::timer t( timer.get_executor() );
+    co_await t.async_wait( 250ms );
+
     ++num_runs;
     if ( num_runs == total_runs ) {
       co_await timer.async_cancel();
     }
+
     co_return;
   };
 
