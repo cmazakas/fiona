@@ -26,6 +26,10 @@ buffer_copy( std::span<unsigned char> dst, recv_buffer_sequence_view bufs )
   auto end = bufs.end();
   for ( auto pos = bufs.begin(); pos != end; ++pos ) {
     auto buf_view = *pos;
+    if ( buf_view.empty() ) {
+      continue;
+    }
+
     auto m = std::min( dst.size(), buf_view.size() );
     std::memcpy( dst.data(), buf_view.data(), m );
     n += m;

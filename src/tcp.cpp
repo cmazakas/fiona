@@ -66,9 +66,12 @@ stream_impl::~stream_impl()
 stream_impl::cancel_frame::~cancel_frame() = default;
 stream_impl::timeout_cancel_frame::~timeout_cancel_frame() = default;
 stream_impl::close_frame::~close_frame() = default;
+stream_impl::shutdown_frame::~shutdown_frame() = default;
 stream_impl::send_frame::~send_frame() = default;
 stream_impl::recv_frame::~recv_frame() = default;
 stream_impl::timeout_frame::~timeout_frame() = default;
+
+//------------------------------------------------------------------------------
 
 struct accept_frame : public fiona::detail::awaitable_base
 {
@@ -99,6 +102,8 @@ struct accept_frame : public fiona::detail::awaitable_base
     return boost::exchange( h_, nullptr );
   }
 };
+
+//------------------------------------------------------------------------------
 
 struct acceptor_impl : public virtual ref_count, public accept_frame
 {
@@ -237,19 +242,6 @@ intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept
   intrusive_ptr_release( static_cast<ref_count*>( pacceptor ) );
 }
 
-void
-detail::accept_frame::await_process_cqe( io_uring_cqe* cqe )
-{
-  auto res = cqe->res;
-  if ( res < 0 ) {
-    BOOST_ASSERT( peer_fd_ >= 0 );
-    fiona::detail::executor_access_policy::release_fd( p_acceptor_->ex_,
-                                                       peer_fd_ );
-    peer_fd_ = res;
-  }
-  done_ = true;
-}
-
 acceptor_impl::~acceptor_impl()
 {
   if ( fd_ >= 0 ) {
@@ -263,6 +255,21 @@ acceptor_impl::~acceptor_impl()
     fiona::detail::executor_access_policy::release_fd( ex_, fd_ );
     fd_ = -1;
   }
+}
+
+//------------------------------------------------------------------------------
+
+void
+accept_frame::await_process_cqe( io_uring_cqe* cqe )
+{
+  auto res = cqe->res;
+  if ( res < 0 ) {
+    BOOST_ASSERT( peer_fd_ >= 0 );
+    fiona::detail::executor_access_policy::release_fd( p_acceptor_->ex_,
+                                                       peer_fd_ );
+    peer_fd_ = res;
+  }
+  done_ = true;
 }
 
 accept_frame::~accept_frame() {}
@@ -299,6 +306,8 @@ acceptor::async_accept_raw()
 {
   return { p_acceptor_ };
 }
+
+//------------------------------------------------------------------------------
 
 accept_awaitable::accept_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
@@ -371,6 +380,8 @@ accept_awaitable::await_resume()
   return { std::move( s ) };
 }
 
+//------------------------------------------------------------------------------
+
 accept_raw_awaitable::accept_raw_awaitable(
     boost::intrusive_ptr<detail::acceptor_impl> pacceptor )
     : accept_awaitable( pacceptor )
@@ -392,20 +403,24 @@ accept_raw_awaitable::await_resume()
   return peer_fd;
 }
 
+//------------------------------------------------------------------------------
+
 namespace detail {
 
 void FIONA_EXPORT
-intrusive_ptr_add_ref( stream_impl* pstream ) noexcept
+intrusive_ptr_add_ref( stream_impl* p_stream ) noexcept
 {
-  intrusive_ptr_add_ref( static_cast<ref_count*>( pstream ) );
+  intrusive_ptr_add_ref( static_cast<ref_count*>( p_stream ) );
 }
 
 void FIONA_EXPORT
-intrusive_ptr_release( stream_impl* pstream ) noexcept
+intrusive_ptr_release( stream_impl* p_stream ) noexcept
 {
-  intrusive_ptr_release( static_cast<ref_count*>( pstream ) );
+  intrusive_ptr_release( static_cast<ref_count*>( p_stream ) );
 }
 } // namespace detail
+
+//------------------------------------------------------------------------------
 
 stream::stream( executor ex, int fd )
     : p_stream_( new detail::stream_impl( ex, fd ) )
@@ -543,6 +558,14 @@ stream::async_recv()
   return { p_stream_ };
 }
 
+shutdown_awaitable
+stream::async_shutdown( int how )
+{
+  return { p_stream_, how };
+}
+
+//------------------------------------------------------------------------------
+
 stream_close_awaitable::stream_close_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
     : p_stream_( pstream )
@@ -586,6 +609,8 @@ stream_close_awaitable::await_resume()
 
   return { error_code::from_errno( -res ) };
 }
+
+//------------------------------------------------------------------------------
 
 stream_cancel_awaitable::stream_cancel_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
@@ -642,6 +667,56 @@ stream_cancel_awaitable::await_resume()
 
   return { res };
 }
+
+//------------------------------------------------------------------------------
+
+shutdown_awaitable::shutdown_awaitable(
+    boost::intrusive_ptr<detail::stream_impl> p_stream, int how )
+    : p_stream_( p_stream ), how_{ how }
+{
+}
+
+shutdown_awaitable::~shutdown_awaitable() = default;
+
+void
+shutdown_awaitable::await_suspend( std::coroutine_handle<> h )
+{
+  auto ex = p_stream_->ex_;
+  auto fd = p_stream_->fd_;
+  BOOST_ASSERT( fd != -1 );
+
+  auto& sf = static_cast<detail::shutdown_frame&>( *p_stream_ );
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+
+  fiona::detail::reserve_sqes( ring, 1 );
+
+  auto sqe = io_uring_get_sqe( ring );
+  io_uring_prep_shutdown( sqe, fd, how_ );
+  io_uring_sqe_set_data(
+      sqe, static_cast<detail::shutdown_frame*>( p_stream_.get() ) );
+  io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
+
+  intrusive_ptr_add_ref( &sf );
+
+  sf.initiated_ = true;
+  sf.h_ = h;
+}
+
+result<void>
+shutdown_awaitable::await_resume()
+{
+  auto& sf = static_cast<detail::shutdown_frame&>( *p_stream_ );
+  auto res = sf.res_;
+  sf.reset();
+
+  if ( res == 0 ) {
+    return {};
+  }
+
+  return { error_code::from_errno( -res ) };
+}
+
+//------------------------------------------------------------------------------
 
 send_awaitable::send_awaitable(
     std::span<unsigned char const> buf,

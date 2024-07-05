@@ -139,6 +139,47 @@ struct FIONA_EXPORT close_frame : public fiona::detail::awaitable_base
   }
 };
 
+struct FIONA_EXPORT shutdown_frame : public fiona::detail::awaitable_base
+{
+  stream_impl* p_stream_ = nullptr;
+  std::coroutine_handle<> h_ = nullptr;
+  int res_ = 0;
+  bool initiated_ = false;
+  bool done_ = false;
+
+  shutdown_frame() = delete;
+  shutdown_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
+  virtual ~shutdown_frame() override;
+
+  void
+  reset()
+  {
+    h_ = nullptr;
+    res_ = 0;
+    initiated_ = false;
+    done_ = false;
+  }
+
+  std::coroutine_handle<>
+  handle() noexcept override
+  {
+    return boost::exchange( h_, nullptr );
+  }
+
+  void
+  await_process_cqe( io_uring_cqe* cqe ) override
+  {
+    done_ = true;
+    res_ = cqe->res;
+  }
+
+  bool
+  is_active() const noexcept
+  {
+    return initiated_ && !done_;
+  }
+};
+
 struct FIONA_EXPORT send_frame : public fiona::detail::awaitable_base
 {
   stream_impl* pstream_ = nullptr;
@@ -242,6 +283,7 @@ struct FIONA_EXPORT timeout_frame : public fiona::detail::awaitable_base
 struct FIONA_EXPORT stream_impl : public virtual ref_count,
                                   public cancel_frame,
                                   public close_frame,
+                                  public shutdown_frame,
                                   public send_frame,
                                   public recv_frame,
                                   public timeout_frame,
@@ -254,9 +296,9 @@ struct FIONA_EXPORT stream_impl : public virtual ref_count,
   bool stream_cancelled_ = false;
 
   stream_impl( executor ex )
-      : cancel_frame( this ), close_frame( this ), send_frame( this ),
-        recv_frame( this ), timeout_frame( this ), timeout_cancel_frame( this ),
-        ex_( ex )
+      : cancel_frame( this ), close_frame( this ), shutdown_frame( this ),
+        send_frame( this ), recv_frame( this ), timeout_frame( this ),
+        timeout_cancel_frame( this ), ex_( ex )
   {
 
     auto ring = fiona::detail::executor_access_policy::ring( ex );

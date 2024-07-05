@@ -1270,3 +1270,80 @@ TEST_CASE( "accept raw fd" )
   ioc.run();
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "shutdown" )
+{
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ex.register_buffer_sequence( 128, 128, 0 );
+
+  auto localhost = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
+  fiona::tcp::acceptor acceptor( ex, &localhost );
+
+  auto port = acceptor.port();
+
+  ex.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+    auto m_stream = co_await acceptor.async_accept();
+    auto stream = std::move( m_stream ).value();
+
+    stream.set_buffer_group( 0 );
+
+    auto m_bufs = co_await stream.async_recv();
+    auto bufs = std::move( m_bufs ).value();
+
+    auto str = bufs.to_string();
+    CHECK( str == "rawr" );
+
+    auto m_ok = co_await stream.async_shutdown( SHUT_WR );
+    CHECK( m_ok.has_value() );
+
+    m_bufs = co_await stream.async_recv();
+    bufs = std::move( m_bufs ).value();
+    CHECK( bufs.to_bytes().empty() );
+
+    m_ok = co_await stream.async_close();
+    CHECK( m_ok.has_value() );
+
+    ++num_runs;
+
+    co_return;
+  }( acceptor ) );
+
+  ex.spawn( []( fiona::executor ex, std::uint16_t port ) -> fiona::task<void> {
+    fiona::tcp::client client( ex );
+
+    auto remote_addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, port );
+    auto m_ok = co_await client.async_connect( &remote_addr );
+    REQUIRE( m_ok.has_value() );
+
+    auto m_sent = co_await client.async_send( "rawr" );
+    REQUIRE( m_sent.value() == 4 );
+
+    m_ok = co_await client.async_shutdown( SHUT_WR );
+    CHECK( m_ok.has_value() );
+
+    m_ok = co_await client.async_shutdown( SHUT_WR );
+    CHECK( m_ok.has_error() );
+    CHECK( m_ok.error() == fiona::error_code::from_errno( ENOTCONN ) );
+
+    client.set_buffer_group( 0 );
+
+    fiona::tcp::stream stream = client;
+    auto m_bufs = co_await stream.async_recv();
+    auto bufs = std::move( m_bufs ).value();
+    CHECK( bufs.to_bytes().empty() );
+
+    m_ok = co_await stream.async_close();
+    CHECK( m_ok.has_value() );
+
+    ++num_runs;
+
+    co_return;
+  }( ex, port ) );
+
+  ioc.run();
+
+  CHECK( num_runs == 2 );
+}
