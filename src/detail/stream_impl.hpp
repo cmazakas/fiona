@@ -74,13 +74,16 @@ struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
 
 struct FIONA_EXPORT timeout_cancel_frame : public fiona::detail::awaitable_base
 {
-  stream_impl* pstream_ = nullptr;
+  stream_impl* p_stream_ = nullptr;
   int res_ = 0;
   bool initiated_ = false;
 
   timeout_cancel_frame() = delete;
+
   timeout_cancel_frame( timeout_cancel_frame const& ) = delete;
-  timeout_cancel_frame( stream_impl* pstream ) : pstream_( pstream ) {}
+  timeout_cancel_frame& operator=( timeout_cancel_frame const& ) = delete;
+
+  timeout_cancel_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
   virtual ~timeout_cancel_frame() override;
 
   void
@@ -182,14 +185,19 @@ struct FIONA_EXPORT shutdown_frame : public fiona::detail::awaitable_base
 
 struct FIONA_EXPORT send_frame : public fiona::detail::awaitable_base
 {
-  stream_impl* pstream_ = nullptr;
+  stream_impl* p_stream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
   timepoint_type last_send_ = clock_type::now();
   int res_ = 0;
   bool initiated_ = false;
   bool done_ = false;
 
-  send_frame( stream_impl* pstream ) : pstream_( pstream ) {}
+  send_frame() = delete;
+
+  send_frame( send_frame const& ) = delete;
+  send_frame& operator=( send_frame const& ) = delete;
+
+  send_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
 
   ~send_frame() override;
 
@@ -251,12 +259,12 @@ struct FIONA_EXPORT recv_frame : public fiona::detail::awaitable_base
 
 struct FIONA_EXPORT timeout_frame : public fiona::detail::awaitable_base
 {
-  stream_impl* pstream_ = nullptr;
+  stream_impl* p_stream_ = nullptr;
   bool initiated_ = false;
   bool cancelled_ = false;
 
   timeout_frame() = delete;
-  timeout_frame( stream_impl* pstream ) : pstream_( pstream ) {}
+  timeout_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
   virtual ~timeout_frame() override;
 
   void
@@ -342,7 +350,7 @@ detail::send_frame::await_process_cqe( io_uring_cqe* cqe )
   done_ = true;
   res_ = cqe->res;
   if ( res_ < 0 ) {
-    pstream_->connected_ = false;
+    p_stream_->connected_ = false;
   }
 }
 
@@ -427,18 +435,19 @@ detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
 
   auto const timeout_adjusted = ( cqe->res == -ECANCELED );
   if ( timeout_adjusted ) {
-    auto ring = fiona::detail::executor_access_policy::ring( pstream_->ex_ );
+    auto ring = fiona::detail::executor_access_policy::ring( p_stream_->ex_ );
 
     fiona::detail::reserve_sqes( ring, 1 );
 
     {
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_timeout( sqe, &pstream_->ts_, 0, IORING_TIMEOUT_MULTISHOT );
+      io_uring_prep_timeout( sqe, &p_stream_->ts_, 0,
+                             IORING_TIMEOUT_MULTISHOT );
       io_uring_sqe_set_data( sqe,
-                             static_cast<detail::timeout_frame*>( pstream_ ) );
+                             static_cast<detail::timeout_frame*>( p_stream_ ) );
     }
 
-    pstream_->timeout_frame::initiated_ = true;
+    p_stream_->timeout_frame::initiated_ = true;
     intrusive_ptr_add_ref( this );
     return;
   }
@@ -449,51 +458,52 @@ detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
     return;
   }
 
-  auto ex = pstream_->ex_;
+  auto ex = p_stream_->ex_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto now = clock_type::now();
-  auto max_diff = std::chrono::seconds{ pstream_->ts_.tv_sec } +
-                  std::chrono::nanoseconds{ pstream_->ts_.tv_nsec };
+  auto max_diff = std::chrono::seconds{ p_stream_->ts_.tv_sec } +
+                  std::chrono::nanoseconds{ p_stream_->ts_.tv_nsec };
 
   bool should_cancel = false;
-  if ( pstream_->recv_frame::initiated_ ) {
-    auto diff = now - pstream_->recv_frame::last_recv_;
+  if ( p_stream_->recv_frame::initiated_ ) {
+    auto diff = now - p_stream_->recv_frame::last_recv_;
     if ( diff >= max_diff ) {
       should_cancel = true;
     }
   }
 
-  if ( pstream_->send_frame::initiated_ && !pstream_->send_frame::done_ ) {
-    auto diff = now - pstream_->send_frame::last_send_;
+  if ( p_stream_->send_frame::initiated_ && !p_stream_->send_frame::done_ ) {
+    auto diff = now - p_stream_->send_frame::last_send_;
     if ( diff >= max_diff ) {
       should_cancel = true;
     }
   }
 
   if ( should_cancel ) {
-    auto fd = pstream_->fd_;
+    auto fd = p_stream_->fd_;
     BOOST_ASSERT( fd >= 0 );
     fiona::detail::reserve_sqes( ring, 1 );
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_cancel_fd(
         sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
     io_uring_sqe_set_data(
-        sqe, static_cast<detail::timeout_cancel_frame*>( pstream_ ) );
+        sqe, static_cast<detail::timeout_cancel_frame*>( p_stream_ ) );
 
-    intrusive_ptr_add_ref( pstream_ );
+    intrusive_ptr_add_ref( p_stream_ );
 
-    pstream_->timeout_cancel_frame::initiated_ = true;
+    p_stream_->timeout_cancel_frame::initiated_ = true;
   }
 
   if ( !( cqe->flags & IORING_CQE_F_MORE ) ) {
     fiona::detail::reserve_sqes( ring, 1 );
     {
       auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_timeout( sqe, &pstream_->ts_, 0, IORING_TIMEOUT_MULTISHOT );
+      io_uring_prep_timeout( sqe, &p_stream_->ts_, 0,
+                             IORING_TIMEOUT_MULTISHOT );
       io_uring_sqe_set_data( sqe,
-                             static_cast<detail::timeout_frame*>( pstream_ ) );
+                             static_cast<detail::timeout_frame*>( p_stream_ ) );
     }
-    pstream_->timeout_frame::initiated_ = true;
+    p_stream_->timeout_frame::initiated_ = true;
   }
 
   intrusive_ptr_add_ref( this );

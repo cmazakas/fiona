@@ -5,6 +5,7 @@ find_package(
     asio
     beast
 )
+
 find_package(Catch2 3.0 REQUIRED)
 
 include(Catch)
@@ -27,3 +28,6 @@ add_bench_deps(timer)
 
 add_executable(post post/common.hpp post/post.cpp post/asio.cpp post/fiona.cpp)
 add_bench_deps(post)
+
+add_executable(recv recv/common.hpp recv/recv.cpp recv/asio.cpp recv/fiona.cpp)
+add_bench_deps(recv)

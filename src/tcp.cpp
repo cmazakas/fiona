@@ -523,6 +523,14 @@ stream::set_buffer_group( std::uint16_t bgid )
     throw_busy();
   }
 
+  auto ex = p_stream_->ex_;
+  auto p_br =
+      fiona::detail::executor_access_policy::get_buffer_group( ex, bgid );
+
+  if ( !p_br ) {
+    fiona::detail::throw_errno_as_error_code( EINVAL );
+  }
+
   rf.buffer_group_id_ = bgid;
 }
 
@@ -720,8 +728,8 @@ shutdown_awaitable::await_resume()
 
 send_awaitable::send_awaitable(
     std::span<unsigned char const> buf,
-    boost::intrusive_ptr<detail::stream_impl> pstream )
-    : buf_( buf ), p_stream_( pstream )
+    boost::intrusive_ptr<detail::stream_impl> p_stream )
+    : buf_( buf ), p_stream_( p_stream )
 {
 }
 
@@ -781,6 +789,8 @@ send_awaitable::await_resume()
 
   return { res };
 }
+
+//------------------------------------------------------------------------------
 
 recv_awaitable::recv_awaitable(
     boost::intrusive_ptr<detail::stream_impl> pstream )
