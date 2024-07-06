@@ -86,7 +86,8 @@ TEST_CASE( "owned buffer sequence" )
   CHECK( buf_seq.num_bufs() == 0 );
   CHECK( buf_seq.empty() );
 
-  auto register_buffer = [&buf_seq]( std::string_view str ) {
+  auto register_buffer = [&buf_seq]( std::string_view str )
+  {
     fiona::recv_buffer buf( 1024 );
     std::ranges::copy( str, buf.spare_capacity_mut().begin() );
     buf.set_len( str.size() );
@@ -166,14 +167,13 @@ TEST_CASE( "move stability" )
   }
 
   CHECK( std::ranges::distance( buf_seq ) == 16 );
-  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf ) {
-    CHECK( buf.capacity() == 128 );
-  } );
+  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf )
+  { CHECK( buf.capacity() == 128 ); } );
 
   std::vector<unsigned char*> old_addrs( 16 );
-  std::ranges::transform(
-      buf_seq, old_addrs.begin(),
-      []( fiona::recv_buffer_view b ) { return b.data(); } );
+  std::ranges::transform( buf_seq, old_addrs.begin(),
+                          []( fiona::recv_buffer_view b )
+  { return b.data(); } );
 
   auto pos = buf_seq.begin();
 
@@ -183,9 +183,9 @@ TEST_CASE( "move stability" )
     ++pos;
   }
 
-  CHECK( std::ranges::equal(
-      old_addrs, buf_seq2, {}, {},
-      []( fiona::recv_buffer_view b ) { return b.data(); } ) );
+  CHECK( std::ranges::equal( old_addrs, buf_seq2, {}, {},
+                             []( fiona::recv_buffer_view b )
+  { return b.data(); } ) );
 
   CHECK( buf_seq.end() != buf_seq2.end() );
 
@@ -194,9 +194,8 @@ TEST_CASE( "move stability" )
   }
 
   CHECK( std::ranges::distance( buf_seq ) == 8 );
-  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf ) {
-    CHECK( buf.capacity() == 256 );
-  } );
+  std::ranges::for_each( buf_seq, []( fiona::recv_buffer_view buf )
+  { CHECK( buf.capacity() == 256 ); } );
 }
 
 TEST_CASE( "push_back empty" )
@@ -292,7 +291,8 @@ TEST_CASE( "concat" )
 
 TEST_CASE( "pop_front" )
 {
-  auto string_to_buf = []( std::string_view str ) {
+  auto string_to_buf = []( std::string_view str )
+  {
     fiona::recv_buffer buf( str.size() );
     auto out = buf.spare_capacity_mut().begin();
     auto r = std::ranges::copy( str, out );
@@ -300,7 +300,8 @@ TEST_CASE( "pop_front" )
     return buf;
   };
 
-  auto verify_range = []( fiona::recv_buffer_sequence& buf_seq ) {
+  auto verify_range = []( fiona::recv_buffer_sequence& buf_seq )
+  {
     for ( auto view : buf_seq ) {
       CHECK( view.size() > 0 );
     }

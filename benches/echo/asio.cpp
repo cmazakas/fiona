@@ -55,7 +55,8 @@ asio_echo_bench()
 
   auto handle_request =
       []( boost::beast::tcp_stream stream,
-          std::string_view msg ) -> boost::asio::awaitable<void> {
+          std::string_view msg ) -> boost::asio::awaitable<void>
+  {
     std::size_t num_bytes = 0;
 
     char buf[128] = {};
@@ -88,7 +89,8 @@ asio_echo_bench()
   auto server =
       [handle_request]( boost::asio::any_io_executor ex,
                         boost::asio::ip::tcp::acceptor acceptor,
-                        std::string_view msg ) -> boost::asio::awaitable<void> {
+                        std::string_view msg ) -> boost::asio::awaitable<void>
+  {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream =
           co_await acceptor.async_accept( boost::asio::use_awaitable );
@@ -105,7 +107,8 @@ asio_echo_bench()
   };
 
   auto client = []( boost::asio::any_io_executor ex,
-                    std::string_view msg ) -> boost::asio::awaitable<void> {
+                    std::string_view msg ) -> boost::asio::awaitable<void>
+  {
     boost::beast::tcp_stream client( ex );
 
     client.expires_after( 5s );
@@ -139,7 +142,8 @@ asio_echo_bench()
     co_return;
   };
 
-  std::thread t1( [&client, msg] {
+  std::thread t1( [&client, msg]
+  {
     try {
       boost::asio::io_context ioc( 1 );
 

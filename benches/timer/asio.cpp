@@ -36,7 +36,8 @@ asio_timer_bench()
   for ( int i = 0; i < 10'000; ++i ) {
     boost::asio::co_spawn(
         ioc.get_executor(),
-        []( boost::asio::any_io_executor ex ) -> boost::asio::awaitable<void> {
+        []( boost::asio::any_io_executor ex ) -> boost::asio::awaitable<void>
+    {
       boost::asio::steady_timer timer( ex );
       for ( int i = 0; i < 10'000; ++i ) {
         timer.expires_after( 1ms );

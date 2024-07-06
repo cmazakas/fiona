@@ -50,7 +50,8 @@ struct custom_awaitable
     auto waker = ex.make_waker( h );
 
     t = std::thread( [nums = this->nums, m = this->m,
-                      should_detach = this->should_detach, waker]() mutable {
+                      should_detach = this->should_detach, waker]() mutable
+    {
       std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
       {
         std::lock_guard<std::mutex> lg{ *m };
@@ -85,7 +86,8 @@ TEST_CASE( "waiting a simple future" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
     duration_guard dg( std::chrono::milliseconds( 500 ) );
     auto nums = co_await custom_awaitable( ex );
     CHECK( nums == std::vector{ 1, 2, 3, 4 } );
@@ -105,7 +107,8 @@ TEST_CASE( "waker outlives the io_context" )
     fiona::io_context ioc;
     auto ex = ioc.get_executor();
 
-    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+    {
       ++num_runs;
       auto a = custom_awaitable( ex );
       a.should_detach = true;
@@ -114,7 +117,8 @@ TEST_CASE( "waker outlives the io_context" )
       CHECK( false );
     }( ex ) );
 
-    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+    {
       (void)ex;
       ++num_runs;
       throw "a random error occurred!!!!!";

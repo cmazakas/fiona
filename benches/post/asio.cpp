@@ -29,7 +29,8 @@ asio_post_bench()
   auto ex = ioc.get_executor();
   asio::steady_timer timer( ex );
 
-  auto task = [ptimer = &timer]() -> asio::awaitable<void> {
+  auto task = [ptimer = &timer]() -> asio::awaitable<void>
+  {
     ++num_runs;
     if ( num_runs == total_runs ) {
       ptimer->cancel();
@@ -37,14 +38,16 @@ asio_post_bench()
     co_return;
   };
 
-  asio::co_spawn( ex, [ptimer = &timer]() mutable -> asio::awaitable<void> {
+  asio::co_spawn( ex, [ptimer = &timer]() mutable -> asio::awaitable<void>
+  {
     ptimer->expires_after( 100s );
     co_await ptimer->async_wait( asio::use_awaitable );
     co_return;
   }, asio::detached );
 
   for ( int i = 0; i < num_threads; ++i ) {
-    threads.emplace_back( [ex, task] {
+    threads.emplace_back( [ex, task]
+    {
       for ( int j = 0; j < num_tasks; ++j ) {
         asio::co_spawn( ex, task, asio::detached );
       }

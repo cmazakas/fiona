@@ -68,7 +68,8 @@ dns_awaitable::await_suspend( std::coroutine_handle<> h )
 {
   auto waker = ex_.make_waker( h );
   auto& frame = *pframe_;
-  frame.t_ = std::thread( [pframe = pframe_, waker] {
+  frame.t_ = std::thread( [pframe = pframe_, waker]
+  {
     int res = -1;
 
     addrinfo* addrlist = nullptr;

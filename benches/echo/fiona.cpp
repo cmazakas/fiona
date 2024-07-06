@@ -43,7 +43,8 @@ fiona_echo_bench()
   auto const port = acceptor.port();
 
   auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
-                            std::string_view msg ) -> fiona::task<void> {
+                            std::string_view msg ) -> fiona::task<void>
+  {
     // stream.timeout( 5s );
 
     std::size_t num_bytes = 0;
@@ -77,7 +78,8 @@ fiona_echo_bench()
 
   auto server = [handle_request]( fiona::executor ex,
                                   fiona::tcp::acceptor acceptor,
-                                  std::string_view msg ) -> fiona::task<void> {
+                                  std::string_view msg ) -> fiona::task<void>
+  {
     for ( int i = 0; i < num_clients; ++i ) {
       auto stream = co_await acceptor.async_accept();
       ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
@@ -88,7 +90,8 @@ fiona_echo_bench()
   };
 
   auto client = []( fiona::executor ex, std::uint16_t port,
-                    std::string_view msg ) -> fiona::task<void> {
+                    std::string_view msg ) -> fiona::task<void>
+  {
     fiona::tcp::client client( ex );
     // client.timeout( 5s );
 
@@ -122,7 +125,8 @@ fiona_echo_bench()
     ++anum_runs;
   };
 
-  std::thread t1( [&params, &client, port, msg] {
+  std::thread t1( [&params, &client, port, msg]
+  {
     try {
       fiona::io_context ioc( params );
       auto ex = ioc.get_executor();

@@ -24,7 +24,8 @@ TEST_CASE( "recv timeout" )
   constexpr static auto const server_timeout = 1s;
   constexpr static auto const client_sleep_dur = 2s;
 
-  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void>
+  {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( server_timeout );
@@ -60,7 +61,8 @@ TEST_CASE( "recv timeout" )
   };
 
   auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+                    std::uint16_t port ) -> fiona::task<void>
+  {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -103,7 +105,8 @@ TEST_CASE( "recv cancel" )
 {
   num_runs = 0;
 
-  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+  auto server = []( fiona::tcp::acceptor acceptor ) -> fiona::task<void>
+  {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( 5s );
@@ -134,7 +137,8 @@ TEST_CASE( "recv cancel" )
   };
 
   auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+                    std::uint16_t port ) -> fiona::task<void>
+  {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -172,7 +176,8 @@ TEST_CASE( "recv high traffic" )
   num_runs = 0;
 
   auto server = []( fiona::tcp::acceptor acceptor,
-                    fiona::executor /* ex */ ) -> fiona::task<void> {
+                    fiona::executor /* ex */ ) -> fiona::task<void>
+  {
     auto msession = co_await acceptor.async_accept();
     auto& session = msession.value();
     session.timeout( std::chrono::seconds( 1 ) );
@@ -192,7 +197,8 @@ TEST_CASE( "recv high traffic" )
   };
 
   auto client = []( fiona::executor ex,
-                    std::uint16_t port ) -> fiona::task<void> {
+                    std::uint16_t port ) -> fiona::task<void>
+  {
     fiona::tcp::client client( ex );
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );

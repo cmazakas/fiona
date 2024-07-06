@@ -22,7 +22,8 @@ fiona_timer_bench()
   auto ex = ioc.get_executor();
 
   for ( int i = 0; i < 10'000; ++i ) {
-    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+    {
       fiona::timer timer( ex );
       for ( int i = 0; i < 10'000; ++i ) {
         auto mokay = co_await timer.async_wait( 1ms );

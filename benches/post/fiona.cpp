@@ -23,7 +23,8 @@ fiona_post_bench()
   auto ex = ioc.get_executor();
   fiona::timer timer( ex );
 
-  auto task = []( fiona::timer& timer ) -> fiona::task<void> {
+  auto task = []( fiona::timer& timer ) -> fiona::task<void>
+  {
     ++num_runs;
     if ( num_runs == total_runs ) {
       co_await timer.async_cancel();
@@ -31,13 +32,15 @@ fiona_post_bench()
     co_return;
   };
 
-  ex.spawn( []( fiona::timer timer ) -> fiona::task<void> {
+  ex.spawn( []( fiona::timer timer ) -> fiona::task<void>
+  {
     co_await timer.async_wait( 100s );
     co_return;
   }( timer ) );
 
   for ( int i = 0; i < num_threads; ++i ) {
-    threads.emplace_back( [ex, task, &timer] {
+    threads.emplace_back( [ex, task, &timer]
+    {
       for ( int j = 0; j < num_tasks; ++j ) {
         ex.post( task( timer ) );
       }

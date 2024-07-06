@@ -126,14 +126,14 @@ recursion_test( fiona::executor ex, int n )
 fiona::task<void>
 return_value_test()
 {
-  auto f = []() -> fiona::task<std::vector<int>> {
-    co_return std::vector<int>{ 1, 2, 3, 4 };
-  };
+  auto f = []() -> fiona::task<std::vector<int>>
+  { co_return std::vector<int>{ 1, 2, 3, 4 }; };
 
   auto vec = co_await f();
   CHECK_EQ( vec.size(), 4u );
 
-  auto throwing = []() -> fiona::task<int> {
+  auto throwing = []() -> fiona::task<int>
+  {
     throw std::logic_error( "rawr" );
     co_return 1337;
   };
@@ -263,7 +263,8 @@ TEST_CASE( "reusable timer" )
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  auto timer_op = []( fiona::executor ex ) -> fiona::task<void> {
+  auto timer_op = []( fiona::executor ex ) -> fiona::task<void>
+  {
     fiona::timer timer( ex );
     for ( int i = 0; i < 10; ++i ) {
       auto d = get_sleep_duration() / 2;
@@ -289,10 +290,12 @@ TEST_CASE( "async cancellation" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
     fiona::timer timer( ex );
 
-    auto h = fiona::spawn( ex, []( fiona::timer timer ) -> fiona::task<void> {
+    auto h = fiona::spawn( ex, []( fiona::timer timer ) -> fiona::task<void>
+    {
       fiona::timer t2( timer.get_executor() );
       co_await t2.async_wait( std::chrono::milliseconds( 250 ) );
       auto r = co_await timer.async_cancel();
@@ -318,7 +321,8 @@ TEST_CASE( "cancellation canceled on drop" )
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
     fiona::timer timer( ex );
     ++num_runs;
     auto r = co_await timer.async_cancel();
@@ -326,7 +330,8 @@ TEST_CASE( "cancellation canceled on drop" )
     CHECK( false );
   }( ioc.get_executor() ) );
 
-  ex.spawn( []() -> fiona::task<void> {
+  ex.spawn( []() -> fiona::task<void>
+  {
     ++num_runs;
     throw 1234;
     co_return;

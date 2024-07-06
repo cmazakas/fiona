@@ -15,4 +15,5 @@ BraceWrapping:
   AfterStruct: true
   AfterClass: true
   AfterFunction: true
+  BeforeLambdaBody: true
 QualifierAlignment: Right

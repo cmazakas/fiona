@@ -67,7 +67,8 @@ TEST_CASE( "awaiting a sibling coro" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
     {
       duration_guard dg( 2 * sleep_dur );
 
@@ -193,7 +194,8 @@ TEST_CASE( "posting a move-only type" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  fiona::spawn( ex, []( fiona::executor ex ) -> fiona::task<void> {
+  fiona::spawn( ex, []( fiona::executor ex ) -> fiona::task<void>
+  {
     duration_guard dg( sleep_dur );
     auto h = fiona::spawn( ex, make_int_pointer( ex ) );
 
@@ -222,8 +224,10 @@ TEST_CASE( "void returning function" )
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
 
-  ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
-    co_await fiona::spawn( ex, []( fiona::executor ex ) -> fiona::task<void> {
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
+    co_await fiona::spawn( ex, []( fiona::executor ex ) -> fiona::task<void>
+    {
       fiona::timer timer( ex );
       auto r = co_await timer.async_wait( std::chrono::milliseconds( 500 ) );
       CHECK( r.has_value() );
@@ -285,7 +289,8 @@ TEST_CASE( "destruction on a separate thread" )
     fiona::io_context ioc;
     auto ex = ioc.get_executor();
 
-    ex.spawn( []( fiona::executor ex ) -> fiona::task<void> {
+    ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+    {
       fiona::timer timer( ex );
       auto r = co_await timer.async_wait( std::chrono::milliseconds( 250 ) );
       CHECK( r.has_value() );
@@ -296,7 +301,8 @@ TEST_CASE( "destruction on a separate thread" )
 
     ioc.run();
 
-    t = std::thread( [&ioc] {
+    t = std::thread( [&ioc]
+    {
       auto ex = ioc.get_executor();
       (void)ex;
       std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
@@ -323,7 +329,8 @@ TEST_CASE( "inter-thread posting" )
   auto ex = ioc.get_executor();
   fiona::timer timer( ex );
 
-  auto task = []( fiona::timer& timer ) -> fiona::task<void> {
+  auto task = []( fiona::timer& timer ) -> fiona::task<void>
+  {
     fiona::timer t( timer.get_executor() );
     co_await t.async_wait( 250ms );
 
@@ -341,7 +348,8 @@ TEST_CASE( "inter-thread posting" )
   }( timer ) );
 
   for ( int i = 0; i < num_threads; ++i ) {
-    threads.emplace_back( [ex, task, &timer] {
+    threads.emplace_back( [ex, task, &timer]
+    {
       for ( int j = 0; j < num_tasks; ++j ) {
         ex.post( task( timer ) );
       }

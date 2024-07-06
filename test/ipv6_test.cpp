@@ -11,7 +11,8 @@ TEST_CASE( "ipv6 sanity check" )
 {
 
   auto server = []( fiona::executor ex,
-                    fiona::tcp::acceptor acceptor ) -> fiona::task<void> {
+                    fiona::tcp::acceptor acceptor ) -> fiona::task<void>
+  {
     (void)ex;
 
     auto mstream = co_await acceptor.async_accept();
@@ -36,7 +37,8 @@ TEST_CASE( "ipv6 sanity check" )
   };
 
   auto client = []( fiona::executor ex,
-                    sockaddr_in6 ipv6_addr ) -> fiona::task<void> {
+                    sockaddr_in6 ipv6_addr ) -> fiona::task<void>
+  {
     fiona::tcp::client client( ex );
     fiona::timer timer( ex );
 
