@@ -569,7 +569,8 @@ stream::async_recv()
 shutdown_awaitable
 stream::async_shutdown( int how )
 {
-  return { p_stream_, how };
+  p_stream_->shutdown_frame::how_ = how;
+  return { p_stream_ };
 }
 
 //------------------------------------------------------------------------------
@@ -626,12 +627,6 @@ stream_cancel_awaitable::stream_cancel_awaitable(
 {
 }
 
-bool
-stream_cancel_awaitable::await_ready() const
-{
-  return p_stream_->fd_ == -1;
-}
-
 void
 stream_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
 {
@@ -679,8 +674,8 @@ stream_cancel_awaitable::await_resume()
 //------------------------------------------------------------------------------
 
 shutdown_awaitable::shutdown_awaitable(
-    boost::intrusive_ptr<detail::stream_impl> p_stream, int how )
-    : p_stream_( p_stream ), how_{ how }
+    boost::intrusive_ptr<detail::stream_impl> p_stream )
+    : p_stream_( p_stream )
 {
 }
 
@@ -699,7 +694,7 @@ shutdown_awaitable::await_suspend( std::coroutine_handle<> h )
   fiona::detail::reserve_sqes( ring, 1 );
 
   auto sqe = io_uring_get_sqe( ring );
-  io_uring_prep_shutdown( sqe, fd, how_ );
+  io_uring_prep_shutdown( sqe, fd, sf.how_ );
   io_uring_sqe_set_data(
       sqe, static_cast<detail::shutdown_frame*>( p_stream_.get() ) );
   io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
@@ -988,8 +983,8 @@ connect_awaitable::~connect_awaitable()
 bool
 connect_awaitable::await_ready() const
 {
-  auto pclient = static_cast<detail::client_impl*>( pstream_.get() );
-  if ( pclient->socket_frame::initiated_ ) {
+  auto p_client = static_cast<detail::client_impl*>( pstream_.get() );
+  if ( p_client->socket_frame::initiated_ ) {
     throw_busy();
   }
   return false;

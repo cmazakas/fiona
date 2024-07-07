@@ -61,13 +61,13 @@ fiona_recv_bench()
     unsigned char* p = body.data();
 
     while ( num_bytes < num_msgs * msg.size() ) {
-      auto mbufs = co_await stream.async_recv();
-      if ( mbufs.has_error() &&
-           mbufs.error() == fiona::error_code::from_errno( ENOBUFS ) ) {
+      auto m_bufs = co_await stream.async_recv();
+      if ( m_bufs.has_error() &&
+           m_bufs.error() == fiona::error_code::from_errno( ENOBUFS ) ) {
         continue;
       }
 
-      auto bufs = std::move( mbufs ).value();
+      auto bufs = std::move( m_bufs ).value();
       for ( auto view : bufs ) {
         auto octets = view.readable_bytes();
         REQUIRE( octets.size() > 0 );

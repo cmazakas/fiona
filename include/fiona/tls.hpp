@@ -22,9 +22,11 @@ namespace tls {
 struct tls_context;
 
 namespace detail {
+
 struct client_impl;
 struct server_impl;
 struct tls_context_frame;
+
 } // namespace detail
 
 //------------------------------------------------------------------------------
@@ -56,7 +58,7 @@ public:
 
 //------------------------------------------------------------------------------
 
-struct FIONA_TLS_EXPORT client : private tcp::client
+class FIONA_TLS_EXPORT client : private tcp::client
 {
 public:
   client() = default;
@@ -83,7 +85,7 @@ public:
   task<result<void>> async_shutdown();
 };
 
-struct FIONA_TLS_EXPORT server : private tcp::stream
+class FIONA_TLS_EXPORT server : private tcp::stream
 {
 public:
   server() = default;

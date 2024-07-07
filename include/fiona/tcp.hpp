@@ -24,8 +24,10 @@
 
 namespace fiona {
 namespace tls {
-struct client;
-struct server;
+
+class client;
+class server;
+
 } // namespace tls
 } // namespace fiona
 
@@ -39,13 +41,13 @@ struct stream_impl;
 
 } // namespace detail
 
-struct accept_awaitable;
-struct accept_raw_awaitable;
-struct connect_awaitable;
-struct stream_cancel_awaitable;
-struct stream_close_awaitable;
-struct send_awaitable;
-struct recv_awaitable;
+class accept_awaitable;
+class accept_raw_awaitable;
+class connect_awaitable;
+class stream_cancel_awaitable;
+class stream_close_awaitable;
+class send_awaitable;
+class recv_awaitable;
 class shutdown_awaitable;
 
 } // namespace tcp
@@ -114,12 +116,14 @@ public:
   accept_raw_awaitable async_accept_raw();
 };
 
+//------------------------------------------------------------------------------
+
 class FIONA_EXPORT stream
 {
-  friend struct client;
-  friend struct tls::client;
-  friend struct tls::server;
-  friend struct accept_awaitable;
+  friend class client;
+  friend class tls::client;
+  friend class tls::server;
+  friend class accept_awaitable;
 
   boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
@@ -161,7 +165,9 @@ public:
   shutdown_awaitable async_shutdown( int how );
 };
 
-struct FIONA_EXPORT client : public stream
+//------------------------------------------------------------------------------
+
+class FIONA_EXPORT client : public stream
 {
 public:
   client() {}
@@ -182,22 +188,28 @@ public:
   connect_awaitable async_connect( sockaddr_in6 const* addr );
 };
 
-struct stream_close_awaitable
+//------------------------------------------------------------------------------
+
+class stream_close_awaitable
 {
-private:
   friend class stream;
-  friend struct client;
+  friend class client;
 
   boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
   stream_close_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
+  stream_close_awaitable() = delete;
+
+  stream_close_awaitable( stream_close_awaitable const& ) = delete;
+  stream_close_awaitable& operator=( stream_close_awaitable const& ) = delete;
+
   FIONA_EXPORT
   ~stream_close_awaitable();
 
   bool
-  await_ready() const
+  await_ready() const noexcept
   {
     return false;
   }
@@ -209,19 +221,28 @@ public:
   result<void> await_resume();
 };
 
-struct stream_cancel_awaitable
+//------------------------------------------------------------------------------
+
+class stream_cancel_awaitable
 {
-private:
   friend class stream;
-  friend struct client;
+  friend class client;
 
   boost::intrusive_ptr<detail::stream_impl> p_stream_;
 
   stream_cancel_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
-  FIONA_EXPORT
-  bool await_ready() const;
+  stream_cancel_awaitable() = delete;
+
+  stream_cancel_awaitable( stream_cancel_awaitable const& ) = delete;
+  stream_cancel_awaitable& operator=( stream_cancel_awaitable const& ) = delete;
+
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
 
   FIONA_EXPORT
   void await_suspend( std::coroutine_handle<> h );
@@ -230,11 +251,12 @@ public:
   result<int> await_resume();
 };
 
-struct send_awaitable
+//------------------------------------------------------------------------------
+
+class send_awaitable
 {
-private:
   friend class stream;
-  friend struct client;
+  friend class client;
 
   std::span<unsigned char const> buf_;
   boost::intrusive_ptr<detail::stream_impl> p_stream_ = nullptr;
@@ -243,6 +265,11 @@ private:
                   boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
+  send_awaitable() = delete;
+
+  send_awaitable( send_awaitable const& ) = delete;
+  send_awaitable& operator=( send_awaitable const& ) = delete;
+
   FIONA_EXPORT
   ~send_awaitable();
 
@@ -259,9 +286,10 @@ public:
   result<std::size_t> await_resume();
 };
 
-struct recv_awaitable
+//------------------------------------------------------------------------------
+
+class recv_awaitable
 {
-private:
   friend class stream;
 
   boost::intrusive_ptr<detail::stream_impl> p_stream_ = nullptr;
@@ -273,9 +301,6 @@ public:
 
   recv_awaitable( recv_awaitable const& ) = delete;
   recv_awaitable& operator=( recv_awaitable const& ) = delete;
-
-  recv_awaitable( recv_awaitable&& ) = delete;
-  recv_awaitable& operator=( recv_awaitable&& ) = delete;
 
   FIONA_EXPORT
   ~recv_awaitable();
@@ -290,24 +315,21 @@ public:
   result<recv_buffer_sequence> await_resume();
 };
 
+//------------------------------------------------------------------------------
+
 class shutdown_awaitable
 {
   friend class stream;
 
   boost::intrusive_ptr<detail::stream_impl> p_stream_ = nullptr;
-  int how_ = -1;
 
-  shutdown_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream,
-                      int how );
+  shutdown_awaitable( boost::intrusive_ptr<detail::stream_impl> p_stream );
 
 public:
   shutdown_awaitable() = delete;
 
   shutdown_awaitable( shutdown_awaitable const& ) = delete;
   shutdown_awaitable& operator=( shutdown_awaitable const& ) = delete;
-
-  shutdown_awaitable( shutdown_awaitable&& ) = delete;
-  shutdown_awaitable& operator=( shutdown_awaitable&& ) = delete;
 
   FIONA_EXPORT
   ~shutdown_awaitable();
@@ -325,11 +347,13 @@ public:
   result<void> await_resume();
 };
 
-struct accept_awaitable
+//------------------------------------------------------------------------------
+
+class accept_awaitable
 {
 private:
   friend class acceptor;
-  friend struct accept_raw_awaitable;
+  friend class accept_raw_awaitable;
 
   boost::intrusive_ptr<detail::acceptor_impl> p_acceptor_ = nullptr;
 
@@ -337,8 +361,9 @@ private:
 
 public:
   accept_awaitable() = delete;
+
   accept_awaitable( accept_awaitable const& ) = delete;
-  accept_awaitable( accept_awaitable&& ) = delete;
+  accept_awaitable& operator=( accept_awaitable const& ) = delete;
 
   FIONA_EXPORT
   ~accept_awaitable();
@@ -356,7 +381,9 @@ public:
   result<stream> await_resume();
 };
 
-struct accept_raw_awaitable : public accept_awaitable
+//------------------------------------------------------------------------------
+
+class accept_raw_awaitable : public accept_awaitable
 {
 private:
   friend class acceptor;
@@ -366,23 +393,30 @@ private:
 
 public:
   accept_raw_awaitable() = delete;
+
   accept_raw_awaitable( accept_awaitable const& ) = delete;
-  accept_raw_awaitable( accept_awaitable&& ) = delete;
+  accept_raw_awaitable& operator=( accept_raw_awaitable const& ) = delete;
 
   FIONA_EXPORT
   result<int> await_resume();
 };
 
-struct connect_awaitable
+//------------------------------------------------------------------------------
+
+class connect_awaitable
 {
-private:
-  friend struct client;
+  friend class client;
 
   boost::intrusive_ptr<detail::stream_impl> pstream_ = nullptr;
 
   connect_awaitable( boost::intrusive_ptr<detail::stream_impl> pstream );
 
 public:
+  connect_awaitable() = delete;
+
+  connect_awaitable( connect_awaitable const& ) = delete;
+  connect_awaitable& operator=( connect_awaitable const& ) = delete;
+
   FIONA_EXPORT
   ~connect_awaitable();
 

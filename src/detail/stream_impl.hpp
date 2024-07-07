@@ -146,18 +146,24 @@ struct FIONA_EXPORT shutdown_frame : public fiona::detail::awaitable_base
 {
   stream_impl* p_stream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
+  int how_ = 0;
   int res_ = 0;
   bool initiated_ = false;
   bool done_ = false;
 
   shutdown_frame() = delete;
   shutdown_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
+
+  shutdown_frame( shutdown_frame const& ) = delete;
+  shutdown_frame& operator=( shutdown_frame const& ) = delete;
+
   virtual ~shutdown_frame() override;
 
   void
   reset()
   {
     h_ = nullptr;
+    how_ = 0;
     res_ = 0;
     initiated_ = false;
     done_ = false;
