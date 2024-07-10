@@ -32,7 +32,7 @@ using timepoint_type = std::chrono::time_point<clock_type>;
 
 struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
 {
-  stream_impl* pstream_ = nullptr;
+  stream_impl* p_stream_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
   int res_ = 0;
   bool initiated_ = false;
@@ -40,7 +40,7 @@ struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
 
   cancel_frame() = delete;
   cancel_frame( cancel_frame const& ) = delete;
-  cancel_frame( stream_impl* pstream ) : pstream_( pstream ) {}
+  cancel_frame( stream_impl* p_stream ) : p_stream_( p_stream ) {}
   virtual ~cancel_frame() override;
 
   void
