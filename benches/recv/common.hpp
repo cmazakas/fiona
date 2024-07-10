@@ -12,9 +12,9 @@
 
 inline constexpr char const* localhost_ipv4 = "127.0.0.1";
 
-constexpr int num_clients = 1;
+constexpr int num_clients = 500;
 constexpr int num_msgs = 1;
-constexpr int msg_size = 16 * 1024 * 1024;
+constexpr int msg_size = 6 * 1024 * 1024;
 
 void fiona_recv_bench();
 void asio_recv_bench();
