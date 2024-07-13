@@ -1,47 +1,59 @@
+// Copyright 2024 Christian Mazakas
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
 #ifndef FIONA_EXECUTOR_HPP
 #define FIONA_EXECUTOR_HPP
 
-#include <fiona/error.hpp>         // for throw_errno_as_error_code
-#include <fiona/params.hpp>        // for io_context_params
-#include <fiona/task.hpp>          // for task
+#include <fiona/buffer.hpp>                       // for recv_buffer
+#include <fiona/error.hpp>                        // for throw_errno_as_err...
+#include <fiona/params.hpp>                       // for io_context_params
+#include <fiona/task.hpp>                         // for task
 
-#include <fiona/detail/common.hpp> // for io_context_frame, task_map_type, buf_ring
+#include <fiona/detail/common.hpp>                // for io_context_frame
 
-#include <boost/assert.hpp>        // for BOOST_ASSERT
-#include <boost/container_hash/hash.hpp>          // for hash
+#include <boost/assert.hpp>                       // for BOOST_ASSERT
 #include <boost/unordered/unordered_flat_set.hpp> // for unordered_flat_set
+#include <boost/unordered/unordered_node_map.hpp> // for unordered_node_map
 
-#include <coroutine> // for coroutine_handle, noop_coroutine, suspend_always
-#include <cstdint>   // for uint32_t
-#include <cstring>   // for size_t
-#include <deque>
-#include <exception> // for exception_ptr, rethrow_exception, current_exception
-#include <memory>    // for shared_ptr, __shared_ptr_access, weak_ptr
-#include <mutex>     // for lock_guard, mutex
-#include <utility>   // for move, addressof, forward, pair
+#include <array>                                  // for array
+#include <coroutine>                              // for coroutine_handle
+#include <cstdint>                                // for uintptr_t, uint16_t
+#include <cstring>                                // for size_t
+#include <deque>                                  // for deque
+#include <exception>                              // for exception_ptr, ret...
+#include <memory>                                 // for shared_ptr, __shar...
+#include <mutex>                                  // for mutex, lock_guard
+#include <new>                                    // for operator new
 
-#include <errno.h>   // for EINVAL, errno
-#include <unistd.h>  // for write
+#include <errno.h>                                // for EINVAL, errno, EEXIST
+#include <sys/types.h>                            // for ssize_t
+#include <unistd.h>                               // for write
+#include <utility>                                // for move, addressof
 
-#include "fiona_export.h"
+// clang-format off
+namespace fiona { namespace detail { struct executor_access_policy; } }
+namespace fiona { namespace detail { template <class T> struct internal_promise; } }
+namespace fiona { template <class T> class spawn_awaitable; }
+struct io_uring;
+// clang-format on
+
+#include <fiona_export.h>
 
 namespace fiona {
 namespace detail {
+
 struct executor_access_policy;
-}
-} // namespace fiona
 
-namespace fiona {
-namespace detail {
 template <class T>
 struct internal_promise;
-}
-} // namespace fiona
 
-namespace fiona {
+} // namespace detail
+
 template <class T>
 class spawn_awaitable;
-}
+
+} // namespace fiona
 
 struct io_uring;
 
