@@ -436,6 +436,7 @@ stream::~stream()
   auto use_count = p_stream_->use_count() -
                    p_stream_->detail::cancel_frame::is_active() -
                    p_stream_->detail::close_frame::is_active() -
+                   p_stream_->detail::shutdown_frame::is_active() -
                    p_stream_->detail::send_frame::is_active() -
                    p_stream_->detail::recv_frame::is_active() -
                    p_stream_->detail::timeout_frame::is_active() -
@@ -896,17 +897,18 @@ client::~client()
     return;
   }
 
-  auto pclient = static_cast<detail::client_impl*>( p_stream_.get() );
+  auto p_client = static_cast<detail::client_impl*>( p_stream_.get() );
 
-  auto use_count = pclient->use_count() -
-                   pclient->detail::cancel_frame::is_active() -
-                   pclient->detail::close_frame::is_active() -
-                   pclient->detail::send_frame::is_active() -
-                   pclient->detail::recv_frame::is_active() -
-                   pclient->detail::timeout_frame::is_active() -
-                   pclient->detail::timeout_cancel_frame::is_active() -
-                   pclient->detail::socket_frame::is_active() -
-                   pclient->detail::connect_frame::is_active();
+  auto use_count = p_client->use_count() -
+                   p_client->detail::cancel_frame::is_active() -
+                   p_client->detail::close_frame::is_active() -
+                   p_client->detail::shutdown_frame::is_active() -
+                   p_client->detail::send_frame::is_active() -
+                   p_client->detail::recv_frame::is_active() -
+                   p_client->detail::timeout_frame::is_active() -
+                   p_client->detail::timeout_cancel_frame::is_active() -
+                   p_client->detail::socket_frame::is_active() -
+                   p_client->detail::connect_frame::is_active();
 
   BOOST_ASSERT( use_count > 0 );
   if ( use_count == 1 ) {

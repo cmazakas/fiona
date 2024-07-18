@@ -7,8 +7,8 @@
 namespace fiona {
 namespace detail {
 
-ref_count::~ref_count() {}
-awaitable_base::~awaitable_base() {}
+ref_count::~ref_count() = default;
+awaitable_base::~awaitable_base() = default;
 
 } // namespace detail
 } // namespace fiona
