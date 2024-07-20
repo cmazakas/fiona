@@ -35,10 +35,10 @@ intrusive_ptr_add_ref( ref_count* prc ) noexcept
 }
 
 inline void
-intrusive_ptr_release( ref_count* prc )
+intrusive_ptr_release( ref_count* p_rc )
 {
-  if ( --prc->count_ == 0 ) {
-    delete prc;
+  if ( --p_rc->count_ == 0 ) {
+    delete p_rc;
   }
 }
 

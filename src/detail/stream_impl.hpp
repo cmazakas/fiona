@@ -30,7 +30,7 @@ using fiona::detail::ref_count;
 using clock_type = std::chrono::steady_clock;
 using timepoint_type = std::chrono::time_point<clock_type>;
 
-struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
+struct FIONA_EXPORT cancel_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_ = nullptr;
   int res_ = 0;
@@ -40,6 +40,8 @@ struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
   cancel_frame() = default;
 
   cancel_frame( cancel_frame const& ) = delete;
+  cancel_frame& operator=( cancel_frame const& ) = delete;
+
   ~cancel_frame() override;
 
   void
@@ -71,7 +73,9 @@ struct FIONA_EXPORT cancel_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT timeout_cancel_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT timeout_cancel_frame : fiona::detail::awaitable_base
 {
   int res_ = 0;
   bool initiated_ = false;
@@ -103,7 +107,9 @@ struct FIONA_EXPORT timeout_cancel_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT close_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT close_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_ = nullptr;
   int res_ = 0;
@@ -141,7 +147,9 @@ struct FIONA_EXPORT close_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT shutdown_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT shutdown_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_ = nullptr;
   int how_ = 0;
@@ -186,7 +194,9 @@ struct FIONA_EXPORT shutdown_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT send_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT send_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_ = nullptr;
   timepoint_type last_send_ = clock_type::now();
@@ -225,7 +235,9 @@ struct FIONA_EXPORT send_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT recv_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT recv_frame : fiona::detail::awaitable_base
 {
   fiona::recv_buffer_sequence buffers_;
   fiona::error_code ec_;
@@ -259,7 +271,9 @@ struct FIONA_EXPORT recv_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT timeout_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT timeout_frame : fiona::detail::awaitable_base
 {
   bool initiated_ = false;
   bool cancelled_ = false;
@@ -293,14 +307,16 @@ struct FIONA_EXPORT timeout_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT stream_impl : public virtual ref_count,
-                                  public cancel_frame,
-                                  public close_frame,
-                                  public shutdown_frame,
-                                  public send_frame,
-                                  public recv_frame,
-                                  public timeout_frame,
-                                  public timeout_cancel_frame
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT stream_impl : virtual ref_count,
+                                  cancel_frame,
+                                  close_frame,
+                                  shutdown_frame,
+                                  send_frame,
+                                  recv_frame,
+                                  timeout_frame,
+                                  timeout_cancel_frame
 {
   __kernel_timespec ts_ = { .tv_sec = 3, .tv_nsec = 0 };
   executor ex_;
@@ -308,9 +324,15 @@ struct FIONA_EXPORT stream_impl : public virtual ref_count,
   bool connected_ = false;
   bool stream_cancelled_ = false;
 
+  stream_impl() = delete;
+
+  stream_impl( stream_impl const& ) = delete;
+  stream_impl& operator=( stream_impl const& ) = delete;
+
+  stream_impl( executor ex, int fd ) : stream_impl( ex ) { fd_ = fd; }
+
   stream_impl( executor ex ) : ex_( ex )
   {
-
     auto ring = fiona::detail::executor_access_policy::ring( ex );
 
     fiona::detail::reserve_sqes( ring, 1 );
@@ -323,14 +345,10 @@ struct FIONA_EXPORT stream_impl : public virtual ref_count,
     intrusive_ptr_add_ref( this );
   }
 
-  stream_impl() = delete;
-  stream_impl( stream_impl const& ) = delete;
-  stream_impl& operator=( stream_impl const& ) = delete;
-
-  stream_impl( executor ex, int fd ) : stream_impl( ex ) { fd_ = fd; }
-
-  virtual ~stream_impl() override;
+  ~stream_impl() override;
 };
+
+//------------------------------------------------------------------------------
 
 void
 detail::close_frame::await_process_cqe( io_uring_cqe* cqe )
@@ -348,6 +366,8 @@ detail::close_frame::await_process_cqe( io_uring_cqe* cqe )
   }
 }
 
+//------------------------------------------------------------------------------
+
 void
 detail::send_frame::await_process_cqe( io_uring_cqe* cqe )
 {
@@ -357,6 +377,8 @@ detail::send_frame::await_process_cqe( io_uring_cqe* cqe )
     static_cast<detail::stream_impl*>( this )->connected_ = false;
   }
 }
+
+//------------------------------------------------------------------------------
 
 void
 detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
@@ -407,6 +429,8 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
   }
 }
 
+//------------------------------------------------------------------------------
+
 void
 detail::recv_frame::schedule_recv()
 {
@@ -431,6 +455,8 @@ detail::recv_frame::schedule_recv()
   last_recv_ = clock_type::now();
   intrusive_ptr_add_ref( this );
 }
+
+//------------------------------------------------------------------------------
 
 void
 detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
@@ -516,7 +542,9 @@ detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
   intrusive_ptr_add_ref( this );
 }
 
-struct FIONA_EXPORT socket_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT socket_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_;
   int res_ = 0;
@@ -559,7 +587,9 @@ struct FIONA_EXPORT socket_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT connect_frame : public fiona::detail::awaitable_base
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT connect_frame : fiona::detail::awaitable_base
 {
   std::coroutine_handle<> h_;
   int res_ = 0;
@@ -597,18 +627,22 @@ struct FIONA_EXPORT connect_frame : public fiona::detail::awaitable_base
   }
 };
 
-struct FIONA_EXPORT client_impl : public stream_impl,
-                                  public socket_frame,
-                                  public connect_frame
+//------------------------------------------------------------------------------
+
+struct FIONA_EXPORT client_impl : stream_impl, socket_frame, connect_frame
 {
   sockaddr_storage addr_storage_ = {};
 
   client_impl() = delete;
-  client_impl( client_impl const& ) = delete;
-  client_impl( client_impl&& ) = delete;
   client_impl( executor ex ) : stream_impl( ex ) {}
-  virtual ~client_impl() override;
+
+  client_impl( client_impl const& ) = delete;
+  client_impl& operator=( client_impl const& ) = delete;
+
+  ~client_impl() override;
 };
+
+//------------------------------------------------------------------------------
 
 void
 detail::socket_frame::await_process_cqe( io_uring_cqe* cqe )
@@ -621,6 +655,8 @@ detail::socket_frame::await_process_cqe( io_uring_cqe* cqe )
     client.fd_ = -1;
   }
 }
+
+//------------------------------------------------------------------------------
 
 void
 detail::connect_frame::await_process_cqe( io_uring_cqe* cqe )

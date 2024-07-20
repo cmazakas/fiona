@@ -231,15 +231,15 @@ public:
 };
 
 void FIONA_EXPORT
-intrusive_ptr_add_ref( acceptor_impl* pacceptor ) noexcept
+intrusive_ptr_add_ref( acceptor_impl* p_acceptor ) noexcept
 {
-  intrusive_ptr_add_ref( static_cast<ref_count*>( pacceptor ) );
+  intrusive_ptr_add_ref( static_cast<ref_count*>( p_acceptor ) );
 }
 
 void FIONA_EXPORT
-intrusive_ptr_release( acceptor_impl* pacceptor ) noexcept
+intrusive_ptr_release( acceptor_impl* p_acceptor ) noexcept
 {
-  intrusive_ptr_release( static_cast<ref_count*>( pacceptor ) );
+  intrusive_ptr_release( static_cast<ref_count*>( p_acceptor ) );
 }
 
 acceptor_impl::~acceptor_impl()
