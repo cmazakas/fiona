@@ -10,6 +10,19 @@
 #include <string>    // for string
 
 namespace fiona {
+namespace detail {
+
+inline constexpr detail::buf_header_impl const default_buf_header_;
+
+unsigned char*
+default_buf_header()
+{
+  return reinterpret_cast<unsigned char*>(
+      const_cast<detail::buf_header_impl*>( &default_buf_header_ ) );
+}
+
+} // namespace detail
+
 namespace {
 
 std::size_t

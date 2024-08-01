@@ -205,6 +205,34 @@ TEST_CASE( "push_back empty" )
   CHECK( bs.num_bufs() == 1 );
 }
 
+TEST_CASE( "move construct empty" )
+{
+  fiona::recv_buffer_sequence bufs;
+  fiona::recv_buffer_sequence bufs2( std::move( bufs ) );
+
+  CHECK( bufs.empty() );
+  CHECK( bufs.begin() == bufs.end() );
+}
+
+TEST_CASE( "move assign empty" )
+{
+  fiona::recv_buffer_sequence bufs;
+  bufs.push_back( fiona::recv_buffer( 1024 ) );
+
+  fiona::recv_buffer_sequence bufs2;
+  bufs = std::move( bufs2 );
+  CHECK( bufs.empty() );
+  CHECK( bufs.begin() == bufs.end() );
+
+  bufs2.push_back( fiona::recv_buffer( 512 ) );
+  CHECK( bufs2.num_bufs() == 1 );
+
+  bufs = std::move( bufs2 );
+  CHECK( bufs2.empty() );
+  CHECK( bufs2.begin() == bufs2.end() );
+  CHECK( bufs.num_bufs() == 1 );
+}
+
 TEST_CASE( "concat" )
 {
   {
@@ -340,4 +368,22 @@ TEST_CASE( "pop_front" )
   CHECK( bufs.begin() == bufs.end() );
   verify_range( bufs );
   CHECK( bufs.num_bufs() == 0 );
+}
+
+TEST_CASE( "google failure" )
+{
+  fiona::recv_buffer_sequence bufs;
+
+  for ( int i = 0; i < 2; ++i ) {
+    for ( int j = 0; j < 5; ++j ) {
+      bufs.push_back( fiona::recv_buffer( 256 ) );
+    }
+
+    for ( int j = 0; j < 5; ++j ) {
+      auto buf = bufs.pop_front();
+      CHECK( buf.capacity() > 0 );
+    }
+  }
+
+  CHECK( bufs.empty() );
 }

@@ -5,22 +5,23 @@
 #ifndef FIONA_BUFFER_HPP
 #define FIONA_BUFFER_HPP
 
-#include <boost/assert.hpp>        // for BOOST_ASSERT
-#include <boost/core/exchange.hpp> // for exchange
+#include <boost/assert.hpp> // for BOOST_ASSERT
+#include <boost/config.hpp>
 
-#include <cstddef>                 // for size_t, ptrdiff_t
-#include <iterator>                // for bidirectional_iterator_tag
-#include <new>                     // for align_val_t, operator new
-#include <span>                    // for span
-#include <string>                  // for string
-#include <string_view>             // for string_view
-#include <utility>                 // for move
-#include <vector>                  // for vector
+#include <cstddef>          // for size_t, ptrdiff_t
+#include <iterator>         // for bidirectional_iterator_tag
+#include <new>              // for align_val_t, operator new
+#include <span>             // for span
+#include <string>           // for string
+#include <string_view>      // for string_view
+#include <utility>          // for move
+#include <vector>           // for vector
 
-#include "fiona_export.h"          // for FIONA_EXPORT
+#include "fiona_export.h"   // for FIONA_EXPORT
 
 namespace fiona {
-struct recv_buffer;
+
+class recv_buffer;
 
 namespace detail {
 
@@ -32,23 +33,52 @@ struct buf_header_impl
   unsigned char* next_ = nullptr;
 };
 
-inline constexpr buf_header_impl const default_buf_header_;
+FIONA_EXPORT unsigned char* default_buf_header();
+
+inline void
+set_next( unsigned char* buf, unsigned char* next ) noexcept
+{
+  reinterpret_cast<detail::buf_header_impl*>( buf )->next_ = next;
+}
+
+inline void
+set_next( unsigned char* buf, detail::buf_header_impl* header ) noexcept
+{
+  reinterpret_cast<detail::buf_header_impl*>( buf )->next_ =
+      reinterpret_cast<unsigned char*>( header );
+}
+
+inline void
+set_prev( unsigned char* buf, unsigned char* prev ) noexcept
+{
+  reinterpret_cast<detail::buf_header_impl*>( buf )->prev_ = prev;
+}
+
+inline void
+set_prev( detail::buf_header_impl& header, unsigned char* prev ) noexcept
+{
+  header.prev_ = prev;
+}
 
 inline unsigned char*
-default_buf_header()
+get_next( unsigned char* buf ) noexcept
 {
-  return reinterpret_cast<unsigned char*>(
-      const_cast<detail::buf_header_impl*>( &default_buf_header_ ) );
+  return reinterpret_cast<detail::buf_header_impl*>( buf )->next_;
+}
+
+inline unsigned char*
+get_prev( unsigned char* buf ) noexcept
+{
+  return reinterpret_cast<detail::buf_header_impl*>( buf )->prev_;
 }
 
 } // namespace detail
 
-struct recv_buffer_view
+class recv_buffer_view
 {
-private:
-  friend struct recv_buffer;
-  friend struct recv_buffer_sequence;
-  friend struct recv_buffer_sequence_view;
+  friend class recv_buffer;
+  friend class recv_buffer_sequence;
+  friend class recv_buffer_sequence_view;
 
   constexpr static std::size_t const S = sizeof( detail::buf_header_impl );
 
@@ -59,16 +89,24 @@ private:
   {
     return *reinterpret_cast<detail::buf_header_impl*>( p_ );
   }
+
   detail::buf_header_impl const&
   header() const noexcept
   {
     return *reinterpret_cast<detail::buf_header_impl*>( p_ );
   }
 
+  bool
+  is_defaulted() const noexcept
+  {
+    return p_ == detail::default_buf_header();
+  }
+
   recv_buffer_view( unsigned char* p ) noexcept : p_( p ) {}
 
 public:
   recv_buffer_view() = default;
+
   recv_buffer_view( recv_buffer_view const& ) = default;
   recv_buffer_view& operator=( recv_buffer_view const& ) = default;
 
@@ -110,7 +148,7 @@ public:
   void
   set_len( std::size_t size ) noexcept
   {
-    BOOST_ASSERT( capacity() > 0 );
+    BOOST_ASSERT( !is_defaulted() );
     header().size_ = size;
   }
 
@@ -134,11 +172,10 @@ public:
   }
 };
 
-struct recv_buffer : public recv_buffer_view
+class recv_buffer : public recv_buffer_view
 {
-private:
-  friend struct recv_buffer_sequence;
-  friend struct recv_buffer_sequence_view;
+  friend class recv_buffer_sequence;
+  friend class recv_buffer_sequence_view;
 
   constexpr static std::align_val_t const A{
       alignof( detail::buf_header_impl ) };
@@ -148,6 +185,7 @@ private:
   {
     return ::operator new( n, A );
   }
+
   static void
   aligned_delete( void* p )
   {
@@ -175,17 +213,16 @@ public:
   recv_buffer( recv_buffer const& ) = delete;
   recv_buffer& operator=( recv_buffer const& ) = delete;
 
-  recv_buffer( recv_buffer&& rhs ) noexcept
-      : recv_buffer_view(
-            boost::exchange( rhs.p_, detail::default_buf_header() ) )
+  recv_buffer( recv_buffer&& rhs ) noexcept : recv_buffer_view( rhs.p_ )
   {
+    rhs.p_ = detail::default_buf_header();
   }
 
   recv_buffer&
   operator=( recv_buffer&& rhs ) noexcept
   {
     if ( this != &rhs ) {
-      if ( capacity() > 0 ) {
+      if ( !is_defaulted() ) {
         header().~buf_header_impl();
         aligned_delete( p_ );
       }
@@ -197,16 +234,15 @@ public:
 
   ~recv_buffer()
   {
-    if ( capacity() > 0 ) {
+    if ( !is_defaulted() ) {
       aligned_delete( p_ );
     }
   }
 };
 
-struct recv_buffer_sequence_view
+class recv_buffer_sequence_view
 {
-private:
-  friend struct recv_buffer_sequence;
+  friend class recv_buffer_sequence;
 
   detail::buf_header_impl* p_sentry_;
   unsigned char* head_ = nullptr;
@@ -228,14 +264,13 @@ public:
   recv_buffer_sequence_view( recv_buffer_sequence_view&& ) = default;
   recv_buffer_sequence_view& operator=( recv_buffer_sequence_view&& ) = default;
 
-  struct iterator
+  class iterator
   {
-  private:
-    friend struct recv_buffer_sequence_view;
+    friend class recv_buffer_sequence_view;
 
-    detail::buf_header_impl* p_ = nullptr;
+    unsigned char* p_ = nullptr;
 
-    iterator( detail::buf_header_impl* p ) : p_( p ) { BOOST_ASSERT( p_ ); }
+    iterator( unsigned char* p ) : p_( p ) { BOOST_ASSERT( p_ ); }
 
   public:
     using value_type = recv_buffer_view;
@@ -255,20 +290,20 @@ public:
     recv_buffer_view
     operator*() noexcept
     {
-      return { reinterpret_cast<unsigned char*>( p_ ) };
+      return { p_ };
     }
 
     recv_buffer_view
     operator*() const noexcept
     {
-      return { reinterpret_cast<unsigned char*>( p_ ) };
+      return { p_ };
     }
 
     iterator&
     operator++() noexcept
     {
       BOOST_ASSERT( p_ );
-      p_ = reinterpret_cast<detail::buf_header_impl*>( p_->next_ );
+      p_ = detail::get_next( p_ );
       return *this;
     }
 
@@ -277,14 +312,14 @@ public:
     {
       BOOST_ASSERT( p_ );
       auto const old = p_;
-      p_ = reinterpret_cast<detail::buf_header_impl*>( p_->next_ );
+      p_ = detail::get_next( p_ );
       return old;
     }
 
     iterator&
     operator--() noexcept
     {
-      p_ = reinterpret_cast<detail::buf_header_impl*>( p_->prev_ );
+      p_ = detail::get_prev( p_ );
       return *this;
     }
 
@@ -292,7 +327,7 @@ public:
     operator--( int ) noexcept
     {
       auto const old = p_;
-      p_ = reinterpret_cast<detail::buf_header_impl*>( p_->prev_ );
+      p_ = detail::get_prev( p_ );
       return old;
     }
 
@@ -313,13 +348,14 @@ public:
     if ( empty() ) {
       return end();
     }
-    return { reinterpret_cast<detail::buf_header_impl*>( head_ ) };
+    return { head_ };
   }
 
   iterator
   end() const
   {
-    return { const_cast<detail::buf_header_impl*>( p_sentry_ ) };
+    return { reinterpret_cast<unsigned char*>(
+        const_cast<detail::buf_header_impl*>( p_sentry_ ) ) };
   }
 
   std::size_t
@@ -355,9 +391,8 @@ public:
   std::vector<unsigned char> to_bytes() const;
 };
 
-struct recv_buffer_sequence : public recv_buffer_sequence_view
+class recv_buffer_sequence : public recv_buffer_sequence_view
 {
-private:
   detail::buf_header_impl sentry_;
 
   void
@@ -371,7 +406,7 @@ private:
 
     while ( p != reinterpret_cast<unsigned char*>( &sentry_ ) ) {
       auto old = p;
-      p = recv_buffer_view( p ).header().next_;
+      p = detail::get_next( p );
       recv_buffer::aligned_delete( old );
     }
 
@@ -395,21 +430,15 @@ public:
     tail_ = rhs.tail_;
     num_bufs_ = rhs.num_bufs_;
 
-    if ( tail_ ) {
-      recv_buffer_view tail_view( tail_ );
-      tail_view.header().next_ = reinterpret_cast<unsigned char*>( p_sentry_ );
-      p_sentry_->prev_ = tail_;
-    }
-
-    if ( head_ ) {
-      recv_buffer_view head_view( head_ );
-      head_view.header().prev_ = reinterpret_cast<unsigned char*>( p_sentry_ );
-      p_sentry_->next_ = head_;
-    }
-
     rhs.head_ = nullptr;
     rhs.tail_ = nullptr;
     rhs.num_bufs_ = 0;
+
+    set_prev( rhs.sentry_, nullptr );
+    set_prev( sentry_, tail_ );
+    if ( tail_ ) {
+      set_next( tail_, &sentry_ );
+    }
   }
 
   recv_buffer_sequence&
@@ -420,18 +449,19 @@ public:
         free_list();
       }
 
-      head_ = boost::exchange( rhs.head_, nullptr );
-      tail_ = boost::exchange( rhs.tail_, nullptr );
-      num_bufs_ = boost::exchange( rhs.num_bufs_, 0 );
+      head_ = rhs.head_;
+      tail_ = rhs.tail_;
+      num_bufs_ = rhs.num_bufs_;
 
-      recv_buffer_view head_view( head_ );
-      recv_buffer_view tail_view( tail_ );
+      rhs.head_ = nullptr;
+      rhs.tail_ = nullptr;
+      rhs.num_bufs_ = 0;
 
-      tail_view.header().next_ = reinterpret_cast<unsigned char*>( &sentry_ );
-      sentry_.prev_ = tail_;
-
-      head_view.header().prev_ = reinterpret_cast<unsigned char*>( &sentry_ );
-      sentry_.next_ = head_;
+      set_prev( rhs.sentry_, nullptr );
+      set_prev( sentry_, tail_ );
+      if ( tail_ ) {
+        set_next( tail_, &sentry_ );
+      }
     }
     return *this;
   }
@@ -444,20 +474,17 @@ public:
     BOOST_ASSERT( rbuf.p_ != detail::default_buf_header() );
 
     auto p = rbuf.to_raw_parts();
-    recv_buffer_view p_view( p );
-    if ( tail_ ) {
-      recv_buffer_view tail_view( tail_ );
-      tail_view.header().next_ = p;
-      p_view.header().prev_ = tail_;
+
+    if ( BOOST_LIKELY( tail_ != nullptr ) ) {
+      detail::set_next( tail_, p );
+      detail::set_prev( p, tail_ );
     }
 
+    set_next( p, &sentry_ );
+    set_prev( sentry_, p );
     tail_ = p;
-    sentry_.prev_ = tail_;
-    p_view.header().next_ = reinterpret_cast<unsigned char*>( &sentry_ );
-
-    if ( head_ == nullptr ) {
-      head_ = tail_;
-      sentry_.next_ = head_;
+    if ( BOOST_UNLIKELY( head_ == nullptr ) ) {
+      head_ = p;
     }
 
     ++num_bufs_;
@@ -469,20 +496,26 @@ public:
     BOOST_ASSERT( !empty() );
 
     recv_buffer buf;
-    auto old = head_;
-    head_ = recv_buffer_view( head_ ).header().next_;
-    if ( head_ ) {
-      recv_buffer_view( head_ ).header().prev_ = nullptr;
-    }
-    buf.p_ = old;
+
+    auto p = head_;
+    head_ = detail::get_next( head_ );
+
+    detail::set_next( p, static_cast<unsigned char*>( nullptr ) );
+    detail::set_prev( p, static_cast<unsigned char*>( nullptr ) );
+
+    // this is unconditionally valid, even when `head_ == tail_`
+    // because `tail_->next_ == &sentry_`
+    detail::set_prev( head_, nullptr );
 
     --num_bufs_;
-    // single element list, original head == tail
-    if ( num_bufs_ == 0 ) {
-      sentry_.next_ = nullptr;
-      sentry_.prev_ = nullptr;
-      head_ = nullptr;
+    buf.p_ = p;
+
+    // old head value was the tail, meaning our list is now empty
+    if ( BOOST_UNLIKELY( p == tail_ ) ) {
+      BOOST_ASSERT( num_bufs_ == 0 );
+
       tail_ = nullptr;
+      head_ = nullptr;
     }
 
     return buf;
@@ -500,16 +533,13 @@ public:
       return;
     }
 
-    recv_buffer_view header_view( head_ );
-    recv_buffer_view tail_view( tail_ );
-    recv_buffer_view rhs_head_view( rhs.head_ );
-    recv_buffer_view rhs_tail_view( rhs.tail_ );
+    detail::set_next( tail_, rhs.head_ );
+    detail::set_prev( rhs.head_, tail_ );
 
-    tail_view.header().next_ = rhs.head_;
-    rhs_head_view.header().prev_ = tail_;
+    detail::set_next( rhs.tail_, &sentry_ );
+    detail::set_prev( sentry_, rhs.tail_ );
 
-    rhs_tail_view.header().next_ = reinterpret_cast<unsigned char*>( &sentry_ );
-    sentry_.prev_ = rhs.tail_;
+    detail::set_prev( rhs.sentry_, nullptr );
 
     tail_ = rhs.tail_;
     num_bufs_ += rhs.num_bufs_;
