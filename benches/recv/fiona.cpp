@@ -41,7 +41,7 @@ fiona_recv_bench()
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( num_bufs, buf_size, server_bgid );
+  ex.register_buf_ring( num_bufs, buf_size, server_bgid );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -170,7 +170,7 @@ fiona_recv_bench()
     try {
       fiona::io_context ioc( params );
       auto ex = ioc.get_executor();
-      ex.register_buffer_sequence( num_bufs, buf_size, client_bgid );
+      ex.register_buf_ring( num_bufs, buf_size, client_bgid );
 
       for ( int i = 0; i < num_clients; ++i ) {
         ex.spawn( client( ex, port, msg ) );

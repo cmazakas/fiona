@@ -90,10 +90,10 @@ struct waker
   }
 };
 
-struct executor
+class executor
 {
-private:
   friend struct detail::executor_access_policy;
+
   std::shared_ptr<detail::io_context_frame> p_frame_;
 
 public:
@@ -109,9 +109,9 @@ public:
   inline waker make_waker( std::coroutine_handle<> h ) const;
 
   void
-  register_buffer_sequence( std::size_t num_bufs,
-                            std::size_t buf_size,
-                            std::uint16_t buffer_group_id )
+  register_buf_ring( std::size_t num_bufs,
+                     std::size_t buf_size,
+                     std::uint16_t buffer_group_id )
   {
     auto ring = &p_frame_->io_ring_;
     auto [pos, inserted] = p_frame_->buf_rings_.try_emplace(

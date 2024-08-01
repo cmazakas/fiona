@@ -488,7 +488,7 @@ TEST_CASE( "send recv hello world" )
   fiona::io_context ioc;
 
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
 
@@ -561,7 +561,7 @@ TEST_CASE( "send recv hello world object slicing" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
 
@@ -730,7 +730,7 @@ TEST_CASE( "tcp echo" )
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, bgid );
+  ex.register_buf_ring( 1024, 128, bgid );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
 
@@ -753,6 +753,7 @@ TEST_CASE( "tcp echo" )
       auto octets = m_buffers.value().to_bytes();
       REQUIRE( octets.size() > 0 );
       auto buf = m_buffers->pop_front();
+      REQUIRE( buf.capacity() > 0 );
       ex.recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
@@ -833,7 +834,7 @@ TEST_CASE( "tcp echo" )
       fiona::io_context ioc( params );
 
       auto ex = ioc.get_executor();
-      ex.register_buffer_sequence( 1024, 128, bgid );
+      ex.register_buf_ring( 1024, 128, bgid );
 
       for ( int i = 0; i < num_clients; ++i ) {
         ex.spawn( client( ex, port, msg ) );
@@ -875,7 +876,7 @@ TEST_CASE( "tcp echo saturating" )
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, bgid );
+  ex.register_buf_ring( 1024, 128, bgid );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
 
@@ -977,7 +978,7 @@ TEST_CASE( "tcp echo saturating" )
     try {
       fiona::io_context ioc( params );
       auto ex = ioc.get_executor();
-      ex.register_buffer_sequence( 1024, 128, bgid );
+      ex.register_buf_ring( 1024, 128, bgid );
 
       for ( int i = 0; i < num_clients; ++i ) {
         ex.spawn( client( ex, port, msg ) );
@@ -1024,7 +1025,7 @@ TEST_CASE( "fd reuse" )
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -1143,7 +1144,7 @@ TEST_CASE( "tcp echo exception" )
 
   fiona::io_context ioc( params );
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, bgid );
+  ex.register_buf_ring( 1024, 128, bgid );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
 
@@ -1230,7 +1231,7 @@ TEST_CASE( "tcp echo exception" )
     try {
       fiona::io_context ioc( params );
       auto ex = ioc.get_executor();
-      ex.register_buffer_sequence( 1024, 128, bgid );
+      ex.register_buf_ring( 1024, 128, bgid );
 
       for ( int i = 0; i < num_clients; ++i ) {
         ex.spawn( client( ex, port, msg ) );
@@ -1276,7 +1277,7 @@ TEST_CASE( "accept raw fd" )
     auto fd = mfd.value();
     fiona::tcp::stream stream( ex, fd );
 
-    ex.register_buffer_sequence( 16, 128, 0 );
+    ex.register_buf_ring( 16, 128, 0 );
     stream.set_buffer_group( 0 );
     auto mbufs = co_await stream.async_recv();
     CHECK( mbufs.has_value() );
@@ -1315,7 +1316,7 @@ TEST_CASE( "shutdown" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 128, 128, 0 );
+  ex.register_buf_ring( 128, 128, 0 );
 
   auto localhost = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
   fiona::tcp::acceptor acceptor( ex, &localhost );

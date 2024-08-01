@@ -32,7 +32,6 @@ namespace detail {
 
 struct buf_ring
 {
-public:
   std::vector<recv_buffer> bufs_;
   std::vector<std::size_t> buf_ids_;
   std::size_t* buf_id_pos_ = nullptr;
@@ -55,8 +54,7 @@ public:
             std::size_t buf_size,
             std::uint16_t bgid );
 
-  FIONA_EXPORT
-  ~buf_ring();
+  FIONA_EXPORT ~buf_ring();
 
   recv_buffer&
   get_buf( std::size_t idx ) noexcept
@@ -72,7 +70,7 @@ public:
   }
 
   std::uint32_t
-  size() const noexcept
+  num_bufs() const noexcept
   {
     return static_cast<std::uint32_t>( bufs_.size() );
   }
@@ -83,9 +81,10 @@ public:
     return bgid_;
   }
 
-  FIONA_EXPORT
-  void recycle_buffer( recv_buffer buf );
+  FIONA_EXPORT void recycle_buffer( recv_buffer buf );
 };
+
+//------------------------------------------------------------------------------
 
 struct hasher
 {
@@ -189,6 +188,8 @@ struct task_map
     }
   }
 };
+
+//------------------------------------------------------------------------------
 
 struct io_context_frame
 {

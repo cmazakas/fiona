@@ -22,35 +22,32 @@
 #include <fiona_export.h>                         // for FIONA_EXPORT
 
 namespace fiona {
-struct executor;
+class executor;
 }
 
 namespace fiona {
 
 class io_context
 {
-  std::shared_ptr<detail::io_context_frame> pframe_;
+  std::shared_ptr<detail::io_context_frame> p_frame_;
 
 public:
   io_context( io_context_params const& params = {} )
-      : pframe_( std::make_shared<detail::io_context_frame>( params ) )
+      : p_frame_( std::make_shared<detail::io_context_frame>( params ) )
   {
   }
 
-  FIONA_EXPORT
-  ~io_context();
+  FIONA_EXPORT ~io_context();
 
-  FIONA_EXPORT
-  executor get_executor() const noexcept;
+  FIONA_EXPORT executor get_executor() const noexcept;
 
   io_context_params
   params() const noexcept
   {
-    return pframe_->params_;
+    return p_frame_->params_;
   }
 
-  FIONA_EXPORT
-  void run();
+  FIONA_EXPORT void run();
 };
 
 } // namespace fiona

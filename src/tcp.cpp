@@ -823,7 +823,7 @@ recv_awaitable::await_suspend( std::coroutine_handle<> h )
     fiona::detail::throw_errno_as_error_code( EINVAL );
   }
 
-  rf.pbuf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
+  rf.p_buf_ring_ = fiona::detail::executor_access_policy::get_buffer_group(
       p_stream_->ex_, static_cast<unsigned>( bgid ) );
   rf.schedule_recv();
   return true;
@@ -868,7 +868,8 @@ recv_awaitable::await_resume()
     io_uring_buf_ring_add( pbuf_ring->as_ptr(), buf.data(),
                            static_cast<unsigned>( buf.capacity() ),
                            static_cast<unsigned short>( buffer_id ),
-                           io_uring_buf_ring_mask( pbuf_ring->size() ), len );
+                           io_uring_buf_ring_mask( pbuf_ring->num_bufs() ),
+                           len );
     ++len;
   }
 

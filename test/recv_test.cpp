@@ -86,7 +86,7 @@ TEST_CASE( "recv timeout" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -156,7 +156,7 @@ TEST_CASE( "recv cancel" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -219,7 +219,7 @@ TEST_CASE( "recv high traffic" )
 
   fiona::io_context ioc;
   auto ex = ioc.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -240,9 +240,9 @@ TEST_CASE( "double registering same buffer group" )
   auto ex = ioc.get_executor();
 
   std::uint16_t const buffer_group_id = 0;
-  ex.register_buffer_sequence( 16, 64, buffer_group_id );
+  ex.register_buf_ring( 16, 64, buffer_group_id );
   try {
-    ex.register_buffer_sequence( 32, 128, buffer_group_id );
+    ex.register_buf_ring( 32, 128, buffer_group_id );
     CHECK( false );
   } catch ( std::system_error const& ec ) {
     CHECK( ec.code() == std::errc::file_exists );
@@ -258,7 +258,7 @@ TEST_CASE( "buffer exhaustion" )
 
   constexpr static int const num_bufs = 8;
 
-  ex.register_buffer_sequence( num_bufs, 64, 0 );
+  ex.register_buf_ring( num_bufs, 64, 0 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, 0 );
   fiona::tcp::acceptor acceptor( ex, &addr );
@@ -300,7 +300,7 @@ TEST_CASE( "buffer exhaustion" )
     }
 
     auto ex = stream.get_executor();
-    ex.register_buffer_sequence( num_bufs, 64, 1 );
+    ex.register_buf_ring( num_bufs, 64, 1 );
 
     {
       // a recv here should succeed with the replenished buffers
@@ -523,8 +523,8 @@ TEST_CASE( "concurrent send and recv" )
 
   auto port = acceptor.port();
 
-  ex.register_buffer_sequence( 1024, 128, 0 );
-  ex.register_buffer_sequence( 1024, 128, 1 );
+  ex.register_buf_ring( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 1 );
 
   ex.spawn( server_op::start( acceptor, num_clients ) );
   for ( int i = 0; i < num_clients; ++i ) {

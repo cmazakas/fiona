@@ -205,8 +205,7 @@ public:
   stream_close_awaitable( stream_close_awaitable const& ) = delete;
   stream_close_awaitable& operator=( stream_close_awaitable const& ) = delete;
 
-  FIONA_EXPORT
-  ~stream_close_awaitable();
+  FIONA_EXPORT ~stream_close_awaitable();
 
   bool
   await_ready() const noexcept
@@ -214,11 +213,8 @@ public:
     return false;
   }
 
-  FIONA_EXPORT
-  void await_suspend( std::coroutine_handle<> h );
-
-  FIONA_EXPORT
-  result<void> await_resume();
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<void> await_resume();
 };
 
 //------------------------------------------------------------------------------
@@ -244,11 +240,8 @@ public:
     return false;
   }
 
-  FIONA_EXPORT
-  void await_suspend( std::coroutine_handle<> h );
-
-  FIONA_EXPORT
-  result<int> await_resume();
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<int> await_resume();
 };
 
 //------------------------------------------------------------------------------
@@ -270,8 +263,7 @@ public:
   send_awaitable( send_awaitable const& ) = delete;
   send_awaitable& operator=( send_awaitable const& ) = delete;
 
-  FIONA_EXPORT
-  ~send_awaitable();
+  FIONA_EXPORT ~send_awaitable();
 
   bool
   await_ready() const noexcept
@@ -279,11 +271,8 @@ public:
     return false;
   }
 
-  FIONA_EXPORT
-  void await_suspend( std::coroutine_handle<> h );
-
-  FIONA_EXPORT
-  result<std::size_t> await_resume();
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<std::size_t> await_resume();
 };
 
 //------------------------------------------------------------------------------

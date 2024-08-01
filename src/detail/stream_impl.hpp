@@ -241,7 +241,7 @@ struct FIONA_EXPORT recv_frame : fiona::detail::awaitable_base
 {
   fiona::recv_buffer_sequence buffers_;
   fiona::error_code ec_;
-  fiona::detail::buf_ring* pbuf_ring_ = nullptr;
+  fiona::detail::buf_ring* p_buf_ring_ = nullptr;
   std::coroutine_handle<> h_ = nullptr;
   timepoint_type last_recv_ = clock_type::now();
   int res_ = 0;
@@ -401,7 +401,8 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
   if ( cqe->res == 0 ) {
     BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_MORE ) );
     BOOST_ASSERT( !( cqe->flags & IORING_CQE_F_BUFFER ) );
-    buffers_.push_back( recv_buffer( 0 ) );
+    auto buf = recv_buffer( 0 );
+    buffers_.push_back( std::move( buf ) );
   }
 
   if ( cqe->res > 0 ) {
@@ -412,13 +413,13 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
 
     auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 
-    auto& buf = pbuf_ring_->get_buf( buffer_id );
-    BOOST_ASSERT( buf.capacity() );
+    auto& buf = p_buf_ring_->get_buf( buffer_id );
+    BOOST_ASSERT( buf.capacity() > 0 );
     auto buffer = std::move( buf );
     buffer.set_len( static_cast<std::size_t>( cqe->res ) );
     buffers_.push_back( std::move( buffer ) );
 
-    *pbuf_ring_->buf_id_pos_++ = buffer_id;
+    *p_buf_ring_->buf_id_pos_++ = buffer_id;
   }
 
   if ( ( cqe->flags & IORING_CQE_F_MORE ) ) {

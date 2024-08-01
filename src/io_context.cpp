@@ -183,17 +183,17 @@ io_context::~io_context()
   {
     auto ex = get_executor();
     auto ring = detail::executor_access_policy::ring( ex );
-    auto& tasks = pframe_->tasks_;
+    auto& tasks = p_frame_->tasks_;
 
     guard g{ tasks, ring };
   }
-  pframe_ = nullptr;
+  p_frame_ = nullptr;
 }
 
 executor
 io_context::get_executor() const noexcept
 {
-  return executor{ pframe_ };
+  return executor{ p_frame_ };
 }
 
 void
@@ -213,31 +213,32 @@ io_context::run()
 
   auto ex = get_executor();
   auto ring = detail::executor_access_policy::ring( ex );
-  auto cqes = std::vector<io_uring_cqe*>( pframe_->params_.cq_entries );
-  auto& tasks = pframe_->tasks_;
+  auto cqes = std::vector<io_uring_cqe*>( p_frame_->params_.cq_entries );
+  auto& tasks = p_frame_->tasks_;
 
   guard g{ tasks, ring };
   {
     pipe_awaitable pipe_awaiter(
         ex, detail::executor_access_policy::get_pipefd( ex ) );
 
-    std::vector<std::coroutine_handle<>> handles( pframe_->params_.cq_entries );
+    std::vector<std::coroutine_handle<>> handles(
+        p_frame_->params_.cq_entries );
 
     while ( !tasks.empty() ) {
-      if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
-        auto p = pframe_->exception_ptr_;
-        std::rethrow_exception( pframe_->exception_ptr_ );
+      if ( BOOST_UNLIKELY( static_cast<bool>( p_frame_->exception_ptr_ ) ) ) {
+        auto p = p_frame_->exception_ptr_;
+        std::rethrow_exception( p_frame_->exception_ptr_ );
       }
 
-      auto& run_queue = pframe_->run_queue_;
+      auto& run_queue = p_frame_->run_queue_;
       while ( !run_queue.empty() ) {
         auto h = run_queue.front();
         h.resume();
         run_queue.pop_front();
 
-        if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
-          auto p = pframe_->exception_ptr_;
-          std::rethrow_exception( pframe_->exception_ptr_ );
+        if ( BOOST_UNLIKELY( static_cast<bool>( p_frame_->exception_ptr_ ) ) ) {
+          auto p = p_frame_->exception_ptr_;
+          std::rethrow_exception( p_frame_->exception_ptr_ );
         }
       }
 
@@ -273,9 +274,9 @@ io_context::run()
           }
 
           if ( BOOST_UNLIKELY(
-                   static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
-            auto p = pframe_->exception_ptr_;
-            std::rethrow_exception( pframe_->exception_ptr_ );
+                   static_cast<bool>( p_frame_->exception_ptr_ ) ) ) {
+            auto p = p_frame_->exception_ptr_;
+            std::rethrow_exception( p_frame_->exception_ptr_ );
           }
         }
       }
@@ -285,9 +286,9 @@ io_context::run()
       }
     }
 
-    if ( BOOST_UNLIKELY( static_cast<bool>( pframe_->exception_ptr_ ) ) ) {
-      auto p = pframe_->exception_ptr_;
-      std::rethrow_exception( pframe_->exception_ptr_ );
+    if ( BOOST_UNLIKELY( static_cast<bool>( p_frame_->exception_ptr_ ) ) ) {
+      auto p = p_frame_->exception_ptr_;
+      std::rethrow_exception( p_frame_->exception_ptr_ );
     }
   }
 }

@@ -78,7 +78,7 @@ buf_ring::recycle_buffer( recv_buffer buf )
   io_uring_buf_ring_add( buf_ring_, buf.data(),
                          static_cast<unsigned>( buf.capacity() ),
                          static_cast<unsigned short>( buffer_id ),
-                         io_uring_buf_ring_mask( size() ), 0 );
+                         io_uring_buf_ring_mask( num_bufs() ), 0 );
   io_uring_buf_ring_advance( buf_ring_, 1 );
   b = std::move( buf );
 }
