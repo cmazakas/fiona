@@ -42,7 +42,7 @@ fiona_echo_bench()
   fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
-  auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
+  auto handle_request = []( fiona::executor ex, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void>
   {
     // stream.timeout( 5s );
@@ -65,6 +65,9 @@ fiona_echo_bench()
 
       REQUIRE( num_written.value() == octets.size() );
       num_bytes += octets.size();
+
+      (void)ex;
+      // ex.recycle_buffer( bufs.pop_front(), bgid );
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
       //   throw "lmao";
@@ -119,6 +122,8 @@ fiona_echo_bench()
       REQUIRE( m == msg );
 
       num_bytes += octets.size();
+
+      // ex.recycle_buffer( bufs.pop_front(), bgid );
     }
 
     co_await client.async_close();

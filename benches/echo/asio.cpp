@@ -19,7 +19,10 @@ asio_echo_bench()
 
 #else
 
+#define USE_TIMEOUTS
+
 #include <boost/asio/co_spawn.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/executor.hpp>
 #include <boost/asio/io_context.hpp>
@@ -38,6 +41,12 @@ asio_echo_bench()
 
 using namespace std::chrono_literals;
 using namespace boost::asio::experimental::awaitable_operators;
+
+#if defined( USE_TIMEOUTS )
+using stream_type = boost::beast::tcp_stream;
+#else
+using stream_type = boost::asio::ip::tcp::socket;
+#endif
 
 void
 asio_echo_bench()
@@ -58,7 +67,7 @@ asio_echo_bench()
   acceptor.listen();
 
   auto handle_request =
-      []( boost::beast::tcp_stream stream,
+      []( stream_type stream,
           std::string_view msg ) -> boost::asio::awaitable<void>
   {
     std::size_t num_bytes = 0;
@@ -66,18 +75,25 @@ asio_echo_bench()
     char buf[128] = {};
 
     while ( num_bytes < num_msgs * msg.size() ) {
+
+#if defined( USE_TIMEOUTS )
       stream.expires_after( 5s );
+#endif
+
       auto num_read = co_await stream.async_read_some(
-          boost::asio::buffer( buf ), boost::asio::use_awaitable );
+          boost::asio::buffer( buf ), boost::asio::deferred );
 
       auto octets = std::span( buf, num_read );
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
       REQUIRE( m == msg );
 
+#if defined( USE_TIMEOUTS )
       stream.expires_after( 5s );
+#endif
+
       auto num_written = co_await stream.async_write_some(
-          boost::asio::buffer( m ), boost::asio::use_awaitable );
+          boost::asio::buffer( m ), boost::asio::deferred );
 
       REQUIRE( num_written == octets.size() );
       num_bytes += octets.size();
@@ -96,13 +112,10 @@ asio_echo_bench()
                         std::string_view msg ) -> boost::asio::awaitable<void>
   {
     for ( int i = 0; i < num_clients; ++i ) {
-      auto stream =
-          co_await acceptor.async_accept( boost::asio::use_awaitable );
+      auto stream = co_await acceptor.async_accept( boost::asio::deferred );
 
       boost::asio::co_spawn(
-          ex,
-          handle_request( boost::beast::tcp_stream( std::move( stream ) ),
-                          msg ),
+          ex, handle_request( stream_type( std::move( stream ) ), msg ),
           boost::asio::detached );
     }
 
@@ -113,24 +126,33 @@ asio_echo_bench()
   auto client = []( boost::asio::any_io_executor ex,
                     std::string_view msg ) -> boost::asio::awaitable<void>
   {
-    boost::beast::tcp_stream client( ex );
+    stream_type client( ex );
 
+#if defined( USE_TIMEOUTS )
     client.expires_after( 5s );
-    co_await client.async_connect( endpoint, boost::asio::use_awaitable );
+#endif
+
+    co_await client.async_connect( endpoint, boost::asio::deferred );
 
     std::size_t num_bytes = 0;
 
     char buf[128] = {};
     while ( num_bytes < num_msgs * msg.size() ) {
+#if defined( USE_TIMEOUTS )
       client.expires_after( 5s );
+#endif
+
       auto num_written = co_await client.async_write_some(
-          boost::asio::buffer( msg ), boost::asio::use_awaitable );
+          boost::asio::buffer( msg ), boost::asio::deferred );
 
       REQUIRE( num_written == std::size( msg ) );
 
+#if defined( USE_TIMEOUTS )
       client.expires_after( 5s );
+#endif
+
       auto num_read = co_await client.async_read_some(
-          boost::asio::buffer( buf ), boost::asio::use_awaitable );
+          boost::asio::buffer( buf ), boost::asio::deferred );
 
       REQUIRE( num_written == num_read );
 
