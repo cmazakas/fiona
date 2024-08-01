@@ -16,6 +16,7 @@
 
 namespace fiona {
 namespace detail {
+
 struct file_impl;
 
 void FIONA_EXPORT intrusive_ptr_add_ref( file_impl* p_file ) noexcept;
@@ -24,6 +25,7 @@ void FIONA_EXPORT intrusive_ptr_release( file_impl* p_file ) noexcept;
 } // namespace detail
 
 class open_awaitable;
+class write_awaitable;
 
 //------------------------------------------------------------------------------
 
@@ -47,8 +49,11 @@ public:
 
   bool operator==( file const& ) const = default;
 
+  FIONA_EXPORT open_awaitable async_open( std::string pathname, int flags );
+  FIONA_EXPORT write_awaitable async_write( std::string_view msg );
+
   FIONA_EXPORT
-  open_awaitable async_open( std::string pathname, int flags );
+  write_awaitable async_write( std::span<unsigned char const> msg );
 };
 
 //------------------------------------------------------------------------------
@@ -69,6 +74,9 @@ public:
   open_awaitable( open_awaitable const& ) = delete;
   open_awaitable& operator=( open_awaitable const& ) = delete;
 
+  // TODO: must implement cancel-on-drop here
+  FIONA_EXPORT ~open_awaitable();
+
   bool
   await_ready() const noexcept
   {
@@ -76,8 +84,38 @@ public:
   }
 
   FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
-
   FIONA_EXPORT result<void> await_resume();
+};
+
+//------------------------------------------------------------------------------
+
+class write_awaitable
+{
+  friend class file;
+  boost::intrusive_ptr<detail::file_impl> p_file_;
+
+  write_awaitable( boost::intrusive_ptr<detail::file_impl> p_file )
+      : p_file_( p_file )
+  {
+  }
+
+public:
+  write_awaitable() = delete;
+
+  write_awaitable( write_awaitable const& ) = delete;
+  write_awaitable& operator=( write_awaitable const& ) = delete;
+
+  // TODO: must implement cancel-on-drop here
+  FIONA_EXPORT ~write_awaitable();
+
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
+
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<std::size_t> await_resume();
 };
 
 } // namespace fiona

@@ -123,6 +123,20 @@ public:
   }
 
   inline void recycle_buffer( recv_buffer buf, std::uint16_t buffer_group_id );
+
+  fixed_buffers&
+  register_fixed_buffers( std::size_t num_bufs, std::size_t buf_size )
+  {
+    if ( p_frame_->fixed_buffers_ ) {
+      fiona::detail::throw_errno_as_error_code( EEXIST );
+    }
+
+    auto ring = &p_frame_->io_ring_;
+    p_frame_->fixed_buffers_.reset( new fixed_buffers(
+        ring, static_cast<unsigned>( num_bufs ), buf_size ) );
+
+    return *p_frame_->fixed_buffers_;
+  }
 };
 
 namespace detail {

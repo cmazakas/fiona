@@ -24,10 +24,76 @@
 #include <vector>                                 // for vector
 
 #include <liburing.h>                             // for io_uring
+#include <sys/uio.h>
 
 struct io_uring_buf_ring;
 
 namespace fiona {
+
+class executor;
+
+class fixed_buffer
+{
+  friend class fixed_buffers;
+
+  std::vector<unsigned char>& buf_;
+  std::size_t buf_index_ = 0;
+  std::size_t* avail_buf_ids_ = nullptr;
+
+  fixed_buffer( std::vector<unsigned char>& buf,
+                std::size_t buf_index,
+                std::size_t* avail_buf_ids )
+      : buf_( buf ), buf_index_{ buf_index }, avail_buf_ids_( avail_buf_ids )
+  {
+  }
+
+public:
+  fixed_buffer() = delete;
+
+  fixed_buffer( fixed_buffer const& ) = delete;
+  fixed_buffer& operator=( fixed_buffer const& ) = delete;
+
+  ~fixed_buffer()
+  {
+    *avail_buf_ids_++ = buf_index_;
+    (void)buf_;
+  }
+};
+
+class fixed_buffers
+{
+  friend class fiona::executor;
+
+  std::vector<std::vector<unsigned char>> bufs_;
+  std::vector<iovec> iovecs_;
+  std::vector<std::size_t> buf_ids_;
+
+  io_uring* ring_ = nullptr;
+  std::size_t* avail_buf_ids_ = nullptr;
+
+  FIONA_EXPORT
+  fixed_buffers( io_uring* ring, unsigned num_bufs, std::size_t buf_size );
+
+public:
+  fixed_buffers() = delete;
+
+  fixed_buffers( fixed_buffers const& ) = delete;
+  fixed_buffers& operator=( fixed_buffers const& ) = delete;
+
+  FIONA_EXPORT ~fixed_buffers();
+
+  fixed_buffer
+  get_avail_buf()
+  {
+    BOOST_ASSERT( avail_buf_ids_ != buf_ids_.data() );
+
+    auto buf_index = *--avail_buf_ids_;
+    return fixed_buffer( bufs_[buf_index], buf_index, avail_buf_ids_ );
+  }
+};
+
+//------------------------------------------------------------------------------
+
 namespace detail {
 
 struct buf_ring
@@ -197,6 +263,7 @@ struct io_context_frame
   std::mutex m_;
   task_map tasks_;
   io_context_params params_;
+  std::unique_ptr<fixed_buffers> fixed_buffers_;
   boost::unordered_node_map<std::uint16_t, buf_ring> buf_rings_;
   boost::unordered_flat_set<int> fds_;
   std::deque<std::coroutine_handle<>> run_queue_;

@@ -16,6 +16,27 @@
 #include <liburing.h>              // for io_uring_buf_ring_add, io_uring_b...
 
 namespace fiona {
+
+fixed_buffers::fixed_buffers( io_uring* ring,
+                              unsigned num_bufs,
+                              std::size_t buf_size )
+    : bufs_( num_bufs, std::vector<unsigned char>( buf_size, 0 ) ),
+      iovecs_( num_bufs ), buf_ids_( num_bufs ), ring_( ring )
+{
+  for ( std::size_t i = 0; i < num_bufs; ++i ) {
+    auto& buf = bufs_[i];
+    iovecs_[i] = iovec{ .iov_base = buf.data(), .iov_len = buf.size() };
+    buf_ids_[i] = i;
+  }
+  avail_buf_ids_ = buf_ids_.data() + num_bufs;
+
+  io_uring_register_buffers( ring_, iovecs_.data(), num_bufs );
+}
+
+fixed_buffers::~fixed_buffers() { io_uring_unregister_buffers( ring_ ); }
+
+//------------------------------------------------------------------------------
+
 namespace detail {
 
 buf_ring::buf_ring( io_uring* ring, std::uint32_t num_bufs, std::uint16_t bgid )
