@@ -247,7 +247,7 @@ server( fiona::tcp::acceptor acceptor )
   auto& stream = mstream.value();
 
   auto ex = stream.get_executor();
-  ex.register_buffer_sequence( 1024, 128, 0 );
+  ex.register_buf_ring( 1024, 128, 0 );
 
   stream.set_buffer_group( 0 );
   while ( !tls_server.is_handshake_complete() ) {
@@ -341,7 +341,7 @@ client( fiona::executor ex, std::uint16_t const port )
   co_await client.async_send( send_buf );
   send_buf.clear();
 
-  ex.register_buffer_sequence( 1024, 128, 1 );
+  ex.register_buf_ring( 1024, 128, 1 );
   client.set_buffer_group( 1 );
 
   while ( !tls_client.is_handshake_complete() ) {
@@ -422,7 +422,7 @@ tls_server( fiona::tcp::acceptor acceptor )
   auto fd = m_fd.value();
 
   fiona::tls::server stream( ctx, ex, fd );
-  ex.register_buffer_sequence( 4 * 1024, 8, 0 );
+  ex.register_buf_ring( 4 * 1024, 8, 0 );
   stream.set_buffer_group( 0 );
   auto m_ok = co_await stream.async_handshake();
   CHECK( m_ok.has_value() );
@@ -453,7 +453,7 @@ tls_client( fiona::executor ex, std::uint16_t const port )
 
   fiona::tls::client client( ctx, ex, "localhost" );
 
-  ex.register_buffer_sequence( 4 * 1024, 8, 1 );
+  ex.register_buf_ring( 4 * 1024, 8, 1 );
   client.set_buffer_group( 1 );
 
   auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -569,7 +569,7 @@ TEST_CASE( "large messages" )
       auto fd = m_fd.value();
 
       fiona::tls::server stream( ctx, ex, fd );
-      ex.register_buffer_sequence( 4 * 1024, 8, 0 );
+      ex.register_buf_ring( 4 * 1024, 8, 0 );
       stream.set_buffer_group( 0 );
       auto m_ok = co_await stream.async_handshake();
       CHECK( m_ok.has_value() );
@@ -635,7 +635,7 @@ TEST_CASE( "large messages" )
 
       fiona::tls::client client( ctx, ex, "localhost" );
 
-      ex.register_buffer_sequence( 4 * 1024, 8, 1 );
+      ex.register_buf_ring( 4 * 1024, 8, 1 );
       client.set_buffer_group( 1 );
 
       auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
@@ -756,7 +756,7 @@ TEST_CASE( "multiple clients" )
       ctx.add_certificate_key_pair( "server.crt.pem", "server.key.pem" );
 
       auto ex = acceptor.get_executor();
-      ex.register_buffer_sequence( 4 * 1024, 1024, 0 );
+      ex.register_buf_ring( 4 * 1024, 1024, 0 );
 
       for ( int i = 0; i < num_clients; ++i ) {
         auto m_fd = co_await acceptor.async_accept_raw();
@@ -847,7 +847,7 @@ TEST_CASE( "multiple clients" )
       fiona::tls::tls_context ctx;
       ctx.add_certificate_authority( "ca.crt.pem" );
 
-      ex.register_buffer_sequence( 4 * 1024, 1024, 1 );
+      ex.register_buf_ring( 4 * 1024, 1024, 1 );
 
       co_await session( ctx, ex, port, msg );
 
@@ -886,7 +886,7 @@ TEST_CASE( "https google request" )
     static fiona::task<void>
     run( fiona::executor ex )
     {
-      ex.register_buffer_sequence( 1024, 256, 0 );
+      ex.register_buf_ring( 1024, 256, 0 );
 
       fiona::dns_resolver resolver( ex );
 
@@ -913,7 +913,10 @@ TEST_CASE( "https google request" )
       m_ok = co_await client.async_handshake();
       CHECK( m_ok.has_value() );
 
-      std::string_view req = "GET / HTTP/1.1\r\nconnection: close\r\n\r\n";
+      std::string_view req = "GET / HTTP/1.1\r\n"
+                             "host: www.google.com\r\n"
+                             "connection: close\r\n"
+                             "\r\n";
       auto m_n = co_await client.async_send( req );
       CHECK( m_n.value() == req.size() );
 
@@ -932,6 +935,7 @@ TEST_CASE( "https google request" )
 
       std::cout << bufs.to_string() << std::endl;
 
+      CHECK( bufs.to_string().ends_with( "</html>\r\n0\r\n\r\n" ) );
       m_ok = co_await client.async_shutdown();
       CHECK( m_ok.has_value() );
 

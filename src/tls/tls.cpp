@@ -296,15 +296,17 @@ struct tls_callbacks final : public Botan::TLS::Callbacks
         }
       }
 
-      auto buf = output_sequence_.pop_front();
+      auto buf = output_sequence_.empty()
+                     ? recv_buffer( input_sequence_.front().capacity() )
+                     : output_sequence_.pop_front();
+      BOOST_ASSERT( buf.capacity() > 0 );
 
-      recv_buffer_view bv = buf;
-      bv.set_len( 0 );
-      auto dst = bv.spare_capacity_mut();
+      buf.set_len( 0 );
+      auto dst = buf.spare_capacity_mut();
       BOOST_ASSERT( dst.size() > 0 );
       auto n = std::min( dst.size(), plaintext.size() );
       std::memcpy( dst.data(), plaintext.data(), n );
-      bv.set_len( n );
+      buf.set_len( n );
 
       input_sequence_.push_back( std::move( buf ) );
 
@@ -441,6 +443,7 @@ async_recv_impl( std::shared_ptr<tls_callbacks> p_cb,
       }
 
       auto data = buf.readable_bytes();
+      BOOST_ASSERT( buf.capacity() > 0 );
       cb.output_sequence_.push_back( std::move( buf ) );
 
       try {
@@ -542,9 +545,14 @@ client::async_handshake()
       co_return m_buffers.error();
     }
 
-    auto& buf = m_buffers.value();
-    auto data = buf.to_bytes();
-    tls_client.received_data( data );
+    auto& bufs = m_buffers.value();
+    for ( auto buf_view : bufs ) {
+      if ( buf_view.capacity() == 0 ) {
+        // todo: use a real error value here
+        co_return error_code::from_errno( EINVAL );
+      }
+      tls_client.received_data( buf_view.readable_bytes() );
+    }
 
     if ( !send_buf.empty() ) {
       co_await tcp::stream::async_send( send_buf );
