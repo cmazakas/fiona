@@ -26,6 +26,7 @@ void FIONA_EXPORT intrusive_ptr_release( file_impl* p_file ) noexcept;
 
 class open_awaitable;
 class write_awaitable;
+class read_awaitable;
 
 //------------------------------------------------------------------------------
 
@@ -50,10 +51,16 @@ public:
   bool operator==( file const& ) const = default;
 
   FIONA_EXPORT open_awaitable async_open( std::string pathname, int flags );
-  FIONA_EXPORT write_awaitable async_write( std::string_view msg );
 
   FIONA_EXPORT
   write_awaitable async_write( std::span<unsigned char const> msg );
+  FIONA_EXPORT write_awaitable async_write( std::string_view msg );
+
+  FIONA_EXPORT write_awaitable async_write_fixed( fixed_buffer const& buf );
+
+  FIONA_EXPORT read_awaitable async_read( std::span<char> buf );
+  FIONA_EXPORT read_awaitable async_read( std::span<unsigned char> buf );
+  FIONA_EXPORT read_awaitable async_read_fixed( fixed_buffer& buf );
 };
 
 //------------------------------------------------------------------------------
@@ -107,6 +114,37 @@ public:
 
   // TODO: must implement cancel-on-drop here
   FIONA_EXPORT ~write_awaitable();
+
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
+
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<std::size_t> await_resume();
+};
+
+//------------------------------------------------------------------------------
+
+class read_awaitable
+{
+  friend class file;
+  boost::intrusive_ptr<detail::file_impl> p_file_;
+
+  read_awaitable( boost::intrusive_ptr<detail::file_impl> p_file )
+      : p_file_( p_file )
+  {
+  }
+
+public:
+  read_awaitable() = delete;
+
+  read_awaitable( read_awaitable const& ) = delete;
+  read_awaitable& operator=( read_awaitable const& ) = delete;
+
+  // TODO: must implement cancel-on-drop here
+  FIONA_EXPORT ~read_awaitable();
 
   bool
   await_ready() const noexcept

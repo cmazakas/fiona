@@ -57,10 +57,9 @@ open_frame::~open_frame() = default;
 
 struct write_frame : awaitable_base
 {
-  std::coroutine_handle<> h_ = nullptr;
-
   std::span<unsigned char const> buf_;
-
+  std::coroutine_handle<> h_ = nullptr;
+  int buf_index_ = -1;
   int res_ = 0;
   bool initiated_ = false;
   bool done_ = false;
@@ -75,6 +74,8 @@ struct write_frame : awaitable_base
   void
   reset()
   {
+    buf_ = {};
+    buf_index_ = -1;
     h_ = nullptr;
     res_ = 0;
     initiated_ = false;
@@ -94,7 +95,47 @@ write_frame::~write_frame() = default;
 
 //------------------------------------------------------------------------------
 
-struct file_impl final : virtual ref_count, open_frame, write_frame
+struct read_frame : awaitable_base
+{
+  std::coroutine_handle<> h_ = nullptr;
+  std::span<unsigned char> buf_;
+  int buf_index_ = -1;
+  int res_ = 0;
+  bool initiated_ = false;
+  bool done_ = false;
+
+  read_frame() = default;
+
+  read_frame( read_frame const& ) = delete;
+  read_frame& operator=( read_frame const& ) = delete;
+
+  ~read_frame() override;
+
+  void
+  reset()
+  {
+    h_ = nullptr;
+    buf_ = {};
+    buf_index_ = -1;
+    res_ = 0;
+    initiated_ = false;
+    done_ = false;
+  }
+
+  void await_process_cqe( io_uring_cqe* cqe ) override;
+
+  std::coroutine_handle<>
+  handle() noexcept override
+  {
+    return boost::exchange( h_, nullptr );
+  }
+};
+
+read_frame::~read_frame() = default;
+
+//------------------------------------------------------------------------------
+
+struct file_impl final : virtual ref_count, open_frame, write_frame, read_frame
 {
   executor ex_;
   int fd_ = -1;
@@ -157,6 +198,40 @@ file::async_write( std::span<unsigned char const> msg )
   auto& wf = static_cast<detail::write_frame&>( *p_file_ );
   wf.buf_ = msg;
 
+  return { p_file_ };
+}
+
+write_awaitable
+file::async_write_fixed( fixed_buffer const& buf )
+{
+  auto& wf = static_cast<detail::write_frame&>( *p_file_ );
+  wf.buf_ = buf.as_bytes();
+  wf.buf_index_ = static_cast<int>( buf.buf_index_ );
+  return { p_file_ };
+}
+
+read_awaitable
+file::async_read( std::span<char> buf )
+{
+  return async_read(
+      std::span( reinterpret_cast<unsigned char*>( buf.data() ), buf.size() ) );
+}
+
+read_awaitable
+file::async_read( std::span<unsigned char> buf )
+{
+  auto& rf = static_cast<detail::read_frame&>( *p_file_ );
+  rf.buf_ = buf;
+
+  return { p_file_ };
+}
+
+read_awaitable
+file::async_read_fixed( fixed_buffer& buf )
+{
+  auto& rf = static_cast<detail::read_frame&>( *p_file_ );
+  rf.buf_ = buf.buf_;
+  rf.buf_index_ = static_cast<int>( buf.buf_index_ );
   return { p_file_ };
 }
 
@@ -248,6 +323,15 @@ detail::write_frame::await_process_cqe( io_uring_cqe* cqe )
 
 //------------------------------------------------------------------------------
 
+void
+detail::read_frame::await_process_cqe( io_uring_cqe* cqe )
+{
+  res_ = cqe->res;
+  done_ = true;
+}
+
+//------------------------------------------------------------------------------
+
 write_awaitable::~write_awaitable()
 {
   if ( p_file_->detail::write_frame::initiated_ &&
@@ -282,8 +366,15 @@ write_awaitable::await_suspend( std::coroutine_handle<> h )
 
     unsigned offset = 0;
 
-    io_uring_prep_write( sqe, fd, wf.buf_.data(),
-                         static_cast<unsigned>( wf.buf_.size() ), offset );
+    if ( wf.buf_index_ >= 0 ) {
+      io_uring_prep_write_fixed( sqe, fd, wf.buf_.data(),
+                                 static_cast<unsigned>( wf.buf_.size() ),
+                                 offset, wf.buf_index_ );
+    } else {
+      io_uring_prep_write( sqe, fd, wf.buf_.data(),
+                           static_cast<unsigned>( wf.buf_.size() ), offset );
+    }
+
     io_uring_sqe_set_data( sqe, &wf );
     io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
   }
@@ -300,6 +391,75 @@ write_awaitable::await_resume()
   auto& wf = static_cast<detail::write_frame&>( *p_file_ );
   auto res = wf.res_;
   wf.reset();
+
+  if ( res < 0 ) {
+    return { error_code::from_errno( -res ) };
+  }
+  return { static_cast<std::size_t>( res ) };
+}
+
+//------------------------------------------------------------------------------
+
+read_awaitable::~read_awaitable()
+{
+  if ( p_file_->detail::read_frame::initiated_ &&
+       !p_file_->detail::read_frame::done_ ) {
+
+    auto ring = fiona::detail::executor_access_policy::ring( p_file_->ex_ );
+    fiona::detail::reserve_sqes( ring, 1 );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel(
+        sqe, static_cast<detail::read_frame*>( p_file_.get() ), 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+    fiona::detail::submit_ring( ring );
+  }
+}
+
+void
+read_awaitable::await_suspend( std::coroutine_handle<> h )
+{
+  auto& rf = static_cast<detail::read_frame&>( *p_file_ );
+  if ( rf.initiated_ ) {
+    fiona::detail::throw_errno_as_error_code( EBUSY );
+  }
+
+  auto ex = p_file_->ex_;
+  auto fd = p_file_->fd_;
+
+  auto ring = detail::executor_access_policy::ring( ex );
+  detail::reserve_sqes( ring, 1 );
+
+  {
+    auto sqe = detail::get_sqe( ring );
+
+    unsigned offset = 0;
+
+    if ( rf.buf_index_ >= 0 ) {
+      io_uring_prep_read_fixed( sqe, fd, rf.buf_.data(),
+                                static_cast<unsigned>( rf.buf_.size() ), offset,
+                                rf.buf_index_ );
+    } else {
+      io_uring_prep_read( sqe, fd, rf.buf_.data(),
+                          static_cast<unsigned>( rf.buf_.size() ), offset );
+    }
+
+    io_uring_sqe_set_data( sqe, &rf );
+    io_uring_sqe_set_flags( sqe, IOSQE_FIXED_FILE );
+  }
+
+  detail::intrusive_ptr_add_ref( &rf );
+
+  rf.initiated_ = true;
+  rf.h_ = h;
+}
+
+result<std::size_t>
+read_awaitable::await_resume()
+{
+  auto& rf = static_cast<detail::read_frame&>( *p_file_ );
+  auto res = rf.res_;
+  rf.reset();
 
   if ( res < 0 ) {
     return { error_code::from_errno( -res ) };

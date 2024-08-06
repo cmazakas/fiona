@@ -21,6 +21,7 @@
 #include <exception>                              // for exception_ptr
 #include <list>                                   // for list
 #include <mutex>                                  // for mutex
+#include <span>                                   // for span
 #include <vector>                                 // for vector
 
 #include <liburing.h>                             // for io_uring
@@ -34,16 +35,19 @@ class executor;
 
 class fixed_buffer
 {
+  friend class file;
   friend class fixed_buffers;
 
-  std::vector<unsigned char>& buf_;
+  std::span<unsigned char> buf_;
+  std::size_t len_ = 0;
   std::size_t buf_index_ = 0;
   std::size_t* avail_buf_ids_ = nullptr;
 
-  fixed_buffer( std::vector<unsigned char>& buf,
+  fixed_buffer( std::span<unsigned char> buf,
                 std::size_t buf_index,
                 std::size_t* avail_buf_ids )
-      : buf_( buf ), buf_index_{ buf_index }, avail_buf_ids_( avail_buf_ids )
+      : buf_( buf ), len_{ buf.size() }, buf_index_{ buf_index },
+        avail_buf_ids_( avail_buf_ids )
   {
   }
 
@@ -53,10 +57,24 @@ public:
   fixed_buffer( fixed_buffer const& ) = delete;
   fixed_buffer& operator=( fixed_buffer const& ) = delete;
 
-  ~fixed_buffer()
+  ~fixed_buffer() { *avail_buf_ids_++ = buf_index_; }
+
+  std::span<unsigned char>
+  as_bytes() const noexcept
   {
-    *avail_buf_ids_++ = buf_index_;
-    (void)buf_;
+    return buf_.subspan( 0, len_ );
+  }
+
+  void
+  set_len( std::size_t n ) noexcept
+  {
+    len_ = n;
+  }
+
+  std::string_view
+  as_str() const noexcept
+  {
+    return { reinterpret_cast<char const*>( buf_.data() ), len_ };
   }
 };
 
