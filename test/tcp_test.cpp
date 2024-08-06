@@ -883,7 +883,7 @@ TEST_CASE( "tcp echo saturating" )
   fiona::tcp::acceptor acceptor( ex, &addr );
   auto const port = acceptor.port();
 
-  auto handle_request = []( fiona::executor, fiona::tcp::stream stream,
+  auto handle_request = []( fiona::executor ex, fiona::tcp::stream stream,
                             std::string_view msg ) -> fiona::task<void>
   {
     stream.timeout( std::chrono::seconds( 5 ) );
@@ -910,6 +910,10 @@ TEST_CASE( "tcp echo saturating" )
       CHECK( !num_written.has_error() );
       CHECK( static_cast<std::size_t>( num_written.value() ) == octets.size() );
       num_bytes += octets.size();
+
+      if ( buf.capacity() > 0 ) {
+        ex.recycle_buffer( std::move( buf ), bgid );
+      }
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
       //   throw "lmao";
