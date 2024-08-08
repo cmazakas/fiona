@@ -37,6 +37,8 @@ struct open_frame : awaitable_base
   {
     h_ = nullptr;
     temp_fd_ = -1;
+    pathname_.clear();
+    flags_ = -1;
     res_ = 0;
     initiated_ = false;
     done_ = false;
@@ -75,8 +77,8 @@ struct write_frame : awaitable_base
   reset()
   {
     buf_ = {};
-    buf_index_ = -1;
     h_ = nullptr;
+    buf_index_ = -1;
     res_ = 0;
     initiated_ = false;
     done_ = false;

@@ -37,8 +37,7 @@ class file
 public:
   file() = default;
 
-  FIONA_EXPORT
-  file( executor ex );
+  FIONA_EXPORT file( executor ex );
 
   file( file const& ) = default;
   file& operator=( file const& ) = default;
