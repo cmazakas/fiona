@@ -43,6 +43,8 @@ struct stream_impl;
 
 class accept_awaitable;
 class accept_raw_awaitable;
+class accept_cancel_awaitable;
+class accept_close_awaitable;
 class connect_awaitable;
 class stream_cancel_awaitable;
 class stream_close_awaitable;
@@ -103,17 +105,12 @@ public:
 
   bool operator==( acceptor const& ) const = default;
 
-  FIONA_EXPORT
-  std::uint16_t port() const noexcept;
-
-  FIONA_EXPORT
-  executor get_executor() const noexcept;
-
-  FIONA_EXPORT
-  accept_awaitable async_accept();
-
-  FIONA_EXPORT
-  accept_raw_awaitable async_accept_raw();
+  FIONA_EXPORT std::uint16_t port() const noexcept;
+  FIONA_EXPORT executor get_executor() const noexcept;
+  FIONA_EXPORT accept_awaitable async_accept();
+  FIONA_EXPORT accept_raw_awaitable async_accept_raw();
+  FIONA_EXPORT accept_cancel_awaitable async_cancel();
+  FIONA_EXPORT accept_close_awaitable async_close();
 };
 
 //------------------------------------------------------------------------------
@@ -374,7 +371,6 @@ public:
 
 class accept_raw_awaitable : public accept_awaitable
 {
-private:
   friend class acceptor;
 
   accept_raw_awaitable(
@@ -388,6 +384,39 @@ public:
 
   FIONA_EXPORT
   result<int> await_resume();
+};
+
+//------------------------------------------------------------------------------
+
+class accept_cancel_awaitable
+{
+  friend class acceptor;
+
+  boost::intrusive_ptr<detail::acceptor_impl> p_acceptor_;
+
+  accept_cancel_awaitable(
+      boost::intrusive_ptr<detail::acceptor_impl> p_acceptor );
+
+public:
+  accept_cancel_awaitable() = delete;
+
+  accept_cancel_awaitable( accept_cancel_awaitable const& ) = delete;
+  accept_cancel_awaitable& operator=( accept_cancel_awaitable const& ) = delete;
+
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
+
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<int> await_resume();
+};
+
+//------------------------------------------------------------------------------
+
+class accept_close_awaitable
+{
 };
 
 //------------------------------------------------------------------------------

@@ -1392,3 +1392,49 @@ TEST_CASE( "shutdown" )
 
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "acceptor cancel" )
+{
+  num_runs = 0;
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  ex.spawn( []( fiona::executor ex ) -> fiona::task<void>
+  {
+    auto addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
+    fiona::tcp::acceptor acceptor( ex, &addr );
+
+    ex.spawn( []( fiona::executor ex,
+                  fiona::tcp::acceptor acceptor ) -> fiona::task<void>
+    {
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 250ms );
+
+      auto m_ok = co_await acceptor.async_cancel();
+      CHECK( m_ok.has_value() );
+      CHECK( m_ok.value() == 1 ); // only one op should be cancelled here
+      ++num_runs;
+    }( ex, acceptor ) );
+
+    auto m_stream = co_await acceptor.async_accept();
+    CHECK( m_stream.error() == fiona::error_code::from_errno( ECANCELED ) );
+
+    fiona::tcp::client client( ex );
+    addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, acceptor.port() );
+
+    // server socket is still listening, so this connect() will succeed
+    auto m_ok = co_await client.async_connect( &addr );
+    CHECK( m_ok.has_value() );
+
+    // now we should be able to actually pluck the awaiting socket connection
+    // from the backlog
+    m_stream = co_await acceptor.async_accept();
+    CHECK( m_stream.has_value() );
+
+    ++num_runs;
+    co_return;
+  }( ex ) );
+
+  ioc.run();
+  CHECK( num_runs == 2 );
+}

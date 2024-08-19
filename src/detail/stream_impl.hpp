@@ -11,12 +11,13 @@
 #include <fiona/detail/common.hpp>
 #include <fiona/detail/get_sqe.hpp>
 
+#include <fiona_export.h>
+
 #include <chrono>
 
 #include <liburing.h>
 
 #include "awaitable_base.hpp"
-#include <fiona_export.h>
 
 namespace fiona {
 namespace tcp {

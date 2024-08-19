@@ -105,7 +105,10 @@ struct accept_frame : public fiona::detail::awaitable_base
 
 //------------------------------------------------------------------------------
 
-struct acceptor_impl : public virtual ref_count, public accept_frame
+struct acceptor_impl : virtual ref_count,
+                       accept_frame,
+                       cancel_frame,
+                       close_frame
 {
   sockaddr_storage addr_storage_ = {};
   executor ex_;
@@ -307,6 +310,12 @@ acceptor::async_accept_raw()
   return { p_acceptor_ };
 }
 
+accept_cancel_awaitable
+acceptor::async_cancel()
+{
+  return { p_acceptor_ };
+}
+
 //------------------------------------------------------------------------------
 
 accept_awaitable::accept_awaitable(
@@ -401,6 +410,52 @@ accept_raw_awaitable::await_resume()
   }
 
   return peer_fd;
+}
+
+//------------------------------------------------------------------------------
+
+accept_cancel_awaitable::accept_cancel_awaitable(
+    boost::intrusive_ptr<detail::acceptor_impl> p_acceptor )
+    : p_acceptor_( p_acceptor )
+{
+}
+
+void
+accept_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
+{
+  auto ex = p_acceptor_->ex_;
+  auto fd = p_acceptor_->fd_;
+  BOOST_ASSERT( fd != -1 );
+
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+  auto& cf = static_cast<detail::cancel_frame&>( *p_acceptor_ );
+
+  fiona::detail::reserve_sqes( ring, 1 );
+
+  auto sqe = io_uring_get_sqe( ring );
+  io_uring_prep_cancel_fd(
+      sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
+  io_uring_sqe_set_data(
+      sqe, static_cast<detail::cancel_frame*>( p_acceptor_.get() ) );
+
+  intrusive_ptr_add_ref( &cf );
+
+  cf.initiated_ = true;
+  cf.h_ = h;
+}
+
+result<int>
+accept_cancel_awaitable::await_resume()
+{
+  auto res = p_acceptor_->cancel_frame::res_;
+
+  p_acceptor_->cancel_frame::reset();
+
+  if ( res < 0 ) {
+    return { error_code::from_errno( -res ) };
+  }
+
+  return { res };
 }
 
 //------------------------------------------------------------------------------
@@ -661,6 +716,7 @@ stream_cancel_awaitable::await_resume()
 
   p_stream_->cancel_frame::reset();
 
+  // TODO: why is this here?
   if ( fd == -1 ) {
     return { 0 };
   }
