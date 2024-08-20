@@ -59,11 +59,17 @@ fiona_echo_bench()
 
       auto octets = view.readable_bytes();
       auto m = view.as_str();
-      REQUIRE( m == msg );
+      {
+        auto g = guard();
+        REQUIRE( m == msg );
+      }
 
       auto num_written = co_await stream.async_send( octets );
 
-      REQUIRE( num_written.value() == octets.size() );
+      {
+        auto g = guard();
+        REQUIRE( num_written.value() == octets.size() );
+      }
       num_bytes += octets.size();
 
       (void)ex;
@@ -108,7 +114,10 @@ fiona_echo_bench()
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto result = co_await client.async_send( msg );
-      REQUIRE( result.value() == std::size( msg ) );
+      {
+        auto g = guard();
+        REQUIRE( result.value() == std::size( msg ) );
+      }
 
       auto mbufs = co_await client.async_recv();
       auto bufs = std::move( mbufs ).value();
@@ -118,8 +127,14 @@ fiona_echo_bench()
       auto octets = view.readable_bytes();
       auto m = view.as_str();
 
-      REQUIRE( octets.size() == result.value() );
-      REQUIRE( m == msg );
+      {
+        auto g = guard();
+        REQUIRE( octets.size() == result.value() );
+      }
+      {
+        auto g = guard();
+        REQUIRE( m == msg );
+      }
 
       num_bytes += octets.size();
 
@@ -160,5 +175,8 @@ fiona_echo_bench()
 
   t1.join();
 
-  REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    auto g = guard();
+    REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }

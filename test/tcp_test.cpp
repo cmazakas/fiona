@@ -716,6 +716,9 @@ TEST_CASE( "send not connected" )
 
 TEST_CASE( "tcp echo" )
 {
+  using lock_guard = std::lock_guard<std::mutex>;
+
+  static std::mutex mtx;
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -748,22 +751,40 @@ TEST_CASE( "tcp echo" )
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto m_buffers = co_await stream.async_recv();
-      CHECK( m_buffers.has_value() );
+      {
+        lock_guard guard( mtx );
+        CHECK( m_buffers.has_value() );
+      }
 
       auto octets = m_buffers.value().to_bytes();
-      REQUIRE( octets.size() > 0 );
+      {
+        lock_guard guard( mtx );
+        REQUIRE( octets.size() > 0 );
+      }
+
       auto buf = m_buffers->pop_front();
-      REQUIRE( buf.capacity() > 0 );
+      {
+        lock_guard guard( mtx );
+        REQUIRE( buf.capacity() > 0 );
+      }
+
       ex.recycle_buffer( std::move( buf ), bgid );
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( m == msg );
+      {
+        lock_guard guard( mtx );
+        CHECK( m == msg );
+      }
 
       auto num_written = co_await stream.async_send( octets );
+      {
+        lock_guard guard( mtx );
+        CHECK( !num_written.has_error() );
+        CHECK( static_cast<std::size_t>( num_written.value() ) ==
+               octets.size() );
+      }
 
-      CHECK( !num_written.has_error() );
-      CHECK( static_cast<std::size_t>( num_written.value() ) == octets.size() );
       num_bytes += octets.size();
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
@@ -772,7 +793,10 @@ TEST_CASE( "tcp echo" )
     }
 
     auto mok = co_await stream.async_close();
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     ++anum_runs;
   };
@@ -798,8 +822,10 @@ TEST_CASE( "tcp echo" )
 
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
     auto mok = co_await client.async_connect( &addr );
-
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     std::size_t num_bytes = 0;
 
@@ -807,7 +833,10 @@ TEST_CASE( "tcp echo" )
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto result = co_await client.async_send( msg );
-      CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
+      {
+        lock_guard guard( mtx );
+        CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
+      }
 
       auto m_buffers = co_await client.async_recv();
 
@@ -817,13 +846,19 @@ TEST_CASE( "tcp echo" )
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( m == msg );
+      {
+        lock_guard guard( mtx );
+        CHECK( m == msg );
+      }
 
       num_bytes += octets.size();
     }
 
     mok = co_await client.async_close();
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     ++anum_runs;
   };
@@ -857,11 +892,17 @@ TEST_CASE( "tcp echo" )
 
   t1.join();
 
-  CHECK( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    lock_guard guard( mtx );
+    CHECK( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }
 
 TEST_CASE( "tcp echo saturating" )
 {
+  using lock_guard = std::lock_guard<std::mutex>;
+
+  static std::mutex mtx;
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -894,7 +935,10 @@ TEST_CASE( "tcp echo saturating" )
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto m_buffers = co_await stream.async_recv();
-      CHECK( m_buffers.has_value() );
+      {
+        lock_guard guard( mtx );
+        CHECK( m_buffers.has_value() );
+      }
 
       auto octets = m_buffers.value().to_bytes();
 
@@ -903,12 +947,22 @@ TEST_CASE( "tcp echo saturating" )
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( m == msg );
+      {
+        lock_guard guard( mtx );
+        CHECK( m == msg );
+      }
 
       auto num_written = co_await stream.async_send( octets );
 
-      CHECK( !num_written.has_error() );
-      CHECK( static_cast<std::size_t>( num_written.value() ) == octets.size() );
+      {
+        lock_guard guard( mtx );
+        CHECK( !num_written.has_error() );
+      }
+      {
+        lock_guard guard( mtx );
+        CHECK( static_cast<std::size_t>( num_written.value() ) ==
+               octets.size() );
+      }
       num_bytes += octets.size();
 
       if ( buf.capacity() > 0 ) {
@@ -921,7 +975,10 @@ TEST_CASE( "tcp echo saturating" )
     }
 
     auto mok = co_await stream.async_close();
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     ++anum_runs;
   };
@@ -948,7 +1005,10 @@ TEST_CASE( "tcp echo saturating" )
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
     auto mok = co_await client.async_connect( &addr );
 
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     std::size_t num_bytes = 0;
 
@@ -956,7 +1016,10 @@ TEST_CASE( "tcp echo saturating" )
 
     while ( num_bytes < num_msgs * msg.size() ) {
       auto result = co_await client.async_send( msg );
-      CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
+      {
+        lock_guard guard( mtx );
+        CHECK( static_cast<std::size_t>( result.value() ) == std::size( msg ) );
+      }
 
       auto m_buffers = co_await client.async_recv();
       auto octets = m_buffers.value().to_bytes();
@@ -966,13 +1029,19 @@ TEST_CASE( "tcp echo saturating" )
 
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( m == msg );
+      {
+        lock_guard guard( mtx );
+        CHECK( m == msg );
+      }
 
       num_bytes += octets.size();
     }
 
     mok = co_await client.async_close();
-    CHECK( mok.has_value() );
+    {
+      lock_guard guard( mtx );
+      CHECK( mok.has_value() );
+    }
 
     ++anum_runs;
   };
@@ -1005,7 +1074,10 @@ TEST_CASE( "tcp echo saturating" )
 
   t1.join();
 
-  CHECK( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    lock_guard guard( mtx );
+    CHECK( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }
 
 TEST_CASE( "fd reuse" )
@@ -1134,6 +1206,9 @@ TEST_CASE( "fd reuse" )
 
 TEST_CASE( "tcp echo exception" )
 {
+  using lock_guard = std::lock_guard<std::mutex>;
+
+  static std::mutex mtx;
   static std::atomic_uint64_t anum_runs = 0;
   constexpr int num_clients = 500;
   constexpr int num_msgs = 1000;
@@ -1167,17 +1242,30 @@ TEST_CASE( "tcp echo exception" )
     while ( num_bytes < num_msgs * msg.size() ) {
 
       auto mbuffers = co_await stream.async_recv();
-      CHECK( mbuffers.has_value() );
+      {
+        lock_guard g( mtx );
+        CHECK( mbuffers.has_value() );
+      }
 
       auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( m == msg );
+      {
+        lock_guard g( mtx );
+        CHECK( m == msg );
+      }
 
       auto num_written = co_await stream.async_send( octets );
 
-      CHECK( !num_written.has_error() );
-      CHECK( static_cast<std::size_t>( num_written.value() ) == octets.size() );
+      {
+        lock_guard g( mtx );
+        CHECK( !num_written.has_error() );
+      }
+      {
+        lock_guard g( mtx );
+        CHECK( static_cast<std::size_t>( num_written.value() ) ==
+               octets.size() );
+      }
       num_bytes += octets.size();
 
       if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
@@ -1210,7 +1298,10 @@ TEST_CASE( "tcp echo exception" )
     auto addr = fiona::ip::make_sockaddr_ipv4( localhost_ipv4, port );
     auto mok = co_await client.async_connect( &addr );
 
-    CHECK( mok.has_value() );
+    {
+      lock_guard g( mtx );
+      CHECK( mok.has_value() );
+    }
 
     std::size_t num_bytes = 0;
 
@@ -1224,7 +1315,10 @@ TEST_CASE( "tcp echo exception" )
       auto octets = mbuffers.value().to_bytes();
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      CHECK( ( ( m == msg ) || m.empty() ) );
+      {
+        lock_guard g( mtx );
+        CHECK( ( ( m == msg ) || m.empty() ) );
+      }
 
       num_bytes += octets.size();
     }
@@ -1259,7 +1353,10 @@ TEST_CASE( "tcp echo exception" )
 
   t1.join();
 
-  CHECK( anum_runs == 2 );
+  {
+    lock_guard g( mtx );
+    CHECK( anum_runs == 2 );
+  }
 }
 
 TEST_CASE( "accept raw fd" )

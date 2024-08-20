@@ -19,7 +19,7 @@ asio_echo_bench()
 
 #else
 
-#define USE_TIMEOUTS
+// #define USE_TIMEOUTS
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/deferred.hpp>
@@ -86,7 +86,10 @@ asio_echo_bench()
       auto octets = std::span( buf, num_read );
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      REQUIRE( m == msg );
+      {
+        auto g = guard();
+        REQUIRE( m == msg );
+      }
 
 #if defined( USE_TIMEOUTS )
       stream.expires_after( 5s );
@@ -95,7 +98,10 @@ asio_echo_bench()
       auto num_written = co_await stream.async_write_some(
           boost::asio::buffer( m ), boost::asio::deferred );
 
-      REQUIRE( num_written == octets.size() );
+      {
+        auto g = guard();
+        REQUIRE( num_written == octets.size() );
+      }
       num_bytes += octets.size();
 
       // if ( num_bytes >= ( num_msgs * msg.size() ) / 2 ) {
@@ -145,7 +151,10 @@ asio_echo_bench()
       auto num_written = co_await client.async_write_some(
           boost::asio::buffer( msg ), boost::asio::deferred );
 
-      REQUIRE( num_written == std::size( msg ) );
+      {
+        auto g = guard();
+        REQUIRE( num_written == std::size( msg ) );
+      }
 
 #if defined( USE_TIMEOUTS )
       client.expires_after( 5s );
@@ -154,12 +163,18 @@ asio_echo_bench()
       auto num_read = co_await client.async_read_some(
           boost::asio::buffer( buf ), boost::asio::deferred );
 
-      REQUIRE( num_written == num_read );
+      {
+        auto g = guard();
+        REQUIRE( num_written == num_read );
+      }
 
       auto octets = std::span( buf, num_read );
       auto m = std::string_view( reinterpret_cast<char const*>( octets.data() ),
                                  octets.size() );
-      REQUIRE( m == msg );
+      {
+        auto g = guard();
+        REQUIRE( m == msg );
+      }
 
       num_bytes += octets.size();
     }
@@ -177,7 +192,12 @@ asio_echo_bench()
       for ( int i = 0; i < num_clients; ++i ) {
         boost::asio::co_spawn( ex, client( ex, msg ), boost::asio::detached );
       }
-      REQUIRE( ioc.run() > 0 );
+
+      auto num_run = ioc.run();
+      {
+        auto g = guard();
+        REQUIRE( num_run > 0 );
+      }
 
     } catch ( std::exception const& ex ) {
       std::cout << "exception caught in client thread:\n"
@@ -189,7 +209,11 @@ asio_echo_bench()
                          boost::asio::detached );
 
   try {
-    REQUIRE( ioc.run() > 0 );
+    auto num_run = ioc.run();
+    {
+      auto g = guard();
+      REQUIRE( num_run > 0 );
+    }
   } catch ( ... ) {
     t1.join();
     throw;
@@ -197,6 +221,9 @@ asio_echo_bench()
 
   t1.join();
 
-  REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    auto g = guard();
+    REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }
 #endif

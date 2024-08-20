@@ -70,7 +70,10 @@ fiona_recv_bench()
       auto bufs = std::move( m_bufs ).value();
       for ( auto view : bufs ) {
         auto octets = view.readable_bytes();
-        REQUIRE( octets.size() > 0 );
+        {
+          auto g = guard();
+          REQUIRE( octets.size() > 0 );
+        }
 
         for ( std::size_t i = 0; i < octets.size(); ++i ) {
           *p++ = octets[i];
@@ -79,15 +82,24 @@ fiona_recv_bench()
         num_bytes += octets.size();
       }
     }
-    REQUIRE( std::ranges::equal( body, msg ) );
+    {
+      auto g = guard();
+      REQUIRE( std::ranges::equal( body, msg ) );
+    }
 
     auto send_buf = msg;
     while ( !send_buf.empty() ) {
       auto m_sent = co_await stream.async_send( send_buf );
       if ( m_sent.has_error() ) {
-        CHECK( m_sent.error() == fiona::error_code::from_errno( ETIMEDOUT ) );
+        {
+          auto g = guard();
+          CHECK( m_sent.error() == fiona::error_code::from_errno( ETIMEDOUT ) );
+        }
       }
-      REQUIRE( m_sent.has_value() );
+      {
+        auto g = guard();
+        REQUIRE( m_sent.has_value() );
+      }
       auto sent = *m_sent;
       send_buf = send_buf.subspan( sent );
     }
@@ -131,7 +143,10 @@ fiona_recv_bench()
     auto send_buf = msg;
     while ( !send_buf.empty() ) {
       auto m_sent = co_await client.async_send( send_buf );
-      REQUIRE( m_sent.has_value() );
+      {
+        auto g = guard();
+        REQUIRE( m_sent.has_value() );
+      }
       auto sent = *m_sent;
       send_buf = send_buf.subspan( sent );
     }
@@ -147,7 +162,10 @@ fiona_recv_bench()
       for ( auto view : bufs ) {
         auto octets = view.readable_bytes();
         if ( octets.size() == 0 ) {
-          REQUIRE( num_bytes == num_msgs * msg.size() );
+          {
+            auto g = guard();
+            REQUIRE( num_bytes == num_msgs * msg.size() );
+          }
         }
 
         for ( std::size_t i = 0; i < octets.size(); ++i ) {
@@ -157,7 +175,10 @@ fiona_recv_bench()
         num_bytes += octets.size();
       }
     }
-    REQUIRE( std::ranges::equal( body, msg ) );
+    {
+      auto g = guard();
+      REQUIRE( std::ranges::equal( body, msg ) );
+    }
 
     co_await client.async_shutdown( SHUT_WR );
     co_await client.async_recv();
@@ -195,5 +216,8 @@ fiona_recv_bench()
 
   t1.join();
 
-  REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    auto g = guard();
+    REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }

@@ -74,16 +74,20 @@ asio_recv_bench()
           boost::asio::buffer( buf ), boost::asio::use_awaitable );
 
       auto octets = std::span( buf, num_read );
-      REQUIRE( octets.size() > 0 );
+      {
+        auto g = guard();
+        REQUIRE( octets.size() > 0 );
+      }
 
       for ( std::size_t i = 0; i < octets.size(); ++i ) {
         *p++ = octets[i];
       }
       num_bytes += octets.size();
-
-      // REQUIRE( num_written == octets.size() );
     }
-    REQUIRE( std::ranges::equal( body, msg ) );
+    {
+      auto g = guard();
+      REQUIRE( std::ranges::equal( body, msg ) );
+    }
 
     auto send_buf = msg;
     while ( !send_buf.empty() ) {
@@ -155,16 +159,20 @@ asio_recv_bench()
           boost::asio::buffer( buf ), boost::asio::use_awaitable );
 
       auto octets = std::span( buf, num_read );
-      REQUIRE( octets.size() > 0 );
+      {
+        auto g = guard();
+        REQUIRE( octets.size() > 0 );
+      }
 
       for ( std::size_t i = 0; i < octets.size(); ++i ) {
         *p++ = octets[i];
       }
       num_bytes += octets.size();
-
-      // REQUIRE( num_written == octets.size() );
     }
-    REQUIRE( std::ranges::equal( body, msg ) );
+    {
+      auto g = guard();
+      REQUIRE( std::ranges::equal( body, msg ) );
+    }
 
     client.socket().shutdown( boost::asio::ip::tcp::socket::shutdown_send );
     try {
@@ -187,7 +195,13 @@ asio_recv_bench()
       for ( int i = 0; i < num_clients; ++i ) {
         boost::asio::co_spawn( ex, client( ex, msg ), boost::asio::detached );
       }
-      REQUIRE( ioc.run() > 0 );
+
+      auto num_run = ioc.run();
+
+      {
+        auto g = guard();
+        REQUIRE( num_run > 0 );
+      }
 
     } catch ( std::exception const& ex ) {
       std::cout << "exception caught in client thread:\n"
@@ -199,7 +213,11 @@ asio_recv_bench()
                          boost::asio::detached );
 
   try {
-    REQUIRE( ioc.run() > 0 );
+    auto num_run = ioc.run();
+    {
+      auto g = guard();
+      REQUIRE( num_run > 0 );
+    }
   } catch ( ... ) {
     t1.join();
     throw;
@@ -207,6 +225,9 @@ asio_recv_bench()
 
   t1.join();
 
-  REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  {
+    auto g = guard();
+    REQUIRE( anum_runs == 1 + ( 2 * num_clients ) );
+  }
 }
 #endif

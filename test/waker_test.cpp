@@ -13,7 +13,10 @@
 #pragma clang diagnostic ignored "-Wunreachable-code"
 #endif
 
+using lock_guard = std::lock_guard<std::mutex>;
+
 static std::atomic_int num_runs = 0;
+static std::mutex mtx;
 
 struct custom_awaitable
 {
@@ -62,12 +65,18 @@ struct custom_awaitable
       try {
         waker.wake();
       } catch ( std::system_error const& ec ) {
-        CHECK( should_detach );
-        CHECK( ec.code() == std::errc::invalid_argument );
+        {
+          lock_guard g( mtx );
+          CHECK( should_detach );
+          CHECK( ec.code() == std::errc::invalid_argument );
+        }
         return;
       }
 
-      CHECK( !should_detach );
+      {
+        lock_guard g( mtx );
+        CHECK( !should_detach );
+      }
     } );
   }
 
@@ -90,7 +99,10 @@ TEST_CASE( "waiting a simple future" )
   {
     duration_guard dg( std::chrono::milliseconds( 500 ) );
     auto nums = co_await custom_awaitable( ex );
-    CHECK( nums == std::vector{ 1, 2, 3, 4 } );
+    {
+      lock_guard g( mtx );
+      CHECK( nums == std::vector{ 1, 2, 3, 4 } );
+    }
     ++num_runs;
     co_return;
   }( ex ) );
@@ -145,12 +157,18 @@ TEST_CASE( "awaiting multiple foreign futures" )
     ex.spawn( FIONA_TASK( fiona::executor ex ) {
       duration_guard dg( std::chrono::milliseconds( 500 ) );
       auto nums = co_await custom_awaitable( ex );
-      CHECK( nums == std::vector{ 1, 2, 3, 4 } );
+      {
+        lock_guard g( mtx );
+        CHECK( nums == std::vector{ 1, 2, 3, 4 } );
+      }
       ++num_runs;
       co_return;
     }( ex ) );
   }
   ioc.run();
 
-  CHECK( num_runs == 2 * num_futures );
+  {
+    lock_guard g( mtx );
+    CHECK( num_runs == 2 * num_futures );
+  }
 }

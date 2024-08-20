@@ -9,6 +9,7 @@
 #include <catch2/catch_translate_exception.hpp>
 #include <catch2/generators/catch_generators_random.hpp>
 
+#include <atomic>
 #include <chrono>
 
 #include <arpa/inet.h>
@@ -32,6 +33,15 @@ make_random_input( std::size_t n )
     b = static_cast<std::uint8_t>( rng.get() );
   }
   return v;
+}
+
+using lock_guard = std::lock_guard<std::mutex>;
+
+inline lock_guard
+guard()
+{
+  static std::mutex mtx;
+  return lock_guard( mtx );
 }
 
 #endif // FIONA_BENCHES_ECHO_COMMON_HPP

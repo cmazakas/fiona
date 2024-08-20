@@ -11,10 +11,21 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include <atomic>
+
 inline constexpr char const* localhost_ipv4 = "127.0.0.1";
 
 constexpr int num_clients = 5000;
 constexpr int num_msgs = 1000;
+
+using lock_guard = std::lock_guard<std::mutex>;
+
+inline lock_guard
+guard()
+{
+  static std::mutex mtx;
+  return lock_guard( mtx );
+}
 
 void fiona_echo_bench();
 
