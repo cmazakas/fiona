@@ -44,6 +44,47 @@ throw_busy()
 {
   fiona::detail::throw_errno_as_error_code( EBUSY );
 }
+
+struct acceptor_close_frame : fiona::detail::awaitable_base
+{
+  std::coroutine_handle<> h_ = nullptr;
+  int res_ = 0;
+  bool initiated_ = false;
+  bool done_ = false;
+
+  acceptor_close_frame() = default;
+
+  acceptor_close_frame( acceptor_close_frame const& ) = delete;
+  acceptor_close_frame& operator=( acceptor_close_frame const& ) = delete;
+
+  ~acceptor_close_frame() override;
+
+  void
+  reset()
+  {
+    h_ = nullptr;
+    res_ = 0;
+    initiated_ = false;
+    done_ = false;
+  }
+
+  std::coroutine_handle<>
+  handle() noexcept override
+  {
+    return boost::exchange( h_, nullptr );
+  }
+
+  inline void await_process_cqe( io_uring_cqe* cqe ) override;
+
+  // bool
+  // is_active() const noexcept
+  // {
+  //   return initiated_ && !done_;
+  // }
+};
+
+acceptor_close_frame::~acceptor_close_frame() = default;
+
 } // namespace
 
 namespace detail {
@@ -108,7 +149,7 @@ struct accept_frame : public fiona::detail::awaitable_base
 struct acceptor_impl : virtual ref_count,
                        accept_frame,
                        cancel_frame,
-                       close_frame
+                       acceptor_close_frame
 {
   sockaddr_storage addr_storage_ = {};
   executor ex_;
@@ -316,6 +357,12 @@ acceptor::async_cancel()
   return { p_acceptor_ };
 }
 
+accept_close_awaitable
+acceptor::async_close()
+{
+  return { p_acceptor_ };
+}
+
 //------------------------------------------------------------------------------
 
 accept_awaitable::accept_awaitable(
@@ -424,8 +471,6 @@ void
 accept_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
 {
   auto ex = p_acceptor_->ex_;
-  auto fd = p_acceptor_->fd_;
-  BOOST_ASSERT( fd != -1 );
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto& cf = static_cast<detail::cancel_frame&>( *p_acceptor_ );
@@ -433,8 +478,8 @@ accept_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
   fiona::detail::reserve_sqes( ring, 1 );
 
   auto sqe = io_uring_get_sqe( ring );
-  io_uring_prep_cancel_fd(
-      sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
+  io_uring_prep_cancel(
+      sqe, static_cast<detail::accept_frame*>( p_acceptor_.get() ), 0 );
   io_uring_sqe_set_data(
       sqe, static_cast<detail::cancel_frame*>( p_acceptor_.get() ) );
 
@@ -450,6 +495,66 @@ accept_cancel_awaitable::await_resume()
   auto res = p_acceptor_->cancel_frame::res_;
 
   p_acceptor_->cancel_frame::reset();
+
+  if ( res < 0 ) {
+    return { error_code::from_errno( -res ) };
+  }
+
+  return { res };
+}
+
+//------------------------------------------------------------------------------
+
+void
+acceptor_close_frame::await_process_cqe( io_uring_cqe* cqe )
+{
+  auto& acceptor = static_cast<detail::acceptor_impl&>( *this );
+
+  done_ = true;
+  res_ = cqe->res;
+  if ( res_ >= 0 ) {
+    auto ex = acceptor.ex_;
+    auto fd = acceptor.fd_;
+    fiona::detail::executor_access_policy::release_fd( ex, fd );
+    acceptor.fd_ = -1;
+  }
+}
+
+//------------------------------------------------------------------------------
+
+void
+accept_close_awaitable::await_suspend( std::coroutine_handle<> h )
+{
+  auto ex = p_acceptor_->ex_;
+  auto fd = p_acceptor_->fd_;
+  if ( fd < 0 ) {
+    fiona::detail::throw_errno_as_error_code( EBADFD );
+  }
+
+  auto ring = fiona::detail::executor_access_policy::ring( ex );
+  auto& cf = static_cast<acceptor_close_frame&>( *p_acceptor_ );
+
+  fiona::detail::reserve_sqes( ring, 1 );
+
+  {
+    auto fd = p_acceptor_->fd_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd ) );
+    io_uring_sqe_set_data( sqe, &cf );
+  }
+
+  intrusive_ptr_add_ref( &cf );
+
+  cf.initiated_ = true;
+  cf.h_ = h;
+}
+
+result<int>
+accept_close_awaitable::await_resume()
+{
+  auto res = p_acceptor_->acceptor_close_frame::res_;
+
+  p_acceptor_->acceptor_close_frame::reset();
 
   if ( res < 0 ) {
     return { error_code::from_errno( -res ) };

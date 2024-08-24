@@ -417,6 +417,30 @@ public:
 
 class accept_close_awaitable
 {
+  friend class acceptor;
+
+  boost::intrusive_ptr<detail::acceptor_impl> p_acceptor_;
+
+  accept_close_awaitable(
+      boost::intrusive_ptr<detail::acceptor_impl> p_acceptor )
+      : p_acceptor_( p_acceptor )
+  {
+  }
+
+public:
+  accept_close_awaitable() = delete;
+
+  accept_close_awaitable( accept_close_awaitable const& ) = delete;
+  accept_close_awaitable& operator=( accept_close_awaitable const& ) = delete;
+
+  bool
+  await_ready() const noexcept
+  {
+    return false;
+  }
+
+  FIONA_EXPORT void await_suspend( std::coroutine_handle<> h );
+  FIONA_EXPORT result<int> await_resume();
 };
 
 //------------------------------------------------------------------------------
