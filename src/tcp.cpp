@@ -595,12 +595,12 @@ stream::~stream()
 
   auto use_count = p_stream_->use_count() -
                    p_stream_->detail::cancel_frame::is_active() -
+                   p_stream_->detail::timeout_cancel_frame::is_active() -
                    p_stream_->detail::close_frame::is_active() -
                    p_stream_->detail::shutdown_frame::is_active() -
                    p_stream_->detail::send_frame::is_active() -
                    p_stream_->detail::recv_frame::is_active() -
-                   p_stream_->detail::timeout_frame::is_active() -
-                   p_stream_->detail::timeout_cancel_frame::is_active();
+                   p_stream_->detail::timeout_frame::is_active();
 
   BOOST_ASSERT( use_count > 0 );
 
@@ -634,22 +634,38 @@ stream::timeout( __kernel_timespec ts )
   }
 }
 
+namespace {
+
+void
+queue_timer_cancel( detail::stream_impl* p_stream )
+{
+  if ( !p_stream->timeout_frame::initiated_ ) {
+    return;
+  }
+
+  p_stream->timeout_frame::cancelled_ = true;
+
+  auto ring = fiona::detail::executor_access_policy::ring( p_stream->ex_ );
+  {
+    auto user_data = reinterpret_cast<std::uintptr_t>(
+        static_cast<detail::timeout_frame*>( p_stream ) );
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_timeout_remove( sqe, user_data, 0 );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
+  }
+}
+
+} // namespace
+
 void
 stream::cancel_timer()
 {
-  if ( p_stream_ && p_stream_->timeout_frame::initiated_ ) {
-    p_stream_->timeout_frame::cancelled_ = true;
+  if ( p_stream_ ) {
     auto ring = fiona::detail::executor_access_policy::ring( p_stream_->ex_ );
     fiona::detail::reserve_sqes( ring, 1 );
-    {
-      auto user_data = reinterpret_cast<std::uintptr_t>(
-          static_cast<detail::timeout_frame*>( p_stream_.get() ) );
-      auto sqe = io_uring_get_sqe( ring );
-      io_uring_prep_timeout_remove( sqe, user_data, 0 );
-      io_uring_sqe_set_data( sqe, nullptr );
-      io_uring_sqe_set_flags( sqe, IOSQE_CQE_SKIP_SUCCESS );
-      fiona::detail::submit_ring( ring );
-    }
+    queue_timer_cancel( p_stream_.get() );
+    fiona::detail::submit_ring( ring );
   }
 }
 
@@ -748,16 +764,30 @@ void
 stream_close_awaitable::await_suspend( std::coroutine_handle<> h )
 {
   auto ex = p_stream_->ex_;
+  auto fd = p_stream_->fd_;
   auto ring = fiona::detail::executor_access_policy::ring( ex );
 
-  fiona::detail::reserve_sqes( ring, 1 );
+  fiona::detail::reserve_sqes( ring, 2 + p_stream_->timeout_frame::initiated_ );
 
   {
-    auto fd = p_stream_->fd_;
+    p_stream_->stream_cancelled_ = true;
+
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel_fd(
+        sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_HARDLINK );
+  }
+
+  {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd ) );
     io_uring_sqe_set_data(
         sqe, static_cast<detail::close_frame*>( p_stream_.get() ) );
+  }
+
+  if ( p_stream_->timeout_frame::initiated_ ) {
+    queue_timer_cancel( p_stream_.get() );
   }
 
   intrusive_ptr_add_ref( p_stream_.get() );
@@ -1063,12 +1093,12 @@ client::~client()
 
   auto use_count = p_client->use_count() -
                    p_client->detail::cancel_frame::is_active() -
+                   p_client->detail::timeout_cancel_frame::is_active() -
                    p_client->detail::close_frame::is_active() -
                    p_client->detail::shutdown_frame::is_active() -
                    p_client->detail::send_frame::is_active() -
                    p_client->detail::recv_frame::is_active() -
                    p_client->detail::timeout_frame::is_active() -
-                   p_client->detail::timeout_cancel_frame::is_active() -
                    p_client->detail::socket_frame::is_active() -
                    p_client->detail::connect_frame::is_active();
 

@@ -265,6 +265,7 @@ struct FIONA_EXPORT recv_frame : fiona::detail::awaitable_base
   }
 
   inline void schedule_recv();
+
   bool
   is_active() const noexcept
   {
@@ -412,7 +413,7 @@ detail::recv_frame::await_process_cqe( io_uring_cqe* cqe )
     // TODO: find out if we should potentially set this when we see the EOF
     last_recv_ = clock_type::now();
 
-    auto buffer_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
+    auto buffer_id = ( cqe->flags >> IORING_CQE_BUFFER_SHIFT );
 
     auto& buf = p_buf_ring_->get_buf( buffer_id );
     BOOST_ASSERT( buf.capacity() > 0 );
@@ -465,8 +466,10 @@ detail::timeout_frame::await_process_cqe( io_uring_cqe* cqe )
 {
   auto& stream = static_cast<detail::stream_impl&>( *this );
 
-  if ( cqe->res == -ECANCELED && cancelled_ ) {
+  auto const is_closing = ( cqe->res == -ECANCELED && cancelled_ );
+  if ( is_closing ) {
     initiated_ = false;
+    cancelled_ = false;
     return;
   }
 

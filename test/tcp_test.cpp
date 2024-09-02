@@ -1583,3 +1583,90 @@ TEST_CASE( "acceptor close" )
   ioc.run();
   CHECK( num_runs == 2 );
 }
+
+TEST_CASE( "tcp socket close" )
+{
+  // TODO: fill this test in with a socket type that has a pending read and
+  // write (maybe a pending write) and see if calling close() cancels it
+  // Basically, implement the tcp::acceptor test above but for tcp::streams
+  // instead
+  num_runs = 0;
+
+  auto addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );
+
+  fiona::io_context ioc;
+  auto ex = ioc.get_executor();
+  fiona::tcp::acceptor acceptor( ex, &addr );
+
+  auto port = acceptor.port();
+  addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, port );
+
+  ex.spawn( []( fiona::tcp::acceptor acceptor ) -> fiona::task<void>
+  {
+    auto m_stream = co_await acceptor.async_accept();
+    REQUIRE( m_stream.has_value() );
+
+    auto stream = std::move( m_stream ).value();
+
+    auto ex = stream.get_executor();
+    ex.register_buf_ring( 1024, 128, 0 );
+    stream.set_buffer_group( 0 );
+    stream.timeout( 5s );
+
+    auto h = ex.spawn(
+        []( fiona::executor ex, fiona::tcp::stream stream ) -> fiona::task<void>
+    {
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 250ms );
+
+      auto m_ok = co_await stream.async_close();
+      CHECK( m_ok.has_value() );
+
+      ++num_runs;
+      co_return;
+    }( ex, stream ) );
+
+    auto m_buf = co_await stream.async_recv();
+    REQUIRE( m_buf.error() == fiona::error_code::from_errno( ECANCELED ) );
+
+    co_await h;
+
+    ++num_runs;
+    co_return;
+  }( std::move( acceptor ) ) );
+
+  ex.spawn( []( fiona::executor ex, sockaddr_in6 addr ) -> fiona::task<void>
+  {
+    fiona::tcp::client client( ex );
+    auto m_ok = co_await client.async_connect( &addr );
+    REQUIRE( m_ok.has_value() );
+
+    ex.register_buf_ring( 1024, 128, 1 );
+    client.set_buffer_group( 1 );
+    client.timeout( 40s );
+
+    auto h = ex.spawn(
+        []( fiona::executor ex, fiona::tcp::client client ) -> fiona::task<void>
+    {
+      fiona::timer timer( ex );
+      co_await timer.async_wait( 250ms );
+
+      auto m_ok = co_await client.async_close();
+      CHECK( m_ok.has_value() );
+
+      ++num_runs;
+      co_return;
+    }( ex, client ) );
+
+    auto m_buf = co_await client.async_recv();
+    REQUIRE( m_buf.error() == fiona::error_code::from_errno( ECANCELED ) );
+
+    co_await h;
+
+    ++num_runs;
+    co_return;
+  }( ex, addr ) );
+
+  ioc.run();
+  CHECK( num_runs == 4 );
+}
