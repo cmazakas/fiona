@@ -2,6 +2,13 @@ find_package(Catch2 3.0 REQUIRED)
 
 include(Catch)
 
+add_test(
+  NAME "fiona-verify-headers"
+  COMMAND "${CMAKE_COMMAND}" --build ${CMAKE_BINARY_DIR}
+                             --target "fiona_verify_interface_header_sets"
+                             --config $<CONFIG
+)
+
 function(fiona_test testname)
   add_executable(${testname} helpers.hpp ${testname}.cpp)
   target_link_libraries(
