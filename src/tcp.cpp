@@ -471,15 +471,17 @@ void
 accept_cancel_awaitable::await_suspend( std::coroutine_handle<> h )
 {
   auto ex = p_acceptor_->ex_;
+  auto fd = p_acceptor_->fd_;
 
   auto ring = fiona::detail::executor_access_policy::ring( ex );
+
   auto& cf = static_cast<detail::cancel_frame&>( *p_acceptor_ );
 
   fiona::detail::reserve_sqes( ring, 1 );
 
   auto sqe = io_uring_get_sqe( ring );
-  io_uring_prep_cancel(
-      sqe, static_cast<detail::accept_frame*>( p_acceptor_.get() ), 0 );
+  io_uring_prep_cancel_fd(
+      sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
   io_uring_sqe_set_data(
       sqe, static_cast<detail::cancel_frame*>( p_acceptor_.get() ) );
 
@@ -512,6 +514,10 @@ acceptor_close_frame::await_process_cqe( io_uring_cqe* cqe )
 
   done_ = true;
   res_ = cqe->res;
+
+  // TODO: I'm not sure this conditional is correct.
+  // If close() fails to close, shouldn't we want to return this fd back to the
+  // table anyway?
   if ( res_ >= 0 ) {
     auto ex = acceptor.ex_;
     auto fd = acceptor.fd_;
@@ -534,10 +540,17 @@ accept_close_awaitable::await_suspend( std::coroutine_handle<> h )
   auto ring = fiona::detail::executor_access_policy::ring( ex );
   auto& cf = static_cast<acceptor_close_frame&>( *p_acceptor_ );
 
-  fiona::detail::reserve_sqes( ring, 1 );
+  fiona::detail::reserve_sqes( ring, 2 );
 
   {
-    auto fd = p_acceptor_->fd_;
+    auto sqe = io_uring_get_sqe( ring );
+    io_uring_prep_cancel_fd(
+        sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
+    io_uring_sqe_set_data( sqe, nullptr );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_HARDLINK | IOSQE_CQE_SKIP_SUCCESS );
+  }
+
+  {
     auto sqe = io_uring_get_sqe( ring );
     io_uring_prep_close_direct( sqe, static_cast<unsigned>( fd ) );
     io_uring_sqe_set_data( sqe, &cf );
@@ -552,9 +565,10 @@ accept_close_awaitable::await_suspend( std::coroutine_handle<> h )
 result<int>
 accept_close_awaitable::await_resume()
 {
-  auto res = p_acceptor_->acceptor_close_frame::res_;
+  auto& cf = static_cast<acceptor_close_frame&>( *p_acceptor_ );
 
-  p_acceptor_->acceptor_close_frame::reset();
+  auto res = cf.res_;
+  cf.reset();
 
   if ( res < 0 ) {
     return { error_code::from_errno( -res ) };
@@ -776,7 +790,7 @@ stream_close_awaitable::await_suspend( std::coroutine_handle<> h )
     io_uring_prep_cancel_fd(
         sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD_FIXED );
     io_uring_sqe_set_data( sqe, nullptr );
-    io_uring_sqe_set_flags( sqe, IOSQE_IO_HARDLINK );
+    io_uring_sqe_set_flags( sqe, IOSQE_IO_HARDLINK | IOSQE_CQE_SKIP_SUCCESS );
   }
 
   {

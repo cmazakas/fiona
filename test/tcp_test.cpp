@@ -810,6 +810,9 @@ TEST_CASE( "tcp echo" )
       ex.spawn( handle_request( ex, std::move( stream.value() ), msg ) );
     }
 
+    auto m_ok = co_await acceptor.async_close();
+    CHECK( m_ok.has_value() );
+
     ++anum_runs;
     co_return;
   };
@@ -1509,7 +1512,7 @@ TEST_CASE( "acceptor cancel" )
 
       auto m_ok = co_await acceptor.async_cancel();
       CHECK( m_ok.has_value() );
-      CHECK( m_ok.value() == 0 );
+      CHECK( m_ok.value() == 1 );
       ++num_runs;
     }( ex, acceptor ) );
 
@@ -1558,8 +1561,7 @@ TEST_CASE( "acceptor close" )
       CHECK( m_ok.value() == 0 );
 
       m_ok = co_await acceptor.async_cancel();
-      CHECK( m_ok.has_value() );
-      CHECK( m_ok.value() == 0 );
+      CHECK( m_ok.error() == fiona::error_code::from_errno( EBADF ) );
 
       ++num_runs;
     }( ex, acceptor ) );
