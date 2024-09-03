@@ -108,7 +108,10 @@ TEST_CASE( "waiting a simple future" )
   }( ex ) );
   ioc.run();
 
-  CHECK( num_runs == 2 );
+  {
+    lock_guard g( mtx );
+    CHECK( num_runs == 2 );
+  }
 }
 
 TEST_CASE( "waker outlives the io_context" )
