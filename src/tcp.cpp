@@ -510,20 +510,14 @@ accept_cancel_awaitable::await_resume()
 void
 acceptor_close_frame::await_process_cqe( io_uring_cqe* cqe )
 {
-  auto& acceptor = static_cast<detail::acceptor_impl&>( *this );
-
   done_ = true;
   res_ = cqe->res;
 
-  // TODO: I'm not sure this conditional is correct.
-  // If close() fails to close, shouldn't we want to return this fd back to the
-  // table anyway?
-  if ( res_ >= 0 ) {
-    auto ex = acceptor.ex_;
-    auto fd = acceptor.fd_;
-    fiona::detail::executor_access_policy::release_fd( ex, fd );
-    acceptor.fd_ = -1;
-  }
+  auto& acceptor = static_cast<detail::acceptor_impl&>( *this );
+  auto ex = acceptor.ex_;
+  auto fd = acceptor.fd_;
+  fiona::detail::executor_access_policy::release_fd( ex, fd );
+  acceptor.fd_ = -1;
 }
 
 //------------------------------------------------------------------------------

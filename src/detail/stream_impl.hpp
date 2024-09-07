@@ -355,17 +355,15 @@ struct FIONA_EXPORT stream_impl : virtual ref_count,
 void
 detail::close_frame::await_process_cqe( io_uring_cqe* cqe )
 {
-  auto& stream = static_cast<detail::stream_impl&>( *this );
-
   done_ = true;
   res_ = cqe->res;
-  if ( res_ >= 0 ) {
-    auto ex = stream.ex_;
-    auto fd = stream.fd_;
-    fiona::detail::executor_access_policy::release_fd( ex, fd );
-    stream.fd_ = -1;
-    stream.connected_ = false;
-  }
+
+  auto& stream = static_cast<detail::stream_impl&>( *this );
+  auto ex = stream.ex_;
+  auto fd = stream.fd_;
+  fiona::detail::executor_access_policy::release_fd( ex, fd );
+  stream.fd_ = -1;
+  stream.connected_ = false;
 }
 
 //------------------------------------------------------------------------------
