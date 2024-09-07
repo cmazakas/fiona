@@ -1588,10 +1588,6 @@ TEST_CASE( "acceptor close" )
 
 TEST_CASE( "tcp socket close" )
 {
-  // TODO: fill this test in with a socket type that has a pending read and
-  // write (maybe a pending write) and see if calling close() cancels it
-  // Basically, implement the tcp::acceptor test above but for tcp::streams
-  // instead
   num_runs = 0;
 
   auto addr = fiona::ip::make_sockaddr_ipv6( localhost_ipv6, 0 );

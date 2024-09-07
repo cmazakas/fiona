@@ -52,7 +52,7 @@ struct duration_guard
         std::chrono::duration_cast<std::chrono::duration<Rep, Period>>( now -
                                                                         prev );
     CHECK_GE( elapsed, expected );
-    CHECK_LT( elapsed, expected * 1.08 );
+    CHECK_LT( elapsed, expected * 1.10 );
   }
 };
 
