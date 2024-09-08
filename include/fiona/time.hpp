@@ -15,7 +15,7 @@
 #include <chrono>                            // for duration
 #include <coroutine>                         // for coroutine_handle
 
-#include "fiona_export.h"
+#include <fiona_export.h>
 
 namespace fiona {
 namespace detail {

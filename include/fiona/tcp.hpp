@@ -20,7 +20,7 @@
 #include <span>                              // for span
 #include <string_view>                       // for string_view
 
-#include "fiona_export.h"
+#include <fiona_export.h>
 
 namespace fiona {
 namespace tls {

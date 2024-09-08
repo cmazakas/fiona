@@ -13,7 +13,7 @@
 
 #include <netdb.h>
 
-#include "fiona_export.h"
+#include <fiona_export.h>
 
 namespace fiona {
 struct dns_frame;

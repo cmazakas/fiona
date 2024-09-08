@@ -17,7 +17,7 @@
 #include <utility>          // for move
 #include <vector>           // for vector
 
-#include "fiona_export.h"   // for FIONA_EXPORT
+#include <fiona_export.h>   // for FIONA_EXPORT
 
 namespace fiona {
 

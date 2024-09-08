@@ -10,7 +10,7 @@
 
 #include <netinet/in.h> // for sockaddr_in, sockaddr_in6
 
-#include "fiona_export.h"
+#include <fiona_export.h>
 
 namespace fiona {
 namespace ip {
