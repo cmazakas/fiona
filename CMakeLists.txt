@@ -112,9 +112,28 @@ if(Botan_FOUND)
   target_include_directories(fiona_tls PRIVATE src/detail)
 
   generate_export_header(fiona_tls)
-  target_include_directories(fiona_tls PUBLIC ${CMAKE_BINARY_DIR})
+  target_sources(
+    fiona_tls
+    PUBLIC
+    FILE_SET HEADERS
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/fiona_tls_export.h"
+    BASE_DIRS "${CMAKE_CURRENT_BINARY_DIR}"
+  )
 
   add_library(Fiona::tls ALIAS fiona_tls)
+  install(
+    TARGETS
+      fiona_tls
+
+    EXPORT
+      fiona-targets
+
+    FILE_SET HEADERS
+
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
 endif()
 
 install(

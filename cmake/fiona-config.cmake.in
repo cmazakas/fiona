@@ -2,12 +2,24 @@
 
 include(CMakeFindDependencyMacro)
 
-find_dependency(PkgConfig REQUIRED)
-pkg_check_modules(uring REQUIRED IMPORTED_TARGET liburing)
+set(FIONA_REQUIRED "")
+if("${${CMAKE_FIND_PACKAGE_NAME}_FIND_REQUIRED}")
+  set(FIONA_REQUIRED REQUIRED)
+endif()
+set(FIONA_QUIET "")
+if("${${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY}")
+  set(FIONA_QUIET QUIET)
+endif()
+
+find_dependency(PkgConfig)
+if(PKG_CONFIG_FOUND)
+  pkg_check_modules(uring ${FIONA_REQUIRED} ${FIONA_QUIET} IMPORTED_TARGET liburing)
+endif()
 
 find_dependency(
   Boost 1.84
-  REQUIRED
+  ${FIONA_REQUIRED}
+  ${FIONA_QUIET}
   COMPONENTS
     assert
     config
